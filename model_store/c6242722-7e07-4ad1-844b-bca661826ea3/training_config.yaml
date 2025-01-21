@@ -1,0 +1,7 @@
+batch_size: 1000
+early_stopping:
+  min_delta: 0.0001
+  patience: 5
+epochs: 50
+learning_rate: 0.001
+validation_split: 0.2

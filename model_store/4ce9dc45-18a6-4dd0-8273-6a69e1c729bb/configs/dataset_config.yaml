@@ -1,0 +1,62 @@
+batch_size: 1000
+data_quality_metrics:
+  null_values:
+    chi2_per_ndof: 0
+    d0: 0
+    eta: 0
+    phi: 0
+    pt: 0
+    z0: 0
+  out_of_range_tracks:
+    chi2_per_ndof: 43358
+    d0: 77
+    eta: 0
+    phi: 0
+    pt: 49946
+    z0: 0
+  status: warning
+  summary:
+    null_fraction:
+      chi2_per_ndof: 0.0
+      d0: 0.0
+      eta: 0.0
+      phi: 0.0
+      pt: 0.0
+      z0: 0.0
+    out_of_range_fraction:
+      chi2_per_ndof: 0.6021944444444445
+      d0: 0.0010694444444444445
+      eta: 0.0
+      phi: 0.0
+      pt: 0.6936944444444444
+      z0: 0.0
+  total_tracks: 72000
+normalization_params:
+  means:
+  - 5.89633549503703
+  - 0.005514864845934453
+  - 0.018317323550744658
+  - -0.0024234024472242228
+  - 9.808573613941421
+  - 0.9205228646552586
+  stds:
+  - 19.504536378833684
+  - 1.3061504659001115
+  - 1.809138173407501
+  - 0.5918689240796255
+  - 39.117447032817545
+  - 0.32142537550689787
+run_numbers:
+- 00296939
+- 00296942
+selections:
+  chi2_per_ndof: !!python/tuple
+  - 0.0
+  - 3.0
+  eta: !!python/tuple
+  - -2.5
+  - 2.5
+shuffle_buffer: 10000
+test_fraction: 0.15
+train_fraction: 0.7
+validation_fraction: 0.15
