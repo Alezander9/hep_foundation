@@ -1,0 +1,13 @@
+architecture:
+  decoder_layers:
+  - 32
+  - 64
+  encoder_layers:
+  - 64
+  - 32
+  input_dim: 180
+  latent_dim: 3
+hyperparameters:
+  activation: relu
+  quant_bits: 8
+model_type: autoencoder

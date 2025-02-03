@@ -1,0 +1,19 @@
+batch_size: 1000
+event_selections: {}
+max_tracks_per_event: 30
+min_tracks_per_event: 3
+normalization_params: null
+run_numbers:
+- 00296939
+- 00296942
+shuffle_buffer: 10000
+test_fraction: 0.15
+track_selections:
+  chi2_per_ndof: !!python/tuple
+  - 0.0
+  - 3.0
+  eta: !!python/tuple
+  - -2.5
+  - 2.5
+train_fraction: 0.7
+validation_fraction: 0.15
