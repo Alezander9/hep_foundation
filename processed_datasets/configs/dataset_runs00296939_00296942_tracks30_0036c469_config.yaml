@@ -1,0 +1,34 @@
+atlas_version: 1.0.0
+config:
+  atlas_version: null
+  batch_size: 1000
+  catalog_limit: 1
+  creation_date: null
+  dataset_id: null
+  dataset_path: null
+  event_selections: {}
+  max_tracks_per_event: 30
+  min_tracks_per_event: 3
+  normalization_params: null
+  run_numbers:
+  - 00296939
+  - 00296942
+  shuffle_buffer: 10000
+  software_versions: null
+  test_fraction: 0.15
+  track_selections:
+    chi2_per_ndof: !!python/tuple
+    - 0.0
+    - 10.0
+    eta: !!python/tuple
+    - -2.5
+    - 2.5
+  train_fraction: 0.7
+  validation_fraction: 0.15
+creation_date: '2025-02-03 20:22:49.345197'
+dataset_id: dataset_runs00296939_00296942_tracks30_0036c469
+software_versions:
+  h5py: 3.12.1
+  numpy: 1.24.3
+  python: 3.9.21
+  tensorflow: 2.13.1

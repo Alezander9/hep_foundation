@@ -1,0 +1,9 @@
+numpy
+tensorflow
+qkeras
+uproot
+matplotlib
+tqdm
+psutil
+pyyaml
+requests

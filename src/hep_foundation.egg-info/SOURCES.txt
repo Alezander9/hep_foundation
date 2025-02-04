@@ -1,0 +1,17 @@
+README.md
+setup.py
+src/hep_foundation/__init__.py
+src/hep_foundation/atlas_data_manager.py
+src/hep_foundation/autoencoder.py
+src/hep_foundation/base_model.py
+src/hep_foundation/integrated_dataset_manager.py
+src/hep_foundation/model_factory.py
+src/hep_foundation/model_registry.py
+src/hep_foundation/model_trainer.py
+src/hep_foundation/selection_config.py
+src/hep_foundation/utils.py
+src/hep_foundation.egg-info/PKG-INFO
+src/hep_foundation.egg-info/SOURCES.txt
+src/hep_foundation.egg-info/dependency_links.txt
+src/hep_foundation.egg-info/requires.txt
+src/hep_foundation.egg-info/top_level.txt

@@ -1,0 +1,22 @@
+Metadata-Version: 2.1
+Name: hep_foundation
+Version: 0.1.0
+Summary: HEP Foundation Package for ML in High Energy Physics
+Author: Your Name
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Science/Research
+Classifier: Topic :: Scientific/Engineering :: Physics
+Classifier: Programming Language :: Python :: 3
+Requires-Python: >=3.7
+Description-Content-Type: text/markdown
+Requires-Dist: numpy
+Requires-Dist: tensorflow
+Requires-Dist: qkeras
+Requires-Dist: uproot
+Requires-Dist: matplotlib
+Requires-Dist: tqdm
+Requires-Dist: psutil
+Requires-Dist: pyyaml
+Requires-Dist: requests
+
+# HEP Foundation\n\nML tools for High Energy Physics analysis.
