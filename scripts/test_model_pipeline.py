@@ -39,63 +39,55 @@ def test_model_pipeline():
         print("Initializing model registry...")
         registry = ModelRegistry("experiments")
         
-        # 2. Setup Data Pipeline
+        # 2. Setup Data Pipeline with larger scale
         print("Setting up data pipeline...")
         data_manager = ProcessedDatasetManager()
 
         # Define selections
         track_selections = {
             'eta': (-2.5, 2.5),
-            'chi2_per_ndof': (0.0, 10.0),  # Increased upper bound
+            'chi2_per_ndof': (0.0, 10.0),
         }
 
-        event_selections = {}  # Remove event selections initially
+        event_selections = {}
 
-        # Add debug prints before creating datasets
-        print("\nSelection criteria:")
-        print(f"Track selections: {track_selections}")
-        print(f"Event selections: {event_selections}")
-
-        # Create datasets
+        # Create larger datasets
         train_dataset, val_dataset, test_dataset = data_manager.load_datasets(
             config={
-                'run_numbers': ["00296939", "00296942"],
+                'run_numbers': ["00296939", "00296942", "00297447"],  # Added one more run
                 'track_selections': track_selections,
                 'event_selections': event_selections,
-                'max_tracks_per_event': 30,
+                'max_tracks_per_event': 56,  # Increased to handle more tracks
                 'min_tracks_per_event': 3,
-                'catalog_limit': 1
+                'catalog_limit': 5  # Increased from 1 to 5
             },
             validation_fraction=0.15,
             test_fraction=0.15,
-            batch_size=1000,
-            shuffle_buffer=10000
+            batch_size=128,  # Reduced batch size to handle larger model
+            shuffle_buffer=50000  # Increased shuffle buffer for more data
         )
 
-        # After creating datasets, update the dataset config
+        # Update dataset config accordingly
         dataset_config = ensure_serializable({
-            # Basic configuration (used to create/identify dataset)
-            "run_numbers": ["00296939", "00296942"],
+            "run_numbers": ["00296939", "00296942", "00297447"],
             "track_selections": track_selections,
             "event_selections": event_selections,
-            "max_tracks_per_event": 30,
+            "max_tracks_per_event": 56,
             "min_tracks_per_event": 3,
-            "catalog_limit": 1,
+            "catalog_limit": 5,
             
-            # Dataset split configuration
             "train_fraction": 0.7,
             "validation_fraction": 0.15,
             "test_fraction": 0.15,
-            "batch_size": 1000,
-            "shuffle_buffer": 10000,
+            "batch_size": 128,
+            "shuffle_buffer": 50000,
             
-            # These will be filled in by the registry from dataset info
-            "dataset_id": None,  # Will be set by registry
-            "dataset_path": None,  # Will be set by registry
-            "creation_date": None,  # Will be set by registry
-            "atlas_version": None,  # Will be set by registry
-            "software_versions": None,  # Will be set by registry
-            "normalization_params": None,  # Will be set from dataset
+            "dataset_id": None,
+            "dataset_path": None,
+            "creation_date": None,
+            "atlas_version": None,
+            "software_versions": None,
+            "normalization_params": None,
         })
 
         # Add debug prints to verify dataset creation
@@ -112,21 +104,20 @@ def test_model_pipeline():
         except Exception as e:
             print(f"Error getting dataset info: {e}")
 
-        # When creating model config
+        # Scale up model architecture
         model_config = {
             'model_type': 'autoencoder',
-            'input_shape': (30, 6),  # Or get from dataset_config
+            'input_shape': (56, 6),  # Updated for more tracks
             'n_features': 6,
-            'max_tracks_per_event': 30,
-            'latent_dim': 16,
-            'encoder_layers': [128, 64],
-            'decoder_layers': [64, 128],
+            'max_tracks_per_event': 56,
+            'latent_dim': 32,  # Increased but still constrained
+            'encoder_layers': [512, 256, 128],  # Larger layers
+            'decoder_layers': [128, 256, 512],  # Symmetric architecture
             'quant_bits': 8,
             'activation': 'relu'
         }
     
-        
-        # Model config - nested version for registry
+        # Model config for registry
         model_config_registry = {
             "model_type": "autoencoder",
             "architecture": {
@@ -143,8 +134,8 @@ def test_model_pipeline():
         
         # Training config
         training_config = {
-            "batch_size": 1000,
-            "epochs": 5,
+            "batch_size": 128,
+            "epochs": 50,
             "learning_rate": 0.001,
             "early_stopping": {
                 "patience": 3,
