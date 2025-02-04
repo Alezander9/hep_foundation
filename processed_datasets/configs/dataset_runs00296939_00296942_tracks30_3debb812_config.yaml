@@ -1,23 +1,23 @@
-atlas_version: 1.0.0
+dataset_id: dataset_runs00296939_00296942_tracks30_3debb812
+creation_date: '2025-02-03 20:32:50.415725'
 config:
-  catalog_limit: 1
-  event_selections: {}
-  max_tracks_per_event: 30
-  min_tracks_per_event: 3
   run_numbers:
   - 00296939
   - 00296942
   track_selections:
-    chi2_per_ndof: !!python/tuple
-    - 0.0
-    - 10.0
-    eta: !!python/tuple
+    eta:
     - -2.5
     - 2.5
-creation_date: '2025-02-03 20:18:39.679373'
-dataset_id: dataset_runs00296939_00296942_tracks30_3debb812
+    chi2_per_ndof:
+    - 0.0
+    - 10.0
+  event_selections: {}
+  max_tracks_per_event: 30
+  min_tracks_per_event: 3
+  catalog_limit: 1
+atlas_version: 1.0.0
 software_versions:
-  h5py: 3.12.1
-  numpy: 1.24.3
   python: 3.9.21
+  numpy: 1.24.3
   tensorflow: 2.13.1
+  h5py: 3.12.1

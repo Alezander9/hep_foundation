@@ -146,10 +146,10 @@ class ModelRegistry:
         dataset_id, dataset_path = dataset_manager.create_dataset(dataset_config)
         dataset_info = dataset_manager.get_dataset_info(dataset_id)
         
-        # Add to dataset_config
+        # Add to dataset_config - Convert Path to string
         dataset_config.update({
             'dataset_id': dataset_id,
-            'dataset_path': str(dataset_path),
+            'dataset_path': str(dataset_path),  # Convert Path to string here
             'creation_date': dataset_info['creation_date'],
             'atlas_version': dataset_info['atlas_version'],
             'software_versions': dataset_info['software_versions']
@@ -193,12 +193,12 @@ class ModelRegistry:
                 run_numbers, track_selections, event_selections, max_tracks_per_event, min_tracks_per_event,
                 normalization_params, train_fraction, validation_fraction, test_fraction, batch_size, shuffle_buffer,
                 data_quality_metrics)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     experiment_id,
                     dataset_id,
-                    dataset_path,
+                    str(dataset_path),  # Make sure it's a string here too
                     dataset_info['creation_date'],
                     dataset_info['atlas_version'],
                     json.dumps(dataset_info['software_versions']),

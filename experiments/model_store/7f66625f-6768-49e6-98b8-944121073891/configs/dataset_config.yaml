@@ -1,4 +1,9 @@
+atlas_version: 1.0.0
 batch_size: 1000
+catalog_limit: 1
+creation_date: '2025-02-03 20:33:00.188210'
+dataset_id: dataset_runs00296939_00296942_tracks30_0036c469
+dataset_path: processed_datasets/datasets/dataset_runs00296939_00296942_tracks30_0036c469.h5
 event_selections: {}
 max_tracks_per_event: 30
 min_tracks_per_event: 3
@@ -7,11 +12,16 @@ run_numbers:
 - 00296939
 - 00296942
 shuffle_buffer: 10000
+software_versions:
+  h5py: 3.12.1
+  numpy: 1.24.3
+  python: 3.9.21
+  tensorflow: 2.13.1
 test_fraction: 0.15
 track_selections:
   chi2_per_ndof: !!python/tuple
   - 0.0
-  - 3.0
+  - 10.0
   eta: !!python/tuple
   - -2.5
   - 2.5
