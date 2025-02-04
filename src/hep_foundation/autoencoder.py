@@ -1,22 +1,23 @@
 from typing import List, Optional
 from tensorflow import keras
 from qkeras import QDense, QActivation, quantized_bits, quantized_relu
+import numpy as np
 
-from .base_model import BaseModel
+from hep_foundation.base_model import BaseModel
 
 class AutoEncoder(BaseModel):
     def __init__(
         self,
-        input_dim: int,
+        input_shape: tuple,
         latent_dim: int,
         encoder_layers: List[int],
         decoder_layers: List[int],
         quant_bits: Optional[int] = None,
         activation: str = 'relu',
-        name: str = 'autoencoder'
+        name: str = 'track_autoencoder'
     ):
         super().__init__()
-        self.input_dim = input_dim
+        self.input_shape = input_shape
         self.latent_dim = latent_dim
         self.encoder_layers = encoder_layers
         self.decoder_layers = decoder_layers
@@ -27,141 +28,84 @@ class AutoEncoder(BaseModel):
     def build(self, input_shape: tuple = None) -> None:
         """Build encoder and decoder networks"""
         if input_shape is None:
-            input_shape = (self.input_dim,)
-        
-        # Input layer
+            input_shape = self.input_shape
+            
+        # Input layer - now accepts 3D input (batch_size, n_tracks, n_features)
         inputs = keras.Input(shape=input_shape, name='input_layer')
         
+        # Flatten the input to combine tracks and features
+        x = keras.layers.Reshape((-1,))(inputs)  # Flatten to (batch_size, n_tracks * n_features)
+        
         # Create encoder layers
-        encoder_layers = []
         for i, units in enumerate(self.encoder_layers):
             if self.quant_bits:
                 # Dense layer
-                dense = QDense(
+                x = QDense(
                     units,
                     kernel_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
                     bias_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
                     name=f'encoder_dense_{i}'
-                )
-                encoder_layers.append(dense)
+                )(x)
                 
                 # Activation layer
-                activation = QActivation(
+                x = QActivation(
                     quantized_relu(self.quant_bits),
                     name=f'encoder_activation_{i}'
-                )
-                encoder_layers.append(activation)
+                )(x)
                 
                 # Batch normalization
-                batch_norm = keras.layers.BatchNormalization(
+                x = keras.layers.BatchNormalization(
                     name=f'encoder_bn_{i}'
-                )
-                encoder_layers.append(batch_norm)
+                )(x)
             else:
-                dense = keras.layers.Dense(
-                    units,
-                    name=f'encoder_dense_{i}'
-                )
-                encoder_layers.append(dense)
-                
-                activation = keras.layers.Activation(
-                    self.activation,
-                    name=f'encoder_activation_{i}'
-                )
-                encoder_layers.append(activation)
-                
-                batch_norm = keras.layers.BatchNormalization(
-                    name=f'encoder_bn_{i}'
-                )
-                encoder_layers.append(batch_norm)
+                x = keras.layers.Dense(units, name=f'encoder_dense_{i}')(x)
+                x = keras.layers.Activation(self.activation, name=f'encoder_activation_{i}')(x)
+                x = keras.layers.BatchNormalization(name=f'encoder_bn_{i}')(x)
         
-        # Create latent layer
+        # Latent layer
         if self.quant_bits:
-            latent_layer = QDense(
+            latent = QDense(
                 self.latent_dim,
                 kernel_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
                 bias_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
                 name='latent_layer'
-            )
+            )(x)
         else:
-            latent_layer = keras.layers.Dense(
-                self.latent_dim,
-                name='latent_layer'
-            )
-        
-        # Create decoder layers
-        decoder_layers = []
-        for i, units in enumerate(self.decoder_layers):
-            if self.quant_bits:
-                # Dense layer
-                dense = QDense(
-                    units,
-                    kernel_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                    bias_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                    name=f'decoder_dense_{i}'
-                )
-                decoder_layers.append(dense)
-                
-                # Activation layer
-                activation = QActivation(
-                    quantized_relu(self.quant_bits),
-                    name=f'decoder_activation_{i}'
-                )
-                decoder_layers.append(activation)
-                
-                # Batch normalization
-                batch_norm = keras.layers.BatchNormalization(
-                    name=f'decoder_bn_{i}'
-                )
-                decoder_layers.append(batch_norm)
-            else:
-                dense = keras.layers.Dense(
-                    units,
-                    name=f'decoder_dense_{i}'
-                )
-                decoder_layers.append(dense)
-                
-                activation = keras.layers.Activation(
-                    self.activation,
-                    name=f'decoder_activation_{i}'
-                )
-                decoder_layers.append(activation)
-                
-                batch_norm = keras.layers.BatchNormalization(
-                    name=f'decoder_bn_{i}'
-                )
-                decoder_layers.append(batch_norm)
-        
-        # Create output layer
-        if self.quant_bits:
-            output_layer = QDense(
-                self.input_dim,
-                kernel_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                bias_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                name='output_layer'
-            )
-        else:
-            output_layer = keras.layers.Dense(
-                self.input_dim,
-                name='output_layer'
-            )
-        
-        # Build the model by applying layers sequentially
-        # Encoder
-        x = inputs
-        for layer in encoder_layers:
-            x = layer(x)
-        
-        # Latent space
-        latent = latent_layer(x)
+            latent = keras.layers.Dense(self.latent_dim, name='latent_layer')(x)
         
         # Decoder
         x = latent
-        for layer in decoder_layers:
-            x = layer(x)
+        for i, units in enumerate(self.decoder_layers):
+            if self.quant_bits:
+                x = QDense(
+                    units,
+                    kernel_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
+                    bias_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
+                    name=f'decoder_dense_{i}'
+                )(x)
+                x = QActivation(
+                    quantized_relu(self.quant_bits),
+                    name=f'decoder_activation_{i}'
+                )(x)
+                x = keras.layers.BatchNormalization(name=f'decoder_bn_{i}')(x)
+            else:
+                x = keras.layers.Dense(units, name=f'decoder_dense_{i}')(x)
+                x = keras.layers.Activation(self.activation, name=f'decoder_activation_{i}')(x)
+                x = keras.layers.BatchNormalization(name=f'decoder_bn_{i}')(x)
         
-        # Output
-        outputs = output_layer(x)
+        # Output layer - reshape back to original dimensions
+        if self.quant_bits:
+            x = QDense(
+                np.prod(input_shape),  # Multiply dimensions to get total size
+                kernel_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
+                bias_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
+                name='output_dense'
+            )(x)
+        else:
+            x = keras.layers.Dense(np.prod(input_shape), name='output_dense')(x)
+            
+        # Reshape back to 3D
+        outputs = keras.layers.Reshape(input_shape, name='output_reshape')(x)
         
         # Create model
         self.model = keras.Model(inputs=inputs, outputs=outputs, name=self.name)
@@ -173,7 +117,7 @@ class AutoEncoder(BaseModel):
     def get_config(self) -> dict:
         return {
             "model_type": "autoencoder",
-            "input_dim": self.input_dim,
+            "input_shape": self.input_shape,
             "latent_dim": self.latent_dim,
             "encoder_layers": self.encoder_layers,
             "decoder_layers": self.decoder_layers,

@@ -1,13 +1,13 @@
 atlas_version: 1.0.0
 batch_size: 1000
 catalog_limit: 1
-creation_date: '2025-02-03 20:33:00.188210'
+creation_date: '2025-02-03 21:55:09.251168'
 dataset_id: dataset_runs00296939_00296942_tracks30_0036c469
 dataset_path: processed_datasets/datasets/dataset_runs00296939_00296942_tracks30_0036c469.h5
 event_selections: {}
 max_tracks_per_event: 30
 min_tracks_per_event: 3
-normalization_params: null
+normalization_params:
 run_numbers:
 - 00296939
 - 00296942

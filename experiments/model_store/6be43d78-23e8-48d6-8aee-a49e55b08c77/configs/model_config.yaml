@@ -1,12 +1,12 @@
 architecture:
   decoder_layers:
-  - 32
   - 64
+  - 128
   encoder_layers:
+  - 128
   - 64
-  - 32
-  input_dim: 180
-  latent_dim: 3
+  input_dim: 30
+  latent_dim: 16
 hyperparameters:
   activation: relu
   quant_bits: 8

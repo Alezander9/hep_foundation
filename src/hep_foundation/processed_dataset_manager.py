@@ -278,6 +278,33 @@ class ProcessedDatasetManager:
             val_dataset = remaining.take(val_size).batch(batch_size).prefetch(tf.data.AUTOTUNE)
             test_dataset = remaining.skip(val_size).batch(batch_size).prefetch(tf.data.AUTOTUNE)
             
+            # After creating datasets, add validation
+            print("\nValidating datasets:")
+            for name, dataset in [("Training", train_dataset), 
+                                 ("Validation", val_dataset), 
+                                 ("Test", test_dataset)]:
+                # Check shapes
+                for batch in dataset.take(1):
+                    print(f"{name} dataset:")
+                    print(f"  Batch shape: {batch.shape}")
+                    print(f"  Data type: {batch.dtype}")
+                    print(f"  Value range: [{tf.reduce_min(batch):.3f}, {tf.reduce_max(batch):.3f}]")
+                    print(f"  Mean: {tf.reduce_mean(batch):.3f}")
+                    print(f"  Std: {tf.math.reduce_std(batch):.3f}")
+            
+            # After creating splits
+            print("\nDataset sizes:")
+            total_events = 0
+            for name, dataset in [("Training", train_dataset), 
+                                 ("Validation", val_dataset), 
+                                 ("Test", test_dataset)]:
+                n_batches = sum(1 for _ in dataset)
+                n_events = n_batches * batch_size
+                total_events += n_events
+                print(f"{name}: {n_events} events ({n_batches} batches)")
+            
+            print(f"Total events in datasets: {total_events}")
+            
             return train_dataset, val_dataset, test_dataset
             
         except Exception as e:
@@ -431,4 +458,31 @@ class ProcessedDatasetManager:
             'processed_events': int(stats['processed_events']),
             'total_tracks': int(stats['total_tracks']),
             'processing_time': float(stats['processing_time'])
-        } 
+        }
+
+    def _validate_feature_distributions(self, dataset: tf.data.Dataset) -> Dict:
+        """Compute basic statistics for each feature"""
+        # Collect sample for statistics
+        samples = []
+        for batch in dataset.take(10):  # Take 10 batches
+            samples.append(batch)
+        samples = tf.concat(samples, axis=0)
+        
+        # Compute per-feature statistics
+        features = ['pt', 'eta', 'phi', 'd0', 'z0', 'chi2_per_ndof']
+        stats = {}
+        for i, feature in enumerate(features):
+            feature_data = samples[:, :, i]
+            # Mask zero-padded values
+            mask = feature_data != 0
+            masked_data = tf.boolean_mask(feature_data, mask)
+            
+            stats[feature] = {
+                'min': float(tf.reduce_min(masked_data)),
+                'max': float(tf.reduce_max(masked_data)),
+                'mean': float(tf.reduce_mean(masked_data)),
+                'std': float(tf.reduce_std(masked_data)),
+                'zeros': float(tf.reduce_mean(tf.cast(~mask, tf.float32)))  # padding fraction
+            }
+        
+        return stats 

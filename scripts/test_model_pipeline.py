@@ -112,16 +112,17 @@ def test_model_pipeline():
         except Exception as e:
             print(f"Error getting dataset info: {e}")
 
-        # The model configuration also needs to be updated to reflect the fixed input size
-        model_config_flat = {
-            "model_type": "autoencoder",
-            "input_dim": 30 * 6,
-            "latent_dim": 3,
-            "encoder_layers": [64, 32],
-            "decoder_layers": [32, 64],
-            "quant_bits": 8,
-            "activation": "relu",
-            "name": "track_autoencoder"
+        # When creating model config
+        model_config = {
+            'model_type': 'autoencoder',
+            'input_shape': (30, 6),  # Or get from dataset_config
+            'n_features': 6,
+            'max_tracks_per_event': 30,
+            'latent_dim': 16,
+            'encoder_layers': [128, 64],
+            'decoder_layers': [64, 128],
+            'quant_bits': 8,
+            'activation': 'relu'
         }
     
         
@@ -129,21 +130,21 @@ def test_model_pipeline():
         model_config_registry = {
             "model_type": "autoencoder",
             "architecture": {
-                "input_dim": model_config_flat["input_dim"],
-                "latent_dim": model_config_flat["latent_dim"],
-                "encoder_layers": model_config_flat["encoder_layers"],
-                "decoder_layers": model_config_flat["decoder_layers"]
+                "input_dim": model_config['input_shape'][0],
+                "latent_dim": model_config['latent_dim'],
+                "encoder_layers": model_config['encoder_layers'],
+                "decoder_layers": model_config['decoder_layers']
             },
             "hyperparameters": {
-                "activation": model_config_flat["activation"],
-                "quant_bits": model_config_flat["quant_bits"]
+                "activation": model_config['activation'],
+                "quant_bits": model_config['quant_bits']
             }
         }
         
         # Training config
         training_config = {
             "batch_size": 1000,
-            "epochs": 50,
+            "epochs": 5,
             "learning_rate": 0.001,
             "early_stopping": {
                 "patience": 3,
@@ -167,12 +168,12 @@ def test_model_pipeline():
         try:
             model = ModelFactory.create_model(
                 model_type="autoencoder",
-                config=model_config_flat
+                config=model_config
             )
-            model.build(input_shape=(6,))
+            model.build()
         except Exception as e:
             print(f"Model creation failed: {str(e)}")
-            print(f"Model config used: {json.dumps(model_config_flat, indent=2)}")
+            print(f"Model config used: {json.dumps(model_config, indent=2)}")
             raise
         
         # 6. Setup Training
@@ -240,28 +241,39 @@ def test_model_pipeline():
         # 8. Evaluate Model
         print("Evaluating model...")
         test_results = trainer.evaluate(test_dataset)
-        
-        # Record final results
+        print(f"Test results: {test_results}")  # Add debug print
+
+        # After evaluation
+        print("\nCollecting all metrics...")
+        all_metrics = {
+            **training_results['metrics'],  # Training metrics
+            **test_results,                 # Test metrics
+            'training_duration': (training_end_time - training_start_time).total_seconds()
+        }
+
+        print("\nFinal metrics collected:")
+        for metric, value in all_metrics.items():
+            print(f"  {metric}: {value:.6f}")
+
         registry.complete_training(
             experiment_id=experiment_id,
-            final_metrics=ensure_serializable({
-                **training_results,
-                **test_results,
-                'test_loss': test_results['loss'],
-                'training_duration': (training_end_time - training_start_time).total_seconds()
-            })
+            final_metrics=ensure_serializable(all_metrics)
         )
         
         # 9. Save Model
         print("Saving model checkpoint...")
+        checkpoint_metadata = {
+            "test_loss": test_results.get('loss', 0.0),
+            "test_mse": test_results.get('mse', 0.0),
+            "final_train_loss": training_results.get('final_loss', 0.0),
+            "final_val_loss": training_results.get('final_val_loss', 0.0)
+        }
+
         registry.save_checkpoint(
             experiment_id=experiment_id,
             models={"autoencoder": model.model},
             checkpoint_name="final",
-            metadata=ensure_serializable({
-                "test_loss": test_results['loss'],
-                "final_train_loss": training_results['final_loss']
-            })
+            metadata=ensure_serializable(checkpoint_metadata)
         )
         
         # 10. Display Results
@@ -303,15 +315,20 @@ def test_model_pipeline():
         # 11. Visualize Results
         if True:  # Change to control visualization
             plt.figure(figsize=(12, 6))
-            history = performance['metric_progression']
-            plt.plot(history['loss'], label='Training Loss')
-            plt.plot(history['val_loss'], label='Validation Loss')
-            plt.xlabel('Epoch')
-            plt.ylabel('Loss')
-            plt.title('Training History')
-            plt.legend()
-            plt.grid(True)
-            plt.show()
+            history = performance.get('metric_progression', {})
+            
+            # Add safety checks
+            if 'loss' in history and 'val_loss' in history:
+                plt.plot(history['loss'], label='Training Loss')
+                plt.plot(history['val_loss'], label='Validation Loss')
+                plt.xlabel('Epoch')
+                plt.ylabel('Loss')
+                plt.title('Training History')
+                plt.legend()
+                plt.grid(True)
+                plt.show()
+            else:
+                print("Warning: Training history metrics not available for plotting")
         
         print("Pipeline test completed successfully")
 

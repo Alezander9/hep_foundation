@@ -89,6 +89,7 @@ class ModelRegistry:
                     training_history JSON,
                     final_metrics JSON,
                     hardware_metrics JSON,
+                    status TEXT,
                     FOREIGN KEY(experiment_id) REFERENCES experiments(experiment_id)
                 )
             """)
@@ -236,8 +237,8 @@ class ModelRegistry:
             conn.execute(
                 """
                 INSERT INTO training_info
-                (experiment_id, config, start_time, epochs_completed, training_history, final_metrics)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (experiment_id, config, start_time, epochs_completed, training_history, final_metrics, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     experiment_id,
@@ -245,7 +246,8 @@ class ModelRegistry:
                     None,
                     0,
                     "{}",
-                    "{}"
+                    "{}",
+                    "initialized"
                 )
             )
         
@@ -303,23 +305,34 @@ class ModelRegistry:
             
             conn.execute(update_sql, list(updates.values()) + [experiment_id])
             
-    def complete_training(self,
-                         experiment_id: str,
-                         final_metrics: Dict[str, float]):
-        """Mark training as complete and save final metrics"""
+    def complete_training(self, experiment_id: str, final_metrics: Dict):
+        """Record final training results"""
+        # Ensure required metrics exist with defaults
+        metrics = {
+            'loss': 0.0,
+            'val_loss': 0.0,
+            'test_loss': 0.0,
+            'training_duration': 0.0,
+            **final_metrics  # Override defaults with actual values
+        }
+        
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
                 UPDATE training_info 
-                SET end_time = ?, final_metrics = ?
+                SET final_metrics = ?, status = 'completed'
                 WHERE experiment_id = ?
                 """,
-                (datetime.now(), json.dumps(final_metrics), experiment_id)
+                (json.dumps(metrics), experiment_id)
             )
             
             conn.execute(
-                "UPDATE experiments SET status = ? WHERE experiment_id = ?",
-                ("completed", experiment_id)
+                """
+                UPDATE experiments 
+                SET status = 'completed'
+                WHERE experiment_id = ?
+                """,
+                (experiment_id,)
             )
 
     def save_checkpoint(self, 
@@ -413,5 +426,134 @@ class ModelRegistry:
     #         for model_name in metadata["saved_models"]
     #         if (checkpoint_path / model_name).exists()
     #     }
+
+    def get_experiment_details(self, experiment_id: str) -> Dict:
+        """Get full experiment details including dataset, model, and training configs"""
+        with sqlite3.connect(self.db_path) as conn:
+            # Get experiment info
+            cursor = conn.execute(
+                """
+                SELECT timestamp, name, description, status, environment_info
+                FROM experiments WHERE experiment_id = ?
+                """, 
+                (experiment_id,)
+            )
+            exp_row = cursor.fetchone()
+            if exp_row is None:
+                raise ValueError(f"No experiment found with ID {experiment_id}")
+            
+            # Get dataset config - use column names explicitly
+            cursor = conn.execute(
+                """
+                SELECT dataset_id, dataset_path, creation_date, atlas_version, 
+                       software_versions, run_numbers, track_selections, event_selections
+                FROM dataset_configs WHERE experiment_id = ?
+                """,
+                (experiment_id,)
+            )
+            dataset_row = cursor.fetchone()
+            
+            # Get model config - use column names explicitly
+            cursor = conn.execute(
+                """
+                SELECT model_type, architecture, hyperparameters 
+                FROM model_configs WHERE experiment_id = ?
+                """,
+                (experiment_id,)
+            )
+            model_row = cursor.fetchone()
+            
+            # Get training info - use column names explicitly
+            cursor = conn.execute(
+                """
+                SELECT config, epochs_completed, training_history, final_metrics 
+                FROM training_info WHERE experiment_id = ?
+                """,
+                (experiment_id,)
+            )
+            training_row = cursor.fetchone()
+            
+            # Safely decode JSON with defaults
+            def safe_json_decode(json_str, default=None):
+                if json_str is None:
+                    return default
+                try:
+                    return json.loads(json_str)
+                except json.JSONDecodeError:
+                    return default
+            
+            return {
+                'experiment_info': {
+                    'experiment_id': experiment_id,
+                    'timestamp': exp_row[0],
+                    'name': exp_row[1],
+                    'description': exp_row[2],
+                    'status': exp_row[3],
+                    'environment_info': safe_json_decode(exp_row[4], {})
+                },
+                'dataset_config': {
+                    'dataset_id': dataset_row[0] if dataset_row else None,
+                    'dataset_path': dataset_row[1] if dataset_row else None,
+                    'creation_date': dataset_row[2] if dataset_row else None,
+                    'atlas_version': dataset_row[3] if dataset_row else None,
+                    'software_versions': safe_json_decode(dataset_row[4], {}) if dataset_row else {},
+                    'run_numbers': safe_json_decode(dataset_row[5], []) if dataset_row else [],
+                    'track_selections': safe_json_decode(dataset_row[6], {}) if dataset_row else {},
+                    'event_selections': safe_json_decode(dataset_row[7], {}) if dataset_row else {}
+                } if dataset_row else None,
+                'model_config': {
+                    'model_type': model_row[0] if model_row else None,
+                    'architecture': safe_json_decode(model_row[1], {}) if model_row else {},
+                    'hyperparameters': safe_json_decode(model_row[2], {}) if model_row else {}
+                } if model_row else None,
+                'training_info': {
+                    'config': safe_json_decode(training_row[0], {}) if training_row else {},
+                    'epochs_completed': training_row[1] if training_row else 0,
+                    'training_history': safe_json_decode(training_row[2], {}) if training_row else {},
+                    'final_metrics': safe_json_decode(training_row[3], {}) if training_row else {}
+                } if training_row else None
+            }
+
+    def get_performance_summary(self, experiment_id: str) -> Dict:
+        """Get summary of model performance metrics"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT epochs_completed, training_history, final_metrics FROM training_info WHERE experiment_id = ?",
+                (experiment_id,)
+            )
+            row = cursor.fetchone()
+            if row is None:
+                raise ValueError(f"No training info found for experiment {experiment_id}")
+            
+            # Use safe_json_decode for metrics
+            def safe_json_decode(json_str, default=None):
+                if json_str is None:
+                    return default
+                try:
+                    return json.loads(json_str)
+                except json.JSONDecodeError:
+                    return default
+            
+            # Reorganize history by metric name instead of by epoch
+            history_by_epoch = safe_json_decode(row[1], {})
+            history_by_metric = {}
+            
+            # Convert epoch-based history to metric-based history
+            for epoch, metrics in history_by_epoch.items():
+                for metric_name, value in metrics.items():
+                    if metric_name not in history_by_metric:
+                        history_by_metric[metric_name] = []
+                    history_by_metric[metric_name].append(value)
+            
+            return {
+                'epochs_completed': row[0],
+                'metric_progression': history_by_metric,
+                'final_metrics': safe_json_decode(row[2], {
+                    'loss': 0.0,
+                    'val_loss': 0.0,
+                    'test_loss': 0.0,
+                    'training_duration': 0.0
+                })
+            }
 
    

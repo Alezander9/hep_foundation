@@ -7,15 +7,22 @@ class ModelFactory:
     def create_model(model_type: str, config: dict) -> BaseModel:
         if model_type == "autoencoder":
             config_copy = config.copy()
-            config_copy.pop('model_type', None)  # Remove model_type key
+            config_copy.pop('model_type', None)
+            
+            # Get input shape from config or dataset parameters
+            input_shape = config.get('input_shape') or (
+                config['max_tracks_per_event'],
+                config['n_features']  # We should specify this in config
+            )
+            
             return AutoEncoder(
-                input_dim=config['input_dim'],
+                input_shape=input_shape,
                 latent_dim=config['latent_dim'],
                 encoder_layers=config['encoder_layers'],
                 decoder_layers=config['decoder_layers'],
                 quant_bits=config.get('quant_bits', None),
                 activation=config.get('activation', 'relu'),
-                name=config.get('name', 'autoencoder')
+                name=config.get('name', 'track_autoencoder')
             )
         else:
             raise ValueError(f"Unknown model type: {model_type}")
