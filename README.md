@@ -5,7 +5,7 @@ ML tools for High Energy Physics analysis, focusing on ATLAS PHYSLITE data proce
 ## Quick Start
 ```bash
 Clone repository
-git clone https://github.com/yourusername/hep_foundation.git
+git clone https://github.com/Alezander9/hep_foundation
 cd hep_foundation
 Create and activate virtual environment
 python -m venv venv
@@ -57,6 +57,7 @@ python scripts/test_model_pipeline.py
 - `src/hep_foundation/`: Core package code
 - `scripts/`: Example scripts and tests
 - `experiments/`: Output directory for model registry and results
+- `processed_datasets/`: Storage for processed datasets
 
 ## Dependencies
 Core requirements are handled by setup.py. For development:
