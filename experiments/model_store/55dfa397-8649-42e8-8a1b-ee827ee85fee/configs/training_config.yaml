@@ -1,6 +1,0 @@
-batch_size: 128
-early_stopping:
-  min_delta: 0.0001
-  patience: 3
-epochs: 5
-learning_rate: 0.001

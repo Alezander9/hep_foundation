@@ -41,7 +41,10 @@ class ProcessedDatasetManager:
         run_str = '_'.join(str(run) for run in sorted(config['run_numbers']))
         # Add a short hash for uniqueness
         config_hash = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()[:8]
-        return f"dataset_runs{run_str}_tracks{config['max_tracks_per_event']}_{config_hash}"
+        dataset_id = f"dataset_runs{run_str}_tracks{config['max_tracks_per_event']}_{config_hash}"
+        print(f"\nGenerated dataset ID: {dataset_id}")  # Debug print
+        print(f"From config: {json.dumps(config, indent=2)}")  # Debug print
+        return dataset_id
     
     def save_dataset_config(self, dataset_id: str, config: Dict):
         """Save full dataset configuration"""
@@ -68,7 +71,9 @@ class ProcessedDatasetManager:
     def get_dataset_info(self, dataset_id: str) -> Dict:
         """Get full dataset information including recreation parameters"""
         config_path = self.configs_dir / f"{dataset_id}_config.yaml"
+        print(f"\nLooking for config at: {config_path}")  # Debug print
         if not config_path.exists():
+            print(f"Available configs: {list(self.configs_dir.glob('*.yaml'))}")  # Debug print
             raise ValueError(f"No configuration found for dataset {dataset_id}")
             
         return ConfigSerializer.from_yaml(config_path)
@@ -215,38 +220,32 @@ class ProcessedDatasetManager:
                      plot_distributions: bool = False) -> Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
         """Load and split dataset into train/val/test"""
         try:
+            # Ensure config is properly formatted
+            config = {
+                'run_numbers': config['run_numbers'],
+                'track_selections': config['track_selections'],
+                'event_selections': config.get('event_selections', {}),
+                'max_tracks_per_event': config['max_tracks_per_event'],
+                'min_tracks_per_event': config.get('min_tracks_per_event', 1),
+                'catalog_limit': config.get('catalog_limit', None)
+            }
+            
             # Generate dataset ID
             dataset_id = self.generate_dataset_id(config)
             dataset_path = self.datasets_dir / f"{dataset_id}.h5"
+            
+            # Check if dataset exists, if not create it
+            if not dataset_path.exists():
+                print(f"\nDataset not found, creating new dataset: {dataset_id}")
+                dataset_id, dataset_path = self._create_dataset(
+                    config=config,
+                    plot_distributions=plot_distributions
+                )
             
             # Set current dataset tracking
             self.current_dataset_id = dataset_id
             self.current_dataset_path = dataset_path
             self.current_dataset_info = self.get_dataset_info(dataset_id)
-            
-            # Check if dataset exists
-            if dataset_path.exists():
-                # Verify the existing file is valid
-                if plot_distributions:
-                    print("Recreating dataset to generate plots...")
-                    self._create_dataset(config, plot_distributions)
-                else:
-                    print(f"Loading existing dataset: {dataset_path}")
-                    try:
-                        with h5py.File(dataset_path, 'r') as f:
-                            required_attrs = ['config', 'creation_date', 'normalization_params', 'dataset_id']
-                            if all(attr in f.attrs for attr in required_attrs):
-                                print(f"Loading existing dataset: {dataset_path}")
-                            else:
-                                print(f"Existing dataset file is incomplete. Creating new dataset...")
-                                dataset_id, dataset_path = self.create_dataset(config, plot_distributions)
-                    except Exception as e:
-                        print(f"Error reading existing dataset: {e}")
-                        print("Creating new dataset...")
-                        dataset_id, dataset_path = self.create_dataset(config, plot_distributions)
-            else:
-                print("Dataset does not exist yet, creating it...")
-                dataset_id, dataset_path = self.create_dataset(config, plot_distributions)
             
             # Load and process dataset
             with h5py.File(dataset_path, 'r') as f:

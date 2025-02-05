@@ -3,8 +3,9 @@ from datetime import datetime
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from pathlib import Path
+from dataclasses import dataclass
 
 from hep_foundation.utils import ATLAS_RUN_NUMBERS
 from hep_foundation.model_registry import ModelRegistry
@@ -12,74 +13,88 @@ from hep_foundation.model_factory import ModelFactory
 from hep_foundation.model_trainer import ModelTrainer
 from hep_foundation.processed_dataset_manager import ProcessedDatasetManager 
 
+@dataclass
+class DatasetConfig:
+    """Configuration for dataset processing"""
+    run_numbers: List[str]
+    catalog_limit: int
+    track_selections: Dict
+    event_selections: Dict
+    max_tracks: int
+    min_tracks: int
+    validation_fraction: float
+    test_fraction: float
+    batch_size: int
+    shuffle_buffer: int
+    plot_distributions: bool
+
+    def validate(self) -> None:
+        """Validate dataset configuration parameters"""
+        if not self.run_numbers:
+            raise ValueError("run_numbers cannot be empty")
+        if self.catalog_limit < 1:
+            raise ValueError("catalog_limit must be positive")
+        if self.max_tracks < self.min_tracks:
+            raise ValueError("max_tracks must be greater than min_tracks")
+        if not 0 <= self.validation_fraction + self.test_fraction < 1:
+            raise ValueError("Sum of validation and test fractions must be less than 1")
+
+@dataclass
+class ModelConfig:
+    """Configuration for model architecture and training"""
+    model_type: str
+    latent_dim: int
+    encoder_layers: List[int]
+    decoder_layers: List[int]
+    quant_bits: Optional[int]
+    activation: str
+    learning_rate: float
+    epochs: int
+    early_stopping_patience: int
+    early_stopping_min_delta: float
+    plot_training: bool
+    # VAE-specific parameters
+    beta_schedule: Optional[Dict] = None
+
+    def validate(self) -> None:
+        """Validate model configuration parameters"""
+        valid_types = ["autoencoder", "variational_autoencoder"]
+        if self.model_type not in valid_types:
+            raise ValueError(f"model_type must be one of {valid_types}")
+        
+        if self.latent_dim < 1:
+            raise ValueError("latent_dim must be positive")
+            
+        if not self.encoder_layers or not self.decoder_layers:
+            raise ValueError("encoder_layers and decoder_layers cannot be empty")
+            
+        if self.model_type == "variational_autoencoder":
+            if not self.beta_schedule:
+                raise ValueError("beta_schedule required for VAE")
+            required_beta_fields = ["start", "end", "warmup_epochs", "cycle_epochs"]
+            missing = [f for f in required_beta_fields if f not in self.beta_schedule]
+            if missing:
+                raise ValueError(f"beta_schedule missing required fields: {missing}")
+
 def test_model_pipeline(
-    # Dataset parameters
-    run_numbers: list = ATLAS_RUN_NUMBERS[0:2],
-    catalog_limit: int = 5,
-    
-    # Track selection parameters
-    track_selections: Dict = {
-        'eta': (-2.5, 2.5),
-        'chi2_per_ndof': (0.0, 10.0),
-    },
-    event_selections: Dict = {},
-    max_tracks: int = 56,
-    min_tracks: int = 3,
-    
-    # Dataset processing parameters
-    validation_fraction: float = 0.15,
-    test_fraction: float = 0.15,
-    batch_size: int = 128,
-    shuffle_buffer: int = 50000,
-    plot_distributions: bool = True,
-    
-    # Model architecture parameters
-    latent_dim: int = 32,
-    encoder_layers: List[int] = [512, 256, 128],
-    decoder_layers: List[int] = [128, 256, 512],
-    quant_bits: int = 8,
-    activation: str = 'relu',
-    
-    # Training parameters
-    epochs: int = 50,
-    learning_rate: float = 0.001,
-    early_stopping_patience: int = 3,
-    early_stopping_min_delta: float = 1e-4,
-    plot_training: bool = True,
-    
-    # Experiment parameters
-    experiment_name: str = "autoencoder_test",
-    experiment_description: str = "Testing autoencoder on track data with enhanced monitoring"
+    dataset_config: DatasetConfig,
+    model_config: ModelConfig,
+    experiment_name: str,
+    experiment_description: str
 ) -> bool:
     """
-    Test the complete model pipeline with configurable parameters
+    Test the complete model pipeline with configuration objects
     
     Args:
-        run_numbers: List of ATLAS run numbers to process
-        catalog_limit: Maximum number of catalogs to process per run
-        track_selections: Selection criteria for individual tracks
-        event_selections: Selection criteria for entire events
-        max_tracks: Maximum number of tracks per event
-        min_tracks: Minimum number of tracks per event
-        validation_fraction: Fraction of data for validation
-        test_fraction: Fraction of data for testing
-        batch_size: Training batch size
-        shuffle_buffer: Size of shuffle buffer
-        plot_distributions: Whether to create distribution plots
-        latent_dim: Dimension of latent space
-        encoder_layers: List of layer sizes for encoder
-        decoder_layers: List of layer sizes for decoder
-        quant_bits: Number of bits for quantization
-        activation: Activation function to use
-        epochs: Number of training epochs
-        learning_rate: Training learning rate
-        early_stopping_patience: Patience for early stopping
-        early_stopping_min_delta: Minimum delta for early stopping
-        plot_training: Whether to plot training progress
+        dataset_config: Configuration for dataset processing
+        model_config: Configuration for model architecture and training
         experiment_name: Name for the experiment
         experiment_description: Description of the experiment
     """
-    
+    # Validate configurations
+    dataset_config.validate()
+    model_config.validate()
+
     print("\n" + "="*50)
     print("Starting Model Pipeline Test")
     print("="*50)
@@ -110,72 +125,61 @@ def test_model_pipeline(
         print("Setting up data pipeline...")
         train_dataset, val_dataset, test_dataset = data_manager.load_datasets(
             config={
-                'run_numbers': run_numbers,
-                'track_selections': track_selections,
-                'event_selections': event_selections,
-                'max_tracks_per_event': max_tracks,
-                'min_tracks_per_event': min_tracks,
-                'catalog_limit': catalog_limit
+                'run_numbers': dataset_config.run_numbers,
+                'track_selections': dataset_config.track_selections,
+                'event_selections': dataset_config.event_selections,
+                'max_tracks_per_event': dataset_config.max_tracks,
+                'min_tracks_per_event': dataset_config.min_tracks,
+                'catalog_limit': dataset_config.catalog_limit
             },
-            validation_fraction=validation_fraction,
-            test_fraction=test_fraction,
-            batch_size=batch_size,
-            shuffle_buffer=shuffle_buffer,
-            plot_distributions=plot_distributions
+            validation_fraction=dataset_config.validation_fraction,
+            test_fraction=dataset_config.test_fraction,
+            batch_size=dataset_config.batch_size,
+            shuffle_buffer=dataset_config.shuffle_buffer,
+            plot_distributions=dataset_config.plot_distributions
         )
         
-        # Prepare configs for registry
-        dataset_config = {
-            "run_numbers": run_numbers,
-            "track_selections": track_selections,
-            "event_selections": event_selections,
-            "max_tracks_per_event": max_tracks,
-            "min_tracks_per_event": min_tracks,
-            "catalog_limit": catalog_limit,
-            "train_fraction": 1.0 - (validation_fraction + test_fraction),
-            "validation_fraction": validation_fraction,
-            "test_fraction": test_fraction,
-            "batch_size": batch_size,
-            "shuffle_buffer": shuffle_buffer
+        # 3. Prepare configs for registry
+        model_config_dict = {
+            'input_shape': (dataset_config.max_tracks, 6),
+            'latent_dim': model_config.latent_dim,
+            'encoder_layers': model_config.encoder_layers,
+            'decoder_layers': model_config.decoder_layers,
+            'quant_bits': model_config.quant_bits,
+            'activation': model_config.activation
         }
         
-        model_config = {
-            'model_type': 'autoencoder',
-            'input_shape': (max_tracks, 6),
-            'n_features': 6,
-            'max_tracks_per_event': max_tracks,
-            'latent_dim': latent_dim,
-            'encoder_layers': encoder_layers,
-            'decoder_layers': decoder_layers,
-            'quant_bits': quant_bits,
-            'activation': activation
-        }
+        # Add VAE-specific parameters if needed
+        if model_config.model_type == "variational_autoencoder":
+            model_config_dict['beta_schedule'] = model_config.beta_schedule
         
         model_config_registry = {
-            "model_type": "autoencoder",
+            "model_type": model_config.model_type,
             "architecture": {
-                "input_dim": max_tracks,
-                "latent_dim": latent_dim,
-                "encoder_layers": encoder_layers,
-                "decoder_layers": decoder_layers
+                "input_dim": dataset_config.max_tracks,
+                "latent_dim": model_config.latent_dim,
+                "encoder_layers": model_config.encoder_layers,
+                "decoder_layers": model_config.decoder_layers
             },
             "hyperparameters": {
-                "activation": activation,
-                "quant_bits": quant_bits
+                "activation": model_config.activation,
+                "quant_bits": model_config.quant_bits,
+                **({"beta_schedule": model_config.beta_schedule} 
+                   if model_config.model_type == "variational_autoencoder" else {})
             }
         }
         
         training_config = {
-            "batch_size": batch_size,
-            "epochs": epochs,
-            "learning_rate": learning_rate,
+            "batch_size": dataset_config.batch_size,
+            "epochs": model_config.epochs,
+            "learning_rate": model_config.learning_rate,
             "early_stopping": {
-                "patience": early_stopping_patience,
-                "min_delta": early_stopping_min_delta
+                "patience": model_config.early_stopping_patience,
+                "min_delta": model_config.early_stopping_min_delta
             }
         }
         
-        # 3. Register experiment with existing dataset
+        # 4. Register experiment with existing dataset
         print("Registering experiment...")
         experiment_id = registry.register_experiment(
             name=experiment_name,
@@ -190,13 +194,13 @@ def test_model_pipeline(
         print("Creating model...")
         try:
             model = ModelFactory.create_model(
-                model_type="autoencoder",
-                config=model_config
+                model_type=model_config.model_type,
+                config=model_config_dict
             )
             model.build()
         except Exception as e:
             print(f"Model creation failed: {str(e)}")
-            print(f"Model config used: {json.dumps(model_config, indent=2)}")
+            print(f"Model config used: {json.dumps(model_config_dict, indent=2)}")
             raise
         
         # 6. Setup Training
@@ -251,7 +255,7 @@ def test_model_pipeline(
                 dataset=train_dataset,
                 validation_data=val_dataset,
                 callbacks=callbacks,
-                plot_training=plot_training,
+                plot_training=model_config.plot_training,
                 plots_dir=Path(f"experiments/plots/{experiment_id}")  # Save plots with experiment
             )
             training_end_time = datetime.now()
@@ -365,36 +369,73 @@ def test_model_pipeline(
         raise
 
 def main():
-    """Main function with parameter configuration"""
+    """Main function serving as control panel for experiments"""
+    
+    # Choose experiment type
+    MODEL_TYPE = "vae"  # "vae" or "autoencoder"
+    
+    # Dataset configuration - common for both models
+    dataset_config = DatasetConfig(
+        run_numbers=ATLAS_RUN_NUMBERS[0:2],
+        catalog_limit=1,
+        track_selections={
+            'eta': (-2.5, 2.5),
+            'chi2_per_ndof': (0.0, 10.0),
+        },
+        event_selections={},
+        max_tracks=56,
+        min_tracks=3,
+        validation_fraction=0.15,
+        test_fraction=0.15,
+        batch_size=128,
+        shuffle_buffer=50000,
+        plot_distributions=True
+    )
+    
+    # Model configurations
+    ae_config = ModelConfig(
+        model_type="autoencoder",
+        latent_dim=32,
+        encoder_layers=[256, 128, 64],
+        decoder_layers=[64, 128, 256],
+        quant_bits=8,
+        activation='relu',
+        learning_rate=0.001,
+        epochs=5,
+        early_stopping_patience=3,
+        early_stopping_min_delta=1e-4,
+        plot_training=True
+    )
+    
+    vae_config = ModelConfig(
+        model_type="variational_autoencoder",
+        latent_dim=32,
+        encoder_layers=[256, 128, 64],
+        decoder_layers=[64, 128, 256],
+        quant_bits=8,
+        activation='relu',
+        learning_rate=0.001,
+        epochs=5,
+        early_stopping_patience=3,
+        early_stopping_min_delta=1e-4,
+        plot_training=True,
+        beta_schedule={
+            'start': 0.0,
+            'end': 1.0,
+            'warmup_epochs': 2,
+            'cycle_epochs': 1
+        }
+    )
+    
+    # Select model configuration based on type
+    model_config = vae_config if MODEL_TYPE == "vae" else ae_config
+    
     try:
-        # Example configuration for medium-scale test
         success = test_model_pipeline(
-            # Dataset parameters
-            run_numbers=ATLAS_RUN_NUMBERS[0:2],
-            catalog_limit=1,
-            
-            # Track selection parameters
-            max_tracks=20,
-            min_tracks=3,
-            
-            # Processing parameters
-            batch_size=1024,
-            shuffle_buffer=1000,
-            plot_distributions=True,
-            
-            # Model architecture
-            latent_dim=32,
-            encoder_layers=[256, 128, 64],
-            decoder_layers=[64, 128, 256],
-            
-            # Training parameters
-            epochs=5,
-            learning_rate=0.001,
-            plot_training=True,
-            
-            # Experiment parameters
-            experiment_name="small_scale_test",
-            experiment_description="Small scale test with 2 runs, 1 catalog each"
+            dataset_config=dataset_config,
+            model_config=model_config,
+            experiment_name=f"{MODEL_TYPE}_test",
+            experiment_description=f"Testing {MODEL_TYPE} model with explicit parameters"
         )
         
         if success:
