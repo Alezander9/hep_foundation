@@ -1,0 +1,23 @@
+dataset_id: dataset_runs00296939_00296942_tracks20_a487fe79
+creation_date: '2025-02-04 22:18:20.356209'
+config:
+  run_numbers:
+  - 00296939
+  - 00296942
+  track_selections:
+    eta:
+    - -2.5
+    - 2.5
+    chi2_per_ndof:
+    - 0.0
+    - 10.0
+  event_selections: {}
+  max_tracks_per_event: 20
+  min_tracks_per_event: 3
+  catalog_limit: 1
+atlas_version: 1.0.0
+software_versions:
+  python: 3.9.21
+  numpy: 1.24.3
+  tensorflow: 2.13.1
+  h5py: 3.12.1

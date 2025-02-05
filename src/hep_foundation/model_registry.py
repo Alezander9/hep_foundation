@@ -8,6 +8,9 @@ import uuid
 import tensorflow as tf
 import platform
 import os
+import numpy as np
+import sys
+import psutil
 
 from hep_foundation.processed_dataset_manager import ProcessedDatasetManager
 
@@ -108,68 +111,16 @@ class ModelRegistry:
             
     def register_experiment(self,
                           name: str,
-                          dataset_config: dict,
+                          dataset_id: str,
                           model_config: dict,
                           training_config: dict,
                           description: str = "") -> str:
-        """
-        Register new experiment with enhanced configuration tracking
-        
-        Args:
-            name: Human readable experiment name
-            dataset_config: Dataset parameters including:
-                - run_numbers: List of ATLAS run numbers
-                - track_selections: Dictionary of track-level selection criteria
-                - event_selections: Dictionary of event-level selection criteria
-                - max_tracks_per_event: Maximum number of tracks to keep per event
-                - min_tracks_per_event: Minimum number of tracks required per event
-                - normalization_params: Dictionary of normalization parameters
-                - train_fraction: Fraction of data for training
-                - validation_fraction: Fraction for validation
-                - test_fraction: Fraction for testing
-                - batch_size: Batch size used
-                - shuffle_buffer: Shuffle buffer size
-                - data_quality_metrics: Results of data validation
-            model_config: Model configuration including:
-                - model_type: Type of model (e.g., "autoencoder")
-                - architecture: Network architecture details
-                - hyperparameters: Model hyperparameters
-            training_config: Training parameters
-            description: Optional experiment description
-        """
+        """Register new experiment using existing dataset"""
         experiment_id = str(uuid.uuid4())
         timestamp = datetime.now()
         
-        # Create ProcessedDatasetManager instance
-        dataset_manager = ProcessedDatasetManager()
-        
-        # Create or get dataset
-        dataset_id, dataset_path = dataset_manager.create_dataset(dataset_config)
-        dataset_info = dataset_manager.get_dataset_info(dataset_id)
-        
-        # Add to dataset_config - Convert Path to string
-        dataset_config.update({
-            'dataset_id': dataset_id,
-            'dataset_path': str(dataset_path),  # Convert Path to string here
-            'creation_date': dataset_info['creation_date'],
-            'atlas_version': dataset_info['atlas_version'],
-            'software_versions': dataset_info['software_versions']
-        })
-        
-        # Get environment info
-        environment_info = {
-            "python_version": platform.python_version(),
-            "tensorflow_version": tf.__version__,
-            "platform": platform.platform(),
-            "cpu_count": os.cpu_count()
-        }
-        try:
-            environment_info["gpu_devices"] = tf.config.list_physical_devices('GPU')
-        except:
-            environment_info["gpu_devices"] = []
-            
         with sqlite3.connect(self.db_path) as conn:
-            # Insert main experiment info
+            # Store experiment info
             conn.execute(
                 """
                 INSERT INTO experiments 
@@ -181,93 +132,63 @@ class ModelRegistry:
                     timestamp,
                     name,
                     description,
-                    "registered",
-                    json.dumps(environment_info)
+                    "created",
+                    json.dumps(self._get_environment_info())
                 )
             )
             
-            # Insert dataset configuration
+            # Store dataset reference
             conn.execute(
                 """
-                INSERT INTO dataset_configs
-                (experiment_id, dataset_id, dataset_path, creation_date, atlas_version, software_versions,
-                run_numbers, track_selections, event_selections, max_tracks_per_event, min_tracks_per_event,
-                normalization_params, train_fraction, validation_fraction, test_fraction, batch_size, shuffle_buffer,
-                data_quality_metrics)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO dataset_configs 
+                (experiment_id, dataset_id) 
+                VALUES (?, ?)
                 """,
-                (
-                    experiment_id,
-                    dataset_id,
-                    str(dataset_path),  # Make sure it's a string here too
-                    dataset_info['creation_date'],
-                    dataset_info['atlas_version'],
-                    json.dumps(dataset_info['software_versions']),
-                    json.dumps(dataset_config['run_numbers']),
-                    json.dumps(dataset_config['track_selections']),
-                    json.dumps(dataset_config['event_selections']),
-                    dataset_config['max_tracks_per_event'],
-                    dataset_config['min_tracks_per_event'],
-                    json.dumps(dataset_config.get('normalization_params', {})),
-                    dataset_config['train_fraction'],
-                    dataset_config['validation_fraction'],
-                    dataset_config['test_fraction'],
-                    dataset_config['batch_size'],
-                    dataset_config['shuffle_buffer'],
-                    json.dumps(dataset_config.get('data_quality_metrics', {}))
-                )
+                (experiment_id, dataset_id)
             )
             
-            # Insert model configuration
+            # Store other configs
             conn.execute(
                 """
-                INSERT INTO model_configs
+                INSERT INTO model_configs 
                 (experiment_id, model_type, architecture, hyperparameters)
                 VALUES (?, ?, ?, ?)
                 """,
                 (
                     experiment_id,
-                    model_config['model_type'],
-                    json.dumps(model_config['architecture']),
-                    json.dumps(model_config.get('hyperparameters', {}))
+                    model_config["model_type"],
+                    json.dumps(model_config["architecture"]),
+                    json.dumps(model_config["hyperparameters"])
                 )
             )
             
-            # Insert initial training info
             conn.execute(
                 """
-                INSERT INTO training_info
-                (experiment_id, config, start_time, epochs_completed, training_history, final_metrics, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO training_info 
+                (experiment_id, config, status)
+                VALUES (?, ?, ?)
                 """,
-                (
-                    experiment_id,
-                    json.dumps(training_config),
-                    None,
-                    0,
-                    "{}",
-                    "{}",
-                    "initialized"
-                )
+                (experiment_id, json.dumps(training_config), "pending")
             )
-        
-        # Create experiment directory structure
-        exp_dir = self.model_store / experiment_id
-        exp_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Save configurations as YAML for easy reading
-        configs_dir = exp_dir / "configs"
-        configs_dir.mkdir(exist_ok=True)
-        
-        with open(configs_dir / "dataset_config.yaml", 'w') as f:
-            yaml.dump(dataset_config, f)
-        with open(configs_dir / "model_config.yaml", 'w') as f:
-            yaml.dump(model_config, f)
-        with open(configs_dir / "training_config.yaml", 'w') as f:
-            yaml.dump(training_config, f)
             
         return experiment_id
         
+    def ensure_serializable(self, obj):
+        """Recursively convert numpy/tensorflow types to Python native types"""
+        if isinstance(obj, dict):
+            return {key: self.ensure_serializable(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [self.ensure_serializable(item) for item in obj]
+        elif isinstance(obj, (np.integer, np.floating)):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, tf.Tensor):
+            return obj.numpy().tolist()
+        elif obj is None:
+            return "null"  # Convert None to string "null"
+        return obj
+
     def update_training_progress(self,
                                experiment_id: str,
                                epoch: int,
@@ -283,7 +204,13 @@ class ModelRegistry:
             if current is None:
                 raise ValueError(f"No experiment found with id {experiment_id}")
                 
-            history = json.loads(current[0])
+            # Ensure metrics are serializable
+            metrics = self.ensure_serializable(metrics)
+            if hardware_metrics:
+                hardware_metrics = self.ensure_serializable(hardware_metrics)
+            
+            # Initialize or load history
+            history = json.loads(current[0]) if current[0] else {}
             
             # Update history
             if str(epoch) not in history:
@@ -307,14 +234,33 @@ class ModelRegistry:
             
     def complete_training(self, experiment_id: str, final_metrics: Dict):
         """Record final training results"""
-        # Ensure required metrics exist with defaults
-        metrics = {
-            'loss': 0.0,
+        # Start with actual metrics
+        metrics = dict(final_metrics)  # Make a copy
+        
+        print("\nFinal metrics before processing:")  # Debug print
+        print(json.dumps(metrics, indent=2))
+        
+        # Ensure test metrics are properly named
+        if 'test_loss' not in metrics and 'test_mse' in metrics:
+            metrics['test_loss'] = metrics['test_mse']
+        
+        # Only fill in missing metrics with defaults
+        defaults = {
+            'train_loss': 0.0,
             'val_loss': 0.0,
             'test_loss': 0.0,
-            'training_duration': 0.0,
-            **final_metrics  # Override defaults with actual values
+            'training_duration': 0.0
         }
+        
+        for key, default_value in defaults.items():
+            if key not in metrics:
+                metrics[key] = default_value
+        
+        # Ensure metrics are serializable
+        metrics = self.ensure_serializable(metrics)
+        
+        print("\nFinal metrics after processing:")  # Debug print
+        print(json.dumps(metrics, indent=2))
         
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
@@ -555,5 +501,31 @@ class ModelRegistry:
                     'training_duration': 0.0
                 })
             }
+
+    def _get_environment_info(self) -> Dict:
+        """Collect information about the execution environment"""
+        # Get memory info
+        memory = psutil.virtual_memory()
+        
+        return {
+            'platform': {
+                'system': platform.system(),
+                'release': platform.release(),
+                'machine': platform.machine(),
+                'python_version': platform.python_version(),
+            },
+            'hardware': {
+                'cpu_count': psutil.cpu_count(),
+                'total_memory_gb': memory.total / (1024**3),
+                'available_memory_gb': memory.available / (1024**3)
+            },
+            'software': {
+                'tensorflow': tf.__version__,
+                'numpy': np.__version__,
+                'cuda_available': tf.test.is_built_with_cuda(),
+                'gpu_available': bool(tf.config.list_physical_devices('GPU'))
+            },
+            'timestamp': str(datetime.now())
+        }
 
    

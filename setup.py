@@ -19,6 +19,7 @@ setup(
         
         # Visualization
         "matplotlib>=3.9.4",
+        "seaborn>=0.13.0",  # Added seaborn
         
         # Progress bars and utilities
         "tqdm>=4.67.1",

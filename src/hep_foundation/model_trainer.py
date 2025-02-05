@@ -145,24 +145,28 @@ class ModelTrainer:
             
         return self.get_training_summary()
         
-    def evaluate(
-        self,
-        dataset: tf.data.Dataset
-    ) -> Dict[str, float]:
+    def evaluate(self, dataset: tf.data.Dataset) -> Dict[str, float]:
         """Evaluate with enhanced metrics tracking"""
         print("\nEvaluating model...")
         if self.model.model is None:
             raise ValueError("Model not built yet")
-            
-        results = self.model.model.evaluate(dataset, return_dict=True, verbose=1)
+        
+        # For autoencoder, use input data as both input and target
+        test_dataset = dataset.map(lambda x: (x, x))
+        
+        # Evaluate and get results
+        results = self.model.model.evaluate(test_dataset, return_dict=True, verbose=1)
         
         # Add test_ prefix to metrics
         test_metrics = {
-            f'test_{k}': float(v) for k, v in results.items()
+            'test_' + k: float(v) for k, v in results.items()
         }
         
         print("\nEvaluation metrics:")
         for metric, value in test_metrics.items():
             print(f"  {metric}: {value:.6f}")
-            
+        
+        # Store test metrics in history
+        self.metrics_history.update(test_metrics)
+        
         return test_metrics

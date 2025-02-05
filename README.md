@@ -35,7 +35,7 @@ config={
 'catalog_limit': 5
 }
 )
-Create and train model
+# Create and train model
 model = ModelFactory.create_model(
 model_type="autoencoder",
 config={

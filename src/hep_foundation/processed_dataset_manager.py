@@ -9,6 +9,9 @@ from datetime import datetime
 import yaml
 import platform
 import uproot
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
 
 from hep_foundation.atlas_data_manager import ATLASDataManager
 from hep_foundation.selection_config import SelectionConfig
@@ -26,6 +29,11 @@ class ProcessedDatasetManager:
         self.datasets_dir.mkdir(parents=True, exist_ok=True)
         self.configs_dir.mkdir(parents=True, exist_ok=True)
         self.atlas_manager = atlas_manager or ATLASDataManager()
+        
+        # Add state tracking
+        self.current_dataset_id = None
+        self.current_dataset_path = None
+        self.current_dataset_info = None
         
     def generate_dataset_id(self, config: Dict) -> str:
         """Generate a human-readable dataset ID"""
@@ -65,26 +73,10 @@ class ProcessedDatasetManager:
             
         return ConfigSerializer.from_yaml(config_path)
     
-    def create_dataset(self, config: Dict) -> Tuple[str, Path]:
+    def _create_dataset(self, config: Dict, plot_distributions: bool = False) -> Tuple[str, Path]:
         """Create new processed dataset from ATLAS data"""
         dataset_id = self.generate_dataset_id(config)
         output_path = self.datasets_dir / f"{dataset_id}.h5"
-        
-        if output_path.exists():
-            # Verify the existing file is valid
-            try:
-                with h5py.File(output_path, 'r') as f:
-                    required_attrs = ['config', 'creation_date', 'normalization_params', 'dataset_id']
-                    if not all(attr in f.attrs for attr in required_attrs):
-                        print(f"Existing dataset file is incomplete. Recreating...")
-                        output_path.unlink()
-                    else:
-                        print(f"Dataset already exists: {output_path}")
-                        return dataset_id, output_path
-            except Exception as e:
-                print(f"Error reading existing dataset: {e}")
-                print("Recreating dataset...")
-                output_path.unlink()
         
         print(f"Creating new dataset: {dataset_id}")
         
@@ -114,7 +106,8 @@ class ProcessedDatasetManager:
                 events, stats = self._process_run_data(
                     run_number=run_number,
                     selection_config=selection_config,
-                    catalog_limit=config.get('catalog_limit')
+                    catalog_limit=config.get('catalog_limit'),
+                    plot_distributions=plot_distributions
                 )
                 all_events.extend(events)
                 
@@ -127,7 +120,6 @@ class ProcessedDatasetManager:
             
             # Create HDF5 dataset
             with h5py.File(output_path, 'w') as f:
-                # Create and fill features dataset
                 features = f.create_dataset(
                     'features', 
                     data=np.stack(all_events),
@@ -146,15 +138,6 @@ class ProcessedDatasetManager:
                 
                 for key, value in attrs_dict.items():
                     f.attrs[key] = value
-                
-            # Print final statistics
-            print("\nDataset Creation Summary:")
-            print(f"Total events processed: {total_stats['total_events']}")
-            print(f"Events passing selection: {total_stats['processed_events']}")
-            print(f"Total processing time: {total_stats['processing_time']:.1f}s")
-            print(f"Average rate: {total_stats['total_events']/total_stats['processing_time']:.1f} events/s")
-            print(f"Selection efficiency: {100 * total_stats['processed_events']/total_stats['total_events']:.1f}%")
-            print(f"Average tracks per event: {total_stats['total_tracks']/total_stats['processed_events']:.2f}")
             
             return dataset_id, output_path
             
@@ -228,11 +211,44 @@ class ProcessedDatasetManager:
                      validation_fraction: float = 0.15,
                      test_fraction: float = 0.15,
                      batch_size: int = 1000,
-                     shuffle_buffer: int = 10000) -> Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
+                     shuffle_buffer: int = 10000,
+                     plot_distributions: bool = False) -> Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
         """Load and split dataset into train/val/test"""
         try:
-            dataset_id, dataset_path = self.create_dataset(config)
+            # Generate dataset ID
+            dataset_id = self.generate_dataset_id(config)
+            dataset_path = self.datasets_dir / f"{dataset_id}.h5"
             
+            # Set current dataset tracking
+            self.current_dataset_id = dataset_id
+            self.current_dataset_path = dataset_path
+            self.current_dataset_info = self.get_dataset_info(dataset_id)
+            
+            # Check if dataset exists
+            if dataset_path.exists():
+                # Verify the existing file is valid
+                if plot_distributions:
+                    print("Recreating dataset to generate plots...")
+                    self._create_dataset(config, plot_distributions)
+                else:
+                    print(f"Loading existing dataset: {dataset_path}")
+                    try:
+                        with h5py.File(dataset_path, 'r') as f:
+                            required_attrs = ['config', 'creation_date', 'normalization_params', 'dataset_id']
+                            if all(attr in f.attrs for attr in required_attrs):
+                                print(f"Loading existing dataset: {dataset_path}")
+                            else:
+                                print(f"Existing dataset file is incomplete. Creating new dataset...")
+                                dataset_id, dataset_path = self.create_dataset(config, plot_distributions)
+                    except Exception as e:
+                        print(f"Error reading existing dataset: {e}")
+                        print("Creating new dataset...")
+                        dataset_id, dataset_path = self.create_dataset(config, plot_distributions)
+            else:
+                print("Dataset does not exist yet, creating it...")
+                dataset_id, dataset_path = self.create_dataset(config, plot_distributions)
+            
+            # Load and process dataset
             with h5py.File(dataset_path, 'r') as f:
                 # Verify file integrity
                 required_attrs = ['config', 'normalization_params', 'dataset_id']
@@ -247,7 +263,7 @@ class ProcessedDatasetManager:
                 
                 if len(data) == 0:
                     raise ValueError("Dataset is empty")
-                    
+            
             # Verify config matches
             if self.generate_dataset_id(stored_config) != dataset_id:
                 raise ValueError("Dataset was created with different configuration")
@@ -370,7 +386,8 @@ class ProcessedDatasetManager:
     def _process_run_data(self, 
                          run_number: str,
                          selection_config: SelectionConfig,
-                         catalog_limit: Optional[int] = None) -> Tuple[List[np.ndarray], Dict]:
+                         catalog_limit: Optional[int] = None,
+                         plot_distributions: bool = False) -> Tuple[List[np.ndarray], Dict]:
         """Process all events from a single run"""
         processed_events = []
         stats = {
@@ -382,6 +399,16 @@ class ProcessedDatasetManager:
         
         print(f"\nProcessing run {run_number}")
         catalog_idx = 0
+        
+        # Add statistics collection
+        pre_selection_stats = {
+            'tracks_per_event': [],
+            'pt': [], 'eta': [], 'phi': [], 'd0': [], 'z0': [], 'chi2_per_ndof': []
+        }
+        post_selection_stats = {
+            'tracks_per_event': [],
+            'pt': [], 'eta': [], 'phi': [], 'd0': [], 'z0': [], 'chi2_per_ndof': []
+        }
         
         while True:
             try:
@@ -425,11 +452,34 @@ class ProcessedDatasetManager:
                             if len(raw_event['d0']) == 0:
                                 continue
                                 
+                            # Collect pre-selection statistics
+                            track_features = {
+                                'pt': np.abs(1.0 / (raw_event['qOverP'] * 1000)) * np.sin(raw_event['theta']),
+                                'eta': -np.log(np.tan(raw_event['theta'] / 2)),
+                                'phi': raw_event['phi'],
+                                'd0': raw_event['d0'],
+                                'z0': raw_event['z0'],
+                                'chi2_per_ndof': raw_event['chiSquared'] / raw_event['numberDoF']
+                            }
+                            
+                            pre_selection_stats['tracks_per_event'].append(len(track_features['pt']))
+                            for feature, values in track_features.items():
+                                pre_selection_stats[feature].extend(values)
+                            
+                            # Process event
                             processed_event = self._process_event(raw_event, selection_config)
                             if processed_event is not None:
                                 processed_events.append(processed_event)
                                 catalog_stats['processed'] += 1
                                 stats['total_tracks'] += np.sum(np.any(processed_event != 0, axis=1))
+                                
+                                # Collect post-selection statistics
+                                post_selection_stats['tracks_per_event'].append(
+                                    np.sum(np.any(processed_event != 0, axis=1))
+                                )
+                                for i, feature in enumerate(['pt', 'eta', 'phi', 'd0', 'z0', 'chi2_per_ndof']):
+                                    valid_tracks = processed_event[np.any(processed_event != 0, axis=1)]
+                                    post_selection_stats[feature].extend(valid_tracks[:, i])
                 
                 # Update statistics
                 catalog_duration = (datetime.now() - catalog_start_time).total_seconds()
@@ -451,6 +501,14 @@ class ProcessedDatasetManager:
             except Exception as e:
                 print(f"Error processing catalog {catalog_idx}: {str(e)}")
                 break
+        
+        if plot_distributions:
+            print(f"\nCollecting statistics for plotting...")
+            print(f"Pre-selection events: {len(pre_selection_stats['tracks_per_event'])}")
+            print(f"Post-selection events: {len(post_selection_stats['tracks_per_event'])}")
+            
+            plots_dir = self.base_dir / "plots" / f"run_{run_number}"
+            self._plot_distributions(pre_selection_stats, post_selection_stats, plots_dir)
         
         # Convert stats to native Python types before returning
         return processed_events, {
@@ -486,3 +544,177 @@ class ProcessedDatasetManager:
             }
         
         return stats 
+
+    def _plot_distributions(self, 
+                           pre_selection_stats: Dict[str, List],
+                           post_selection_stats: Dict[str, List],
+                           output_dir: Path):
+        """Create distribution plots and print statistical summaries for track and event features"""
+        print(f"\nGenerating plots in: {output_dir}")
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Print track multiplicity statistics
+        print("\n=== Track Multiplicity Statistics ===")
+        print("Before Selection:")
+        print(f"  Total events: {len(pre_selection_stats['tracks_per_event']):,}")
+        print(f"  Average tracks/event: {np.mean(pre_selection_stats['tracks_per_event']):.2f}")
+        print(f"  Median tracks/event: {np.median(pre_selection_stats['tracks_per_event']):.2f}")
+        print(f"  Min tracks: {min(pre_selection_stats['tracks_per_event'])}")
+        print(f"  Max tracks: {max(pre_selection_stats['tracks_per_event'])}")
+        
+        print("\nAfter Selection:")
+        print(f"  Total events: {len(post_selection_stats['tracks_per_event']):,}")
+        print(f"  Average tracks/event: {np.mean(post_selection_stats['tracks_per_event']):.2f}")
+        print(f"  Median tracks/event: {np.median(post_selection_stats['tracks_per_event']):.2f}")
+        print(f"  Min tracks: {min(post_selection_stats['tracks_per_event'])}")
+        print(f"  Max tracks: {max(post_selection_stats['tracks_per_event'])}")
+        print(f"  Selection efficiency: {100 * len(post_selection_stats['tracks_per_event']) / len(pre_selection_stats['tracks_per_event']):.1f}%")
+        
+        # Use matplotlib style
+        plt.style.use('seaborn-v0_8')
+        
+        print("\nCreating track multiplicity plot...")
+        plt.figure(figsize=(12, 6))
+        
+        # Calculate integer bin edges with percentile limits
+        min_tracks = max(1, int(np.percentile(pre_selection_stats['tracks_per_event'], 1)))
+        max_tracks = int(np.percentile(pre_selection_stats['tracks_per_event'], 99))
+        
+        # Create integer bins between these limits
+        bins = np.arange(min_tracks - 0.5, max_tracks + 1.5, 1)  # +/- 0.5 centers bins on integers
+        
+        plt.hist(pre_selection_stats['tracks_per_event'], bins=bins, alpha=0.5, 
+                 label='Before Selection', density=True)
+        plt.hist(post_selection_stats['tracks_per_event'], bins=bins, alpha=0.5,
+                 label='After Selection', density=True)
+        
+        plt.xlabel('Number of Tracks per Event')
+        plt.ylabel('Density')
+        plt.title('Track Multiplicity Distribution')
+        plt.legend()
+        plt.grid(True)
+        
+        # Set x-axis limits to show the main distribution
+        plt.xlim(min_tracks - 1, max_tracks + 1)
+        
+        plt.savefig(output_dir / 'track_multiplicity.pdf')
+        plt.close()
+        
+        print("\nCreating track features plot...")
+        # 2. Track features distributions (6x2 subplot grid)
+        fig, axes = plt.subplots(3, 2, figsize=(15, 18))
+        fig.suptitle('Track Feature Distributions (Before vs After Selection)')
+        
+        features = ['pt', 'eta', 'phi', 'd0', 'z0', 'chi2_per_ndof']
+        for (feature, ax) in zip(features, axes.flat):
+            if feature == 'pt':
+                ax.set_xlabel('pT [GeV]')
+                ax.set_xscale('log')
+                # Use log-spaced bins for pT
+                log_bins = np.logspace(
+                    np.log10(max(0.1, np.percentile(pre_selection_stats[feature], 0.1))),  # min
+                    np.log10(np.percentile(pre_selection_stats[feature], 99.9)),  # max
+                    50  # number of bins
+                )
+                ax.hist(pre_selection_stats[feature], bins=log_bins, alpha=0.5,
+                        label='Before Selection', density=True)
+                ax.hist(post_selection_stats[feature], bins=log_bins, alpha=0.5,
+                        label='After Selection', density=True)
+            else:
+                # For other features, use percentile-based limits
+                x_min = np.percentile(pre_selection_stats[feature], 0.1)
+                x_max = np.percentile(pre_selection_stats[feature], 99.9)
+                ax.set_xlim(x_min, x_max)
+                ax.hist(pre_selection_stats[feature], bins=50, alpha=0.5,
+                        label='Before Selection', density=True, range=(x_min, x_max))
+                ax.hist(post_selection_stats[feature], bins=50, alpha=0.5,
+                        label='After Selection', density=True, range=(x_min, x_max))
+            ax.set_ylabel('Density')
+            ax.legend()
+            ax.grid(True)
+            
+            # Add specific axis labels and ranges
+            if feature == 'pt':
+                ax.set_xlabel('pT [GeV]')
+                ax.set_xscale('log')
+            elif feature == 'eta':
+                ax.set_xlabel('η')
+            elif feature == 'phi':
+                ax.set_xlabel('φ')
+                ax.set_xlim(-3.5, 3.5)
+            elif feature == 'd0':
+                ax.set_xlabel('d0 [mm]')
+            elif feature == 'z0':
+                ax.set_xlabel('z0 [mm]')
+        
+        plt.tight_layout()
+        plt.savefig(output_dir / 'track_features.pdf')
+        plt.close()
+        
+        print("\n=== Track Feature Statistics ===")
+        features = ['pt', 'eta', 'phi', 'd0', 'z0', 'chi2_per_ndof']
+        labels = {
+            'pt': 'pT [GeV]',
+            'eta': 'η',
+            'phi': 'φ',
+            'd0': 'd0 [mm]',
+            'z0': 'z0 [mm]',
+            'chi2_per_ndof': 'χ²/ndof'
+        }
+        
+        for feature in features:
+            print(f"\n{labels[feature]}:")
+            print("  Before Selection:")
+            print(f"    Mean: {np.mean(pre_selection_stats[feature]):.3f}")
+            print(f"    Std:  {np.std(pre_selection_stats[feature]):.3f}")
+            print(f"    Min:  {np.min(pre_selection_stats[feature]):.3f}")
+            print(f"    Max:  {np.max(pre_selection_stats[feature]):.3f}")
+            print(f"    Tracks: {len(pre_selection_stats[feature]):,}")
+            
+            print("  After Selection:")
+            print(f"    Mean: {np.mean(post_selection_stats[feature]):.3f}")
+            print(f"    Std:  {np.std(post_selection_stats[feature]):.3f}")
+            print(f"    Min:  {np.min(post_selection_stats[feature]):.3f}")
+            print(f"    Max:  {np.max(post_selection_stats[feature]):.3f}")
+            print(f"    Tracks: {len(post_selection_stats[feature]):,}")
+        
+        # Print correlation information
+        print("\n=== Feature Correlations ===")
+        df = pd.DataFrame({
+            feature: post_selection_stats[feature] 
+            for feature in features
+        })
+        corr_matrix = df.corr()
+        
+        print("\nCorrelation Matrix (after selection):")
+        pd.set_option('display.float_format', '{:.3f}'.format)
+        print(corr_matrix)
+        
+        print("\nCreating correlation plot...")
+        # 3. 2D correlation plots
+        plt.figure(figsize=(12, 10))
+        feature_data = {
+            feature: post_selection_stats[feature] 
+            for feature in features
+        }
+        df = pd.DataFrame(feature_data)
+        sns.heatmap(df.corr(), annot=True, cmap='coolwarm', center=0)
+        plt.title('Track Feature Correlations (After Selection)')
+        plt.tight_layout()
+        plt.savefig(output_dir / 'feature_correlations.pdf')
+        plt.close()
+        
+        print("\nPlotting complete!") 
+
+    def get_current_dataset_id(self) -> str:
+        """Get ID of currently loaded dataset"""
+        if self.current_dataset_id is None:
+            raise ValueError("No dataset currently loaded")
+        return self.current_dataset_id
+
+    def get_current_dataset_info(self) -> Dict:
+        """Get information about the currently loaded dataset"""
+        if self.current_dataset_info is None:
+            raise ValueError("No dataset currently loaded")
+        return self.current_dataset_info 

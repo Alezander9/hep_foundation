@@ -5,15 +5,79 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 import sqlite3
 from pathlib import Path
+from typing import Dict, Any, List
 
 from hep_foundation.model_registry import ModelRegistry
 from hep_foundation.model_factory import ModelFactory
 from hep_foundation.model_trainer import ModelTrainer
 from hep_foundation.processed_dataset_manager import ProcessedDatasetManager 
 
-def test_model_pipeline():
-    """Test the complete model pipeline including factory, trainer, and registry"""
-
+def test_model_pipeline(
+    # Dataset parameters
+    run_numbers: list = ["00296939", "00296942", "00297447"],
+    catalog_limit: int = 5,
+    
+    # Track selection parameters
+    track_selections: Dict = {
+        'eta': (-2.5, 2.5),
+        'chi2_per_ndof': (0.0, 10.0),
+    },
+    event_selections: Dict = {},
+    max_tracks: int = 56,
+    min_tracks: int = 3,
+    
+    # Dataset processing parameters
+    validation_fraction: float = 0.15,
+    test_fraction: float = 0.15,
+    batch_size: int = 128,
+    shuffle_buffer: int = 50000,
+    plot_distributions: bool = True,
+    
+    # Model architecture parameters
+    latent_dim: int = 32,
+    encoder_layers: List[int] = [512, 256, 128],
+    decoder_layers: List[int] = [128, 256, 512],
+    quant_bits: int = 8,
+    activation: str = 'relu',
+    
+    # Training parameters
+    epochs: int = 50,
+    learning_rate: float = 0.001,
+    early_stopping_patience: int = 3,
+    early_stopping_min_delta: float = 1e-4,
+    
+    # Experiment parameters
+    experiment_name: str = "autoencoder_test",
+    experiment_description: str = "Testing autoencoder on track data with enhanced monitoring"
+) -> bool:
+    """
+    Test the complete model pipeline with configurable parameters
+    
+    Args:
+        run_numbers: List of ATLAS run numbers to process
+        catalog_limit: Maximum number of catalogs to process per run
+        track_selections: Selection criteria for individual tracks
+        event_selections: Selection criteria for entire events
+        max_tracks: Maximum number of tracks per event
+        min_tracks: Minimum number of tracks per event
+        validation_fraction: Fraction of data for validation
+        test_fraction: Fraction of data for testing
+        batch_size: Training batch size
+        shuffle_buffer: Size of shuffle buffer
+        plot_distributions: Whether to create distribution plots
+        latent_dim: Dimension of latent space
+        encoder_layers: List of layer sizes for encoder
+        decoder_layers: List of layer sizes for decoder
+        quant_bits: Number of bits for quantization
+        activation: Activation function to use
+        epochs: Number of training epochs
+        learning_rate: Training learning rate
+        early_stopping_patience: Patience for early stopping
+        early_stopping_min_delta: Minimum delta for early stopping
+        experiment_name: Name for the experiment
+        experiment_description: Description of the experiment
+    """
+    
     print("\n" + "="*50)
     print("Starting Model Pipeline Test")
     print("="*50)
@@ -35,122 +99,88 @@ def test_model_pipeline():
                 return obj.tolist()
             return obj
 
-        # 1. Initialize Registry
-        print("Initializing model registry...")
+        # 1. Initialize managers
+        print("Initializing managers...")
+        data_manager = ProcessedDatasetManager()
         registry = ModelRegistry("experiments")
         
-        # 2. Setup Data Pipeline with larger scale
+        # 2. Load or create dataset
         print("Setting up data pipeline...")
-        data_manager = ProcessedDatasetManager()
-
-        # Define selections
-        track_selections = {
-            'eta': (-2.5, 2.5),
-            'chi2_per_ndof': (0.0, 10.0),
-        }
-
-        event_selections = {}
-
-        # Create larger datasets
         train_dataset, val_dataset, test_dataset = data_manager.load_datasets(
             config={
-                'run_numbers': ["00296939", "00296942", "00297447"],  # Added one more run
+                'run_numbers': run_numbers,
                 'track_selections': track_selections,
                 'event_selections': event_selections,
-                'max_tracks_per_event': 56,  # Increased to handle more tracks
-                'min_tracks_per_event': 3,
-                'catalog_limit': 5  # Increased from 1 to 5
+                'max_tracks_per_event': max_tracks,
+                'min_tracks_per_event': min_tracks,
+                'catalog_limit': catalog_limit
             },
-            validation_fraction=0.15,
-            test_fraction=0.15,
-            batch_size=128,  # Reduced batch size to handle larger model
-            shuffle_buffer=50000  # Increased shuffle buffer for more data
+            validation_fraction=validation_fraction,
+            test_fraction=test_fraction,
+            batch_size=batch_size,
+            shuffle_buffer=shuffle_buffer,
+            plot_distributions=plot_distributions
         )
-
-        # Update dataset config accordingly
-        dataset_config = ensure_serializable({
-            "run_numbers": ["00296939", "00296942", "00297447"],
+        
+        # Prepare configs for registry
+        dataset_config = {
+            "run_numbers": run_numbers,
             "track_selections": track_selections,
             "event_selections": event_selections,
-            "max_tracks_per_event": 56,
-            "min_tracks_per_event": 3,
-            "catalog_limit": 5,
-            
-            "train_fraction": 0.7,
-            "validation_fraction": 0.15,
-            "test_fraction": 0.15,
-            "batch_size": 128,
-            "shuffle_buffer": 50000,
-            
-            "dataset_id": None,
-            "dataset_path": None,
-            "creation_date": None,
-            "atlas_version": None,
-            "software_versions": None,
-            "normalization_params": None,
-        })
-
-        # Add debug prints to verify dataset creation
-        print("\nDataset Creation Results:")
-        print(f"Dataset ID: {data_manager.generate_dataset_id(dataset_config)}")
-        print(f"Dataset Path: {data_manager.datasets_dir / f'{data_manager.generate_dataset_id(dataset_config)}.h5'}")
-
-        # Verify dataset was created and can be loaded
-        try:
-            dataset_info = data_manager.get_dataset_info(data_manager.generate_dataset_id(dataset_config))
-            print("\nDataset Info:")
-            print(f"Creation Date: {dataset_info['creation_date']}")
-            print(f"Software Versions: {dataset_info['software_versions']}")
-        except Exception as e:
-            print(f"Error getting dataset info: {e}")
-
-        # Scale up model architecture
+            "max_tracks_per_event": max_tracks,
+            "min_tracks_per_event": min_tracks,
+            "catalog_limit": catalog_limit,
+            "train_fraction": 1.0 - (validation_fraction + test_fraction),
+            "validation_fraction": validation_fraction,
+            "test_fraction": test_fraction,
+            "batch_size": batch_size,
+            "shuffle_buffer": shuffle_buffer
+        }
+        
         model_config = {
             'model_type': 'autoencoder',
-            'input_shape': (56, 6),  # Updated for more tracks
+            'input_shape': (max_tracks, 6),
             'n_features': 6,
-            'max_tracks_per_event': 56,
-            'latent_dim': 32,  # Increased but still constrained
-            'encoder_layers': [512, 256, 128],  # Larger layers
-            'decoder_layers': [128, 256, 512],  # Symmetric architecture
-            'quant_bits': 8,
-            'activation': 'relu'
+            'max_tracks_per_event': max_tracks,
+            'latent_dim': latent_dim,
+            'encoder_layers': encoder_layers,
+            'decoder_layers': decoder_layers,
+            'quant_bits': quant_bits,
+            'activation': activation
         }
-    
-        # Model config for registry
+        
         model_config_registry = {
             "model_type": "autoencoder",
             "architecture": {
-                "input_dim": model_config['input_shape'][0],
-                "latent_dim": model_config['latent_dim'],
-                "encoder_layers": model_config['encoder_layers'],
-                "decoder_layers": model_config['decoder_layers']
+                "input_dim": max_tracks,
+                "latent_dim": latent_dim,
+                "encoder_layers": encoder_layers,
+                "decoder_layers": decoder_layers
             },
             "hyperparameters": {
-                "activation": model_config['activation'],
-                "quant_bits": model_config['quant_bits']
+                "activation": activation,
+                "quant_bits": quant_bits
             }
         }
         
-        # Training config
         training_config = {
-            "batch_size": 128,
-            "epochs": 50,
-            "learning_rate": 0.001,
+            "batch_size": batch_size,
+            "epochs": epochs,
+            "learning_rate": learning_rate,
             "early_stopping": {
-                "patience": 3,
-                "min_delta": 1e-4
+                "patience": early_stopping_patience,
+                "min_delta": early_stopping_min_delta
             }
         }
         
-        # 4. Register Experiment
+        # 3. Register experiment with existing dataset
         print("Registering experiment...")
         experiment_id = registry.register_experiment(
-            name="autoencoder_test",
-            dataset_config=dataset_config,
+            name=experiment_name,
+            dataset_id=data_manager.get_current_dataset_id(),
             model_config=model_config_registry,
             training_config=training_config,
-            description="Testing autoencoder on track data with enhanced monitoring"
+            description=experiment_description
         )
         print(f"Created experiment: {experiment_id}")
         
@@ -322,37 +352,6 @@ def test_model_pipeline():
                 print("Warning: Training history metrics not available for plotting")
         
         print("Pipeline test completed successfully")
-
-        # After training completes successfully, add:
-        print("\nVerifying Dataset Reproducibility:")
-        try:
-            # Get experiment details
-            with sqlite3.connect(registry.db_path) as conn:
-                cursor = conn.execute(
-                    "SELECT dataset_id, dataset_path FROM dataset_configs WHERE experiment_id = ?",
-                    (experiment_id,)
-                )
-                dataset_id, dataset_path = cursor.fetchone()
-            
-            print(f"Original Dataset ID: {dataset_id}")
-            print(f"Original Dataset Path: {dataset_path}")
-            
-            # Verify dataset can be recreated
-            if Path(dataset_path).exists():
-                print("Original dataset file exists")
-            else:
-                print("Original dataset not found - attempting recreation")
-                new_path = data_manager.recreate_dataset(dataset_id)
-                print(f"Recreated dataset at: {new_path}")
-                
-                # Verify recreation was successful
-                if data_manager.verify_dataset(dataset_id, dataset_config):
-                    print("Dataset recreation verified successfully")
-                else:
-                    print("Warning: Recreated dataset may not match original")
-            
-        except Exception as e:
-            print(f"Dataset verification failed: {e}")
         
         return True
         
@@ -362,20 +361,48 @@ def test_model_pipeline():
         raise
 
 def main():
-    """Main function to run the pipeline test"""
+    """Main function with parameter configuration"""
     try:
-        success = test_model_pipeline()
+        # Example configuration for medium-scale test
+        success = test_model_pipeline(
+            # Dataset parameters
+            run_numbers=["00296939", "00296942"],
+            catalog_limit=1,
+            
+            # Track selection parameters
+            max_tracks=20,
+            min_tracks=3,
+            
+            # Processing parameters
+            batch_size=1024,
+            shuffle_buffer=1000,
+            plot_distributions=True,
+            
+            # Model architecture
+            latent_dim=32,
+            encoder_layers=[256, 128, 64],
+            decoder_layers=[64, 128, 256],
+            
+            # Training parameters
+            epochs=5,
+            learning_rate=0.001,
+            
+            # Experiment parameters
+            experiment_name="small_scale_test",
+            experiment_description="Small scale test with 2 runs, 1 catalog each"
+        )
+        
         if success:
             print("\nAll tests passed successfully!")
-            return 0  # Unix convention for success
+            return 0
         else:
             print("\nTests failed!")
-            return 1  # Unix convention for error
+            return 1
+            
     except Exception as e:
         print("\nTest failed with error:")
         print(str(e))
         return 1
 
 if __name__ == "__main__":
-    # This ensures the script only runs when executed directly
     exit(main())

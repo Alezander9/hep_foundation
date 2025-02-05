@@ -1,10 +1,9 @@
-dataset_id: dataset_runs00296939_00296942_00297447_tracks56_0c68f1d7
-creation_date: '2025-02-04 15:13:53.004984'
+dataset_id: dataset_runs00296939_00296942_tracks20_03630283
+creation_date: '2025-02-04 15:51:38.433221'
 config:
   run_numbers:
   - 00296939
   - 00296942
-  - 00297447
   track_selections:
     eta:
     - -2.5
@@ -13,20 +12,14 @@ config:
     - 0.0
     - 10.0
   event_selections: {}
-  max_tracks_per_event: 56
+  max_tracks_per_event: 20
   min_tracks_per_event: 3
-  catalog_limit: 5
+  catalog_limit: 1
   train_fraction: 0.7
   validation_fraction: 0.15
   test_fraction: 0.15
-  batch_size: 128
-  shuffle_buffer: 50000
-  dataset_id: null
-  dataset_path: null
-  creation_date: null
-  atlas_version: null
-  software_versions: null
-  normalization_params: null
+  batch_size: 1024
+  shuffle_buffer: 1000
 atlas_version: 1.0.0
 software_versions:
   python: 3.9.21
