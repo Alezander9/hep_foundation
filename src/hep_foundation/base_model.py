@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 class BaseModel(ABC):
     """Base class for all models"""
@@ -44,3 +45,8 @@ class BaseModel(ABC):
         if self.model is None:
             raise ValueError("Model not built yet")
         self.model.load_weights(path)
+        
+    @abstractmethod
+    def create_plots(self, plots_dir: Path) -> None:
+        """Create model-specific plots"""
+        pass

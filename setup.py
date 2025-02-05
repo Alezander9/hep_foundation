@@ -20,6 +20,8 @@ setup(
         # Visualization
         "matplotlib>=3.9.4",
         "seaborn>=0.13.0",  # Added seaborn
+        "pydot>=1.4.2",         # Added for network visualization
+        "graphviz>=0.20.1",     # Added for graph creation
         
         # Progress bars and utilities
         "tqdm>=4.67.1",

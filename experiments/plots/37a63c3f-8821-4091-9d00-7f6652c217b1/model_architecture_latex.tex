@@ -1,0 +1,22 @@
+\documentclass[border=8pt, multi, tikz]{standalone}
+\usepackage{import}
+\usepackage[outdir=./]{epstopdf}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\begin{document}
+\def\layersep{2.5cm}
+\begin{tikzpicture}[shorten >=1pt,->,draw=black!50, node distance=\layersep]
+\node[draw, circle] (input) at (0,0) {$20 \times 6$};
+\node[draw, rectangle] (enc0) at (1*\layersep,0) {256};\node[draw, rectangle] (enc1) at (2*\layersep,0) {128};\node[draw, rectangle] (enc2) at (3*\layersep,0) {64};
+\node[draw, rectangle, fill=gray!20] (latent) at (4*\layersep,0) {32};
+\node[draw, rectangle] (dec0) at (5*\layersep,0) {64};\node[draw, rectangle] (dec1) at (6*\layersep,0) {128};\node[draw, rectangle] (dec2) at (7*\layersep,0) {256};
+\node[draw, circle] (output) at (8*\layersep,0) {$20 \times 6$};
+\draw[->] (input) -- (enc0);
+\draw[->] (enc0) -- (enc1);\draw[->] (enc1) -- (enc2);
+\draw[->] (enc2) -- (latent);
+\draw[->] (latent) -- (dec0);
+\draw[->] (dec0) -- (dec1);\draw[->] (dec1) -- (dec2);
+\draw[->] (dec2) -- (output);
+\end{tikzpicture}
+\end{document}

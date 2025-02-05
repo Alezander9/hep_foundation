@@ -1,0 +1,54 @@
+{
+  "input": {
+    "name": "Input",
+    "shape": [
+      20,
+      6
+    ]
+  },
+  "encoder": [
+    {
+      "name": "Dense 256",
+      "type": "dense",
+      "size": 256
+    },
+    {
+      "name": "Dense 128",
+      "type": "dense",
+      "size": 128
+    },
+    {
+      "name": "Dense 64",
+      "type": "dense",
+      "size": 64
+    }
+  ],
+  "latent": {
+    "name": "Latent",
+    "size": 32
+  },
+  "decoder": [
+    {
+      "name": "Dense 64",
+      "type": "dense",
+      "size": 64
+    },
+    {
+      "name": "Dense 128",
+      "type": "dense",
+      "size": 128
+    },
+    {
+      "name": "Dense 256",
+      "type": "dense",
+      "size": 256
+    }
+  ],
+  "output": {
+    "name": "Output",
+    "shape": [
+      20,
+      6
+    ]
+  }
+}

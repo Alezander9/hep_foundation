@@ -1,5 +1,7 @@
 from typing import Dict, List, Any, Optional
 import tensorflow as tf
+import matplotlib.pyplot as plt
+from pathlib import Path
 
 from .base_model import BaseModel
 
@@ -84,10 +86,19 @@ class ModelTrainer:
         self,
         dataset: tf.data.Dataset,
         validation_data: Optional[tf.data.Dataset] = None,
-        callbacks: List[tf.keras.callbacks.Callback] = None
+        callbacks: List[tf.keras.callbacks.Callback] = None,
+        plot_training: bool = False,
+        plots_dir: Optional[Path] = None
     ) -> Dict[str, Any]:
-        """Train with enhanced metrics tracking"""
+        """Train with enhanced metrics tracking and optional plotting"""
         print("\nStarting training with metrics tracking:")
+        
+        if plot_training and plots_dir is None:
+            plots_dir = Path("experiments/plots")
+        
+        if plot_training:
+            plots_dir.mkdir(parents=True, exist_ok=True)
+            print(f"\nWill save training plots to: {plots_dir}")
         
         if self.model.model is None:
             raise ValueError("Model not built yet")
@@ -143,7 +154,36 @@ class ModelTrainer:
         for metric, values in self.metrics_history.items():
             print(f"  {metric}: {values[-1]:.6f}")
             
+        # After training completes, create plots if requested
+        if plot_training:
+            self._create_training_plots(plots_dir)
+        
         return self.get_training_summary()
+        
+    def _create_training_plots(self, plots_dir: Path):
+        """Create standard training plots"""
+        print("\nGenerating training plots...")
+        
+        # Plot training history
+        plt.figure(figsize=(12, 6))
+        history = self.metrics_history
+        
+        # Plot all metrics that have 'loss' in their name
+        for metric in history.keys():
+            if 'loss' in metric.lower():
+                plt.plot(history[metric], label=metric)
+        
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.title('Training History')
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(plots_dir / 'training_history.pdf')
+        plt.close()
+        
+        # Let the model create any model-specific plots
+        if hasattr(self.model, 'create_plots'):
+            self.model.create_plots(plots_dir)
         
     def evaluate(self, dataset: tf.data.Dataset) -> Dict[str, float]:
         """Evaluate with enhanced metrics tracking"""

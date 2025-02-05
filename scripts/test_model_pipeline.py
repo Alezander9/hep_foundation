@@ -3,10 +3,10 @@ from datetime import datetime
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
-import sqlite3
-from pathlib import Path
 from typing import Dict, Any, List
+from pathlib import Path
 
+from hep_foundation.utils import ATLAS_RUN_NUMBERS
 from hep_foundation.model_registry import ModelRegistry
 from hep_foundation.model_factory import ModelFactory
 from hep_foundation.model_trainer import ModelTrainer
@@ -14,7 +14,7 @@ from hep_foundation.processed_dataset_manager import ProcessedDatasetManager
 
 def test_model_pipeline(
     # Dataset parameters
-    run_numbers: list = ["00296939", "00296942", "00297447"],
+    run_numbers: list = ATLAS_RUN_NUMBERS[0:2],
     catalog_limit: int = 5,
     
     # Track selection parameters
@@ -45,6 +45,7 @@ def test_model_pipeline(
     learning_rate: float = 0.001,
     early_stopping_patience: int = 3,
     early_stopping_min_delta: float = 1e-4,
+    plot_training: bool = True,
     
     # Experiment parameters
     experiment_name: str = "autoencoder_test",
@@ -74,6 +75,7 @@ def test_model_pipeline(
         learning_rate: Training learning rate
         early_stopping_patience: Patience for early stopping
         early_stopping_min_delta: Minimum delta for early stopping
+        plot_training: Whether to plot training progress
         experiment_name: Name for the experiment
         experiment_description: Description of the experiment
     """
@@ -248,7 +250,9 @@ def test_model_pipeline(
             training_results = trainer.train(
                 dataset=train_dataset,
                 validation_data=val_dataset,
-                callbacks=callbacks
+                callbacks=callbacks,
+                plot_training=plot_training,
+                plots_dir=Path(f"experiments/plots/{experiment_id}")  # Save plots with experiment
             )
             training_end_time = datetime.now()
         except Exception as e:
@@ -366,7 +370,7 @@ def main():
         # Example configuration for medium-scale test
         success = test_model_pipeline(
             # Dataset parameters
-            run_numbers=["00296939", "00296942"],
+            run_numbers=ATLAS_RUN_NUMBERS[0:2],
             catalog_limit=1,
             
             # Track selection parameters
@@ -386,6 +390,7 @@ def main():
             # Training parameters
             epochs=5,
             learning_rate=0.001,
+            plot_training=True,
             
             # Experiment parameters
             experiment_name="small_scale_test",

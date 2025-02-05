@@ -2,6 +2,8 @@ from typing import List, Optional
 from tensorflow import keras
 from qkeras import QDense, QActivation, quantized_bits, quantized_relu
 import numpy as np
+from pathlib import Path
+import tensorflow as tf
 
 from hep_foundation.base_model import BaseModel
 
@@ -14,6 +16,7 @@ class AutoEncoder(BaseModel):
         decoder_layers: List[int],
         quant_bits: Optional[int] = None,
         activation: str = 'relu',
+        normalize_latent: bool = False,
         name: str = 'track_autoencoder'
     ):
         super().__init__()
@@ -23,6 +26,7 @@ class AutoEncoder(BaseModel):
         self.decoder_layers = decoder_layers
         self.quant_bits = quant_bits
         self.activation = activation
+        self.normalize_latent = normalize_latent
         self.name = name
         
     def build(self, input_shape: tuple = None) -> None:
@@ -38,29 +42,7 @@ class AutoEncoder(BaseModel):
         
         # Create encoder layers
         for i, units in enumerate(self.encoder_layers):
-            if self.quant_bits:
-                # Dense layer
-                x = QDense(
-                    units,
-                    kernel_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                    bias_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                    name=f'encoder_dense_{i}'
-                )(x)
-                
-                # Activation layer
-                x = QActivation(
-                    quantized_relu(self.quant_bits),
-                    name=f'encoder_activation_{i}'
-                )(x)
-                
-                # Batch normalization
-                x = keras.layers.BatchNormalization(
-                    name=f'encoder_bn_{i}'
-                )(x)
-            else:
-                x = keras.layers.Dense(units, name=f'encoder_dense_{i}')(x)
-                x = keras.layers.Activation(self.activation, name=f'encoder_activation_{i}')(x)
-                x = keras.layers.BatchNormalization(name=f'encoder_bn_{i}')(x)
+            x = self._add_dense_block(x, units, f'encoder_{i}')
         
         # Latent layer
         if self.quant_bits:
@@ -73,25 +55,14 @@ class AutoEncoder(BaseModel):
         else:
             latent = keras.layers.Dense(self.latent_dim, name='latent_layer')(x)
         
+        # Optionally normalize latent space
+        if self.normalize_latent:
+            latent = keras.layers.BatchNormalization(name='latent_normalization')(latent)
+        
         # Decoder
         x = latent
         for i, units in enumerate(self.decoder_layers):
-            if self.quant_bits:
-                x = QDense(
-                    units,
-                    kernel_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                    bias_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                    name=f'decoder_dense_{i}'
-                )(x)
-                x = QActivation(
-                    quantized_relu(self.quant_bits),
-                    name=f'decoder_activation_{i}'
-                )(x)
-                x = keras.layers.BatchNormalization(name=f'decoder_bn_{i}')(x)
-            else:
-                x = keras.layers.Dense(units, name=f'decoder_dense_{i}')(x)
-                x = keras.layers.Activation(self.activation, name=f'decoder_activation_{i}')(x)
-                x = keras.layers.BatchNormalization(name=f'decoder_bn_{i}')(x)
+            x = self._add_dense_block(x, units, f'decoder_{i}')
         
         # Output layer - reshape back to original dimensions
         if self.quant_bits:
@@ -114,6 +85,25 @@ class AutoEncoder(BaseModel):
         for layer in self.model.layers:
             print(f"Layer: {layer.name}, Type: {type(layer)}")
         
+    def _add_dense_block(self, x, units: int, prefix: str):
+        """Helper to add a dense block with activation and batch norm"""
+        if self.quant_bits:
+            x = QDense(
+                units,
+                kernel_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
+                bias_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
+                name=f'{prefix}_dense'
+            )(x)
+            x = QActivation(
+                quantized_relu(self.quant_bits),
+                name=f'{prefix}_activation'
+            )(x)
+        else:
+            x = keras.layers.Dense(units, name=f'{prefix}_dense')(x)
+            x = keras.layers.Activation(self.activation, name=f'{prefix}_activation')(x)
+        
+        return keras.layers.BatchNormalization(name=f'{prefix}_bn')(x)
+
     def get_config(self) -> dict:
         return {
             "model_type": "autoencoder",
@@ -123,5 +113,29 @@ class AutoEncoder(BaseModel):
             "decoder_layers": self.decoder_layers,
             "quant_bits": self.quant_bits,
             "activation": self.activation,
+            "normalize_latent": self.normalize_latent,
             "name": self.name
         }
+
+    def create_plots(self, plots_dir: Path) -> None:
+        """Create autoencoder-specific plots"""
+        # For autoencoder, we might want to show:
+        # 1. Latent space distributions
+        # 2. Reconstruction examples
+        # 3. Loss components if using custom loss
+        
+        print("\nCreating autoencoder-specific plots...")
+        
+        # Example: Plot model architecture
+        tf.keras.utils.plot_model(
+            self.model,
+            to_file=str(plots_dir / 'model_architecture.pdf'),
+            show_shapes=True,
+            show_layer_names=True,
+            expand_nested=True
+        )
+        
+        # Could add more autoencoder-specific visualizations:
+        # - Latent space clustering
+        # - Reconstruction quality examples
+        # - Feature-wise reconstruction errors
