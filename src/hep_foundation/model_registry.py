@@ -24,7 +24,13 @@ class ModelRegistry:
         self.db_path = self.base_path / "registry.db"
         self.model_store = self.base_path / "model_store"
         
+        print(f"\nModelRegistry paths:")
+        print(f"  Base path: {self.base_path.absolute()}")
+        print(f"  DB path: {self.db_path.absolute()}")
+        print(f"  Model store: {self.model_store.absolute()}")
+        
         # Create directories if they don't exist
+        self.base_path.mkdir(parents=True, exist_ok=True)
         self.model_store.mkdir(parents=True, exist_ok=True)
         
         # Initialize database
@@ -236,10 +242,7 @@ class ModelRegistry:
         """Record final training results"""
         # Start with actual metrics
         metrics = dict(final_metrics)  # Make a copy
-        
-        print("\nFinal metrics before processing:")  # Debug print
-        print(json.dumps(metrics, indent=2))
-        
+                
         # Ensure test metrics are properly named
         if 'test_loss' not in metrics and 'test_mse' in metrics:
             metrics['test_loss'] = metrics['test_mse']
@@ -258,10 +261,7 @@ class ModelRegistry:
         
         # Ensure metrics are serializable
         metrics = self.ensure_serializable(metrics)
-        
-        print("\nFinal metrics after processing:")  # Debug print
-        print(json.dumps(metrics, indent=2))
-        
+                
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
@@ -280,6 +280,8 @@ class ModelRegistry:
                 """,
                 (experiment_id,)
             )
+
+        print("Training metrics saved to database")
 
     def save_checkpoint(self, 
                        experiment_id: str,
@@ -336,7 +338,8 @@ class ModelRegistry:
                 "UPDATE experiments SET status = ? WHERE experiment_id = ?",
                 ("checkpoint_saved", experiment_id)
             )
-            
+
+        print("Model checkpoint saved to database")
     # def load_checkpoint(self, 
     #                    experiment_id: str,
     #                    checkpoint_name: str = "latest") -> Dict[str, str]:

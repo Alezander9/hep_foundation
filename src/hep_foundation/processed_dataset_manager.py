@@ -12,6 +12,8 @@ import uproot
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
+import time
+from tqdm import tqdm
 
 from hep_foundation.atlas_data_manager import ATLASDataManager
 from hep_foundation.selection_config import SelectionConfig
@@ -37,14 +39,32 @@ class ProcessedDatasetManager:
         
     def generate_dataset_id(self, config: Dict) -> str:
         """Generate a human-readable dataset ID"""
-        # Create a descriptive ID using key parameters
-        run_str = '_'.join(str(run) for run in sorted(config['run_numbers']))
+        # Create a descriptive ID based on dataset type
+        if 'signal_types' in config:
+            # For signal datasets
+            signal_str = '_'.join(sorted(config['signal_types']))
+            id_components = [
+                'signal',
+                f'types{signal_str}',
+                f'tracks{config["max_tracks_per_event"]}'
+            ]
+        else:
+            # For regular datasets
+            run_str = '_'.join(str(run) for run in sorted(config['run_numbers']))
+            id_components = [
+                'dataset',
+                f'runs{run_str}',
+                f'tracks{config["max_tracks_per_event"]}'
+            ]
+        
         # Add a short hash for uniqueness
-        config_hash = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()[:8]
-        dataset_id = f"dataset_runs{run_str}_tracks{config['max_tracks_per_event']}_{config_hash}"
-        print(f"\nGenerated dataset ID: {dataset_id}")  # Debug print
-        print(f"From config: {json.dumps(config, indent=2)}")  # Debug print
-        return dataset_id
+        config_hash = hashlib.sha256(
+            json.dumps(config, sort_keys=True).encode()
+        ).hexdigest()[:8]
+        
+        id_components.append(config_hash)
+        
+        return "_".join(id_components)
     
     def save_dataset_config(self, dataset_id: str, config: Dict):
         """Save full dataset configuration"""
@@ -80,10 +100,13 @@ class ProcessedDatasetManager:
     
     def _create_dataset(self, config: Dict, plot_distributions: bool = False) -> Tuple[str, Path]:
         """Create new processed dataset from ATLAS data"""
+        print(f"Creating new dataset")
+
         dataset_id = self.generate_dataset_id(config)
         output_path = self.datasets_dir / f"{dataset_id}.h5"
+        print(f"\nGenerated dataset ID: {dataset_id}")
+        print(f"From config: {json.dumps(config, indent=2)}")
         
-        print(f"Creating new dataset: {dataset_id}")
         
         try:
             # Save full configuration first
@@ -108,9 +131,9 @@ class ProcessedDatasetManager:
             }
             
             for run_number in config['run_numbers']:
-                events, stats = self._process_run_data(
-                    run_number=run_number,
+                events, stats = self._process_data(
                     selection_config=selection_config,
+                    run_number=run_number,
                     catalog_limit=config.get('catalog_limit'),
                     plot_distributions=plot_distributions
                 )
@@ -219,6 +242,7 @@ class ProcessedDatasetManager:
                      shuffle_buffer: int = 10000,
                      plot_distributions: bool = False) -> Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
         """Load and split dataset into train/val/test"""
+        print(f"Attempting to load datasets")
         try:
             # Ensure config is properly formatted
             config = {
@@ -233,6 +257,8 @@ class ProcessedDatasetManager:
             # Generate dataset ID
             dataset_id = self.generate_dataset_id(config)
             dataset_path = self.datasets_dir / f"{dataset_id}.h5"
+            print(f"\nGenerated dataset ID: {dataset_id}")
+            print(f"From config: {json.dumps(config, indent=2)}")
             
             # Check if dataset exists, if not create it
             if not dataset_path.exists():
@@ -266,7 +292,8 @@ class ProcessedDatasetManager:
             # Verify config matches
             if self.generate_dataset_id(stored_config) != dataset_id:
                 raise ValueError("Dataset was created with different configuration")
-            
+            print(f"Verified that saved config of loaded dataset matches desired config")
+
             # Convert normalization parameters to tensorflow tensors
             means = TypeConverter.to_tensorflow(norm_params['means'])
             stds = TypeConverter.to_tensorflow(norm_params['stds'])
@@ -382,13 +409,44 @@ class ProcessedDatasetManager:
             
         return features
 
-    def _process_run_data(self, 
-                         run_number: str,
-                         selection_config: SelectionConfig,
-                         catalog_limit: Optional[int] = None,
-                         plot_distributions: bool = False) -> Tuple[List[np.ndarray], Dict]:
-        """Process all events from a single run"""
-        processed_events = []
+    def _get_catalog_paths(self, 
+                          run_number: Optional[str] = None,
+                          signal_key: Optional[str] = None,
+                          catalog_limit: Optional[int] = None) -> List[Path]:
+        """Get list of catalog paths for either ATLAS data or signal data"""
+        if run_number is not None:
+            # Get ATLAS data catalogs
+            paths = []
+            for catalog_idx in range(self.atlas_manager.get_catalog_count(run_number)):
+                if catalog_limit and catalog_idx >= catalog_limit:
+                    break
+                catalog_path = self.atlas_manager.get_run_catalog_path(run_number, catalog_idx)
+                if not catalog_path.exists():
+                    catalog_path = self.atlas_manager.download_run_catalog(run_number, catalog_idx)
+                if catalog_path:
+                    paths.append(catalog_path)
+            print(f"Found {len(paths)} catalogs for run {run_number}")
+            return paths
+        elif signal_key is not None:
+            # Get signal data catalog
+            catalog_path = self.atlas_manager.get_signal_catalog_path(signal_key, 0)
+            if not catalog_path.exists():
+                catalog_path = self.atlas_manager.download_signal_catalog(signal_key, 0)
+            print(f"Found signal catalog for {signal_key}")
+            return [catalog_path] if catalog_path else []
+        else:
+            raise ValueError("Must provide either run_number or signal_key")
+
+    def _process_data(self,
+                     selection_config: SelectionConfig,
+                     run_number: Optional[str] = None,
+                     signal_key: Optional[str] = None,
+                     catalog_limit: Optional[int] = None,
+                     plot_distributions: bool = False) -> Tuple[List[np.ndarray], Dict]:
+        """Process either ATLAS or signal data using common code"""
+        print(f"\nProcessing {'signal' if signal_key else 'ATLAS'} data")
+        
+        # Initialize statistics
         stats = {
             'total_events': 0,
             'processed_events': 0,
@@ -396,8 +454,7 @@ class ProcessedDatasetManager:
             'processing_time': 0.0  # Explicitly use float
         }
         
-        print(f"\nProcessing run {run_number}")
-        catalog_idx = 0
+        processed_events = []
         
         # Add statistics collection
         pre_selection_stats = {
@@ -408,16 +465,15 @@ class ProcessedDatasetManager:
             'tracks_per_event': [],
             'pt': [], 'eta': [], 'phi': [], 'd0': [], 'z0': [], 'chi2_per_ndof': []
         }
+        # Get catalog paths
+        print(f"Getting catalog paths for run {run_number} and signal {signal_key}")
+        catalog_paths = self._get_catalog_paths(run_number, signal_key, catalog_limit)
+        print(f"Found {len(catalog_paths)} catalog paths")
         
-        while True:
+        for catalog_idx, catalog_path in enumerate(catalog_paths):
+            print(f"\nProcessing catalog {catalog_idx} with path: {catalog_path}")
+            
             try:
-                # Get or download catalog
-                catalog_path = self.atlas_manager.get_run_catalog_path(run_number, catalog_idx)
-                if not catalog_path.exists():
-                    catalog_path = self.atlas_manager.download_run_catalog(run_number, catalog_idx)
-                    if catalog_path is None:
-                        break
-                
                 print(f"Processing catalog {catalog_idx}")
                 catalog_start_time = datetime.now()
                 catalog_stats = {'events': 0, 'processed': 0}
@@ -498,15 +554,15 @@ class ProcessedDatasetManager:
                     break
                     
             except Exception as e:
-                print(f"Error processing catalog {catalog_idx}: {str(e)}")
-                break
-        
+                print(f"Error processing catalog {catalog_path}: {str(e)}")
+                continue
+
         if plot_distributions:
             print(f"\nCollecting statistics for plotting...")
             print(f"Pre-selection events: {len(pre_selection_stats['tracks_per_event'])}")
             print(f"Post-selection events: {len(post_selection_stats['tracks_per_event'])}")
             
-            plots_dir = self.base_dir / "plots" / f"run_{run_number}"
+            plots_dir = self.base_dir / "plots" / (f"run_{run_number}" if run_number else f'signal_{signal_key}')
             self._plot_distributions(pre_selection_stats, post_selection_stats, plots_dir)
         
         # Convert stats to native Python types before returning
@@ -717,3 +773,104 @@ class ProcessedDatasetManager:
         if self.current_dataset_info is None:
             raise ValueError("No dataset currently loaded")
         return self.current_dataset_info 
+
+    def _create_signal_dataset(self, config: Dict, plot_distributions: bool = False) -> Tuple[str, Path]:
+        """Create new processed dataset from ATLAS signal data"""
+        print(f"Creating new signal dataset")
+
+        dataset_id = self.generate_dataset_id(config)
+        output_path = self.datasets_dir / "signals" / f"{dataset_id}.h5"
+        print(f"\nGenerated dataset ID: {dataset_id}")
+        print(f"From config: {json.dumps(config, indent=2)}")
+        
+        try:
+            # Save full configuration first
+            config_path = self.save_dataset_config(dataset_id, config)
+            print(f"Saved configuration to: {config_path}")
+            
+            # Create selection config
+            selection_config = SelectionConfig(
+                max_tracks_per_event=config['max_tracks_per_event'],
+                min_tracks_per_event=config['min_tracks_per_event'],
+                track_selections=config.get('track_selections'),
+                event_selections=config.get('event_selections')
+            )
+            
+            # Process all signal types
+            all_events = []
+            total_stats = {
+                'total_events': 0,
+                'processed_events': 0,
+                'total_tracks': 0,
+                'processing_time': 0
+            }
+            
+            # Process signal data
+            for signal_key in config['signal_types']:
+                events, stats = self._process_data(
+                    selection_config=selection_config,
+                    signal_key=signal_key,
+                    catalog_limit=config.get('catalog_limit'),
+                    plot_distributions=plot_distributions
+                )
+                all_events.extend(events)
+                
+                # Update total statistics
+                for key in total_stats:
+                    total_stats[key] += stats[key]
+            
+            if not all_events:
+                raise ValueError("No events passed selection criteria")
+            
+            # Create HDF5 dataset
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with h5py.File(output_path, 'w') as f:
+                features = f.create_dataset(
+                    'features', 
+                    data=np.stack(all_events),
+                    chunks=True,
+                    compression='gzip'
+                )
+                
+                # Store all attributes
+                attrs_dict = {
+                    'config': json.dumps(config),
+                    'creation_date': str(datetime.now()),
+                    'dataset_id': dataset_id,
+                    'normalization_params': json.dumps(self._compute_normalization(features[:])),
+                    'processing_stats': json.dumps(total_stats)
+                }
+                
+                for key, value in attrs_dict.items():
+                    f.attrs[key] = value
+            
+            return dataset_id, output_path
+            
+        except Exception as e:
+            # Clean up on failure
+            if output_path.exists():
+                output_path.unlink()
+            if config_path.exists():
+                config_path.unlink()
+            raise Exception(f"Signal dataset creation failed: {str(e)}")
+
+    def _process_run_data(self, run_number: str, selection_config: SelectionConfig,
+                         catalog_limit: Optional[int] = None,
+                         plot_distributions: bool = False) -> Tuple[List[np.ndarray], Dict]:
+        """Process ATLAS run data using common processing code"""
+        return self._process_data(
+            selection_config=selection_config,
+            run_number=run_number,
+            catalog_limit=catalog_limit,
+            plot_distributions=plot_distributions
+        )
+
+    def _process_signal_data(self, signal_key: str, selection_config: SelectionConfig,
+                            catalog_limit: Optional[int] = None,
+                            plot_distributions: bool = False) -> Tuple[List[np.ndarray], Dict]:
+        """Process signal data using common processing code"""
+        return self._process_data(
+            selection_config=selection_config,
+            signal_key=signal_key,
+            plot_distributions=plot_distributions
+        ) 

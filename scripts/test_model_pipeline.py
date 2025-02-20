@@ -116,10 +116,18 @@ def test_model_pipeline(
                 return obj.tolist()
             return obj
 
+        # Create experiment directory
+        experiment_dir = Path("experiments")
+        print(f"\nCreating experiment directory at: {experiment_dir.absolute()}")
+        experiment_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Initialize registry
+        registry = ModelRegistry(str(experiment_dir))
+        print(f"Registry initialized at: {registry.db_path}")
+        
         # 1. Initialize managers
         print("Initializing managers...")
         data_manager = ProcessedDatasetManager()
-        registry = ModelRegistry("experiments")
         
         # 2. Load or create dataset
         print("Setting up data pipeline...")
@@ -280,9 +288,9 @@ def test_model_pipeline(
             'training_duration': (training_end_time - training_start_time).total_seconds()
         }
 
-        print("\nFinal metrics collected:")
-        for metric, value in all_metrics.items():
-            print(f"  {metric}: {value:.6f}")
+        # print("\nFinal metrics collected:")
+        # for metric, value in all_metrics.items():
+        #     print(f"  {metric}: {value:.6f}")
 
         registry.complete_training(
             experiment_id=experiment_id,
@@ -373,21 +381,20 @@ def main():
     
     # Choose experiment type
     MODEL_TYPE = "vae"  # "vae" or "autoencoder"
-    
     # Dataset configuration - common for both models
     dataset_config = DatasetConfig(
-        run_numbers=ATLAS_RUN_NUMBERS[0:2],
-        catalog_limit=1,
+        run_numbers=ATLAS_RUN_NUMBERS[-1:],
+        catalog_limit=2,
         track_selections={
             'eta': (-2.5, 2.5),
             'chi2_per_ndof': (0.0, 10.0),
         },
         event_selections={},
-        max_tracks=56,
+        max_tracks=30,
         min_tracks=3,
         validation_fraction=0.15,
         test_fraction=0.15,
-        batch_size=128,
+        batch_size=1024,
         shuffle_buffer=50000,
         plot_distributions=True
     )
@@ -395,9 +402,9 @@ def main():
     # Model configurations
     ae_config = ModelConfig(
         model_type="autoencoder",
-        latent_dim=32,
-        encoder_layers=[256, 128, 64],
-        decoder_layers=[64, 128, 256],
+        latent_dim=16,
+        encoder_layers=[128, 64, 32],
+        decoder_layers=[32, 64, 128],
         quant_bits=8,
         activation='relu',
         learning_rate=0.001,
@@ -409,21 +416,21 @@ def main():
     
     vae_config = ModelConfig(
         model_type="variational_autoencoder",
-        latent_dim=32,
-        encoder_layers=[256, 128, 64],
-        decoder_layers=[64, 128, 256],
+        latent_dim=16,
+        encoder_layers=[128, 64, 32],
+        decoder_layers=[32, 64, 128],
         quant_bits=8,
         activation='relu',
         learning_rate=0.001,
-        epochs=5,
+        epochs=20,
         early_stopping_patience=3,
         early_stopping_min_delta=1e-4,
         plot_training=True,
         beta_schedule={
             'start': 0.0,
-            'end': 1.0,
-            'warmup_epochs': 2,
-            'cycle_epochs': 1
+            'end': 0.01,
+            'warmup_epochs': 5,
+            'cycle_epochs': 5
         }
     )
     

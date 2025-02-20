@@ -3,7 +3,11 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-from .base_model import BaseModel
+from hep_foundation.base_model import BaseModel
+from hep_foundation.plot_utils import (
+    set_science_style, get_figure_size, get_color_cycle,
+    FONT_SIZES, LINE_WIDTHS
+)
 
 class ModelTrainer:
     """Handles model training and evaluation"""
@@ -146,6 +150,10 @@ class ModelTrainer:
             shuffle=True
         )
         
+        # Update model's history if it's a VAE
+        if hasattr(self.model, '_history'):
+            self.model._history = history.history
+        
         # Update metrics history
         for metric, values in history.history.items():
             self.metrics_history[metric] = [float(v) for v in values]
@@ -156,34 +164,61 @@ class ModelTrainer:
             
         # After training completes, create plots if requested
         if plot_training:
+            print("\nGenerating training plots...")
             self._create_training_plots(plots_dir)
         
         return self.get_training_summary()
         
     def _create_training_plots(self, plots_dir: Path):
-        """Create standard training plots"""
-        print("\nGenerating training plots...")
+        """Create standard training plots with LaTeX formatting"""
+        print(f"\nCreating training plots in: {plots_dir.absolute()}")
+        plots_dir.mkdir(parents=True, exist_ok=True)
         
-        # Plot training history
-        plt.figure(figsize=(12, 6))
-        history = self.metrics_history
-        
-        # Plot all metrics that have 'loss' in their name
-        for metric in history.keys():
-            if 'loss' in metric.lower():
-                plt.plot(history[metric], label=metric)
-        
-        plt.xlabel('Epoch')
-        plt.ylabel('Loss')
-        plt.title('Training History')
-        plt.legend()
-        plt.grid(True)
-        plt.savefig(plots_dir / 'training_history.pdf')
-        plt.close()
-        
-        # Let the model create any model-specific plots
-        if hasattr(self.model, 'create_plots'):
-            self.model.create_plots(plots_dir)
+        try:
+            from hep_foundation.plot_utils import (
+                set_science_style, get_figure_size, get_color_cycle,
+                FONT_SIZES, LINE_WIDTHS
+            )
+            
+            set_science_style(use_tex=True)
+            
+            plt.figure(figsize=get_figure_size('single', ratio=1.2))
+            history = self.metrics_history
+            colors = get_color_cycle('high_contrast')
+            color_idx = 0
+            
+            # Plot metrics with LaTeX labels
+            for metric in history.keys():
+                if 'loss' in metric.lower() and not metric.lower().startswith(('val_', 'test_')):
+                    label = metric.replace('_', ' ').title()
+                    label = rf'$\mathcal{{L}}_\mathrm{{{label}}}$'
+                    plt.plot(
+                        history[metric], 
+                        label=label,
+                        color=colors[color_idx % len(colors)],
+                        linewidth=LINE_WIDTHS['thick']
+                    )
+                    color_idx += 1
+            
+            plt.xlabel(r'\textbf{Epoch}', fontsize=FONT_SIZES['large'])
+            plt.ylabel(r'\textbf{Loss}', fontsize=FONT_SIZES['large'])
+            plt.title(r'\textbf{Training History}', fontsize=FONT_SIZES['xlarge'])
+            plt.legend(fontsize=FONT_SIZES['normal'], loc='upper right')
+            plt.grid(True, alpha=0.3)
+            
+            plt.savefig(plots_dir / 'training_history.pdf', dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            # Let the model create any model-specific plots
+            if hasattr(self.model, 'create_plots'):
+                self.model.create_plots(plots_dir)
+
+            print(f"Plots saved to: {plots_dir}")
+            
+        except Exception as e:
+            print(f"Error creating plots: {str(e)}")
+            import traceback
+            traceback.print_exc()
         
     def evaluate(self, dataset: tf.data.Dataset) -> Dict[str, float]:
         """Evaluate with enhanced metrics tracking"""

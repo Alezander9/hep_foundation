@@ -8,6 +8,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from hep_foundation.base_model import BaseModel
+from hep_foundation.plot_utils import (
+    MARKER_SIZES
+)
 
 class Sampling(keras.layers.Layer):
     """Reparameterization trick by sampling from a unit Gaussian"""
@@ -237,68 +240,107 @@ class VariationalAutoEncoder(BaseModel):
         print("\nCreating VAE-specific plots...")
         plots_dir.mkdir(parents=True, exist_ok=True)
         
-        # 1. Model Architecture
-        tf.keras.utils.plot_model(
-            self.model,
-            to_file=str(plots_dir / 'vae_architecture.pdf'),
-            show_shapes=True,
-            show_layer_names=True,
-            expand_nested=True
-        )
-        
-        # 2. Latent Space Visualization (if we have encoded data)
+        try:
+            if hasattr(self.model, 'history') and self.model.history is not None:
+                self._history = self.model.history.history
+            else:
+                print("Warning: No training history found in model")
+                return
+
+            print(f"Available metrics: {list(self._history.keys())}")
+            
+            from hep_foundation.plot_utils import (
+                set_science_style, get_figure_size, get_color_cycle,
+                FONT_SIZES, LINE_WIDTHS
+            )
+            
+            set_science_style(use_tex=True)
+            
+            if self._history:
+                colors = get_color_cycle('high_contrast', 3)
+                
+                plt.figure(figsize=get_figure_size('single', ratio=1.2))
+                ax1 = plt.gca()
+                ax2 = ax1.twinx()
+                
+                epochs = range(1, len(self._history['reconstruction_loss']) + 1)
+                
+                # Plot with LaTeX labels
+                ax1.plot(epochs, self._history['reconstruction_loss'], 
+                        color=colors[0], label=r'$\mathcal{L}_\mathrm{recon}$', 
+                        linewidth=LINE_WIDTHS['thick'])
+                ax1.plot(epochs, self._history['kl_loss'], 
+                        color=colors[1], label=r'$\mathcal{L}_\mathrm{KL}$',
+                        linewidth=LINE_WIDTHS['thick'])
+                
+                # Calculate beta schedule
+                betas = self._calculate_beta_schedule(len(epochs))
+                ax2.plot(epochs, betas, color=colors[2], linestyle='--', 
+                        label=r'$\beta$', linewidth=LINE_WIDTHS['thick'])
+                
+                # LaTeX labels
+                ax1.set_xlabel(r'\textbf{Epoch}', fontsize=FONT_SIZES['large'])
+                ax1.set_ylabel(r'\textbf{Loss Components}', fontsize=FONT_SIZES['large'])
+                ax2.set_ylabel(r'$\boldsymbol{\beta}$', fontsize=FONT_SIZES['large'], color=colors[2])
+                
+                # Combined legend
+                lines1, labels1 = ax1.get_legend_handles_labels()
+                lines2, labels2 = ax2.get_legend_handles_labels()
+                ax1.legend(lines1 + lines2, labels1 + labels2, 
+                          loc='upper right', fontsize=FONT_SIZES['normal'])
+                
+                ax1.grid(True, alpha=0.3)
+                plt.title(r'\textbf{Training Losses and Annealing Schedule}', 
+                         fontsize=FONT_SIZES['xlarge'])
+                
+                plt.savefig(plots_dir / 'training_history.pdf', dpi=300, bbox_inches='tight')
+                plt.close()
+                
+            else:
+                print("Warning: No history data available for plotting")
+            
+        except Exception as e:
+            print(f"Error creating VAE plots: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+        # 3. Latent Space Visualization
         if hasattr(self, '_encoded_data'):
-            plt.figure(figsize=(12, 5))
+            plt.figure(figsize=get_figure_size('double', ratio=2.0))
             
             # Plot z_mean distribution
             plt.subplot(121)
             sns.histplot(self._encoded_data[0].flatten(), bins=50)
-            plt.title('Latent Space Mean Distribution')
-            plt.xlabel('z_mean')
+            plt.title('Latent Space Mean Distribution', fontsize=FONT_SIZES['large'])
+            plt.xlabel('zμ', fontsize=FONT_SIZES['large'])
+            plt.ylabel('Count', fontsize=FONT_SIZES['large'])
             
             # Plot z_log_var distribution
             plt.subplot(122)
             sns.histplot(self._encoded_data[1].flatten(), bins=50)
-            plt.title('Latent Space Log Variance Distribution')
-            plt.xlabel('z_log_var')
+            plt.title('Latent Space Log Variance Distribution', fontsize=FONT_SIZES['large'])
+            plt.xlabel('zlog(σ²)', fontsize=FONT_SIZES['large'])
+            plt.ylabel('Count', fontsize=FONT_SIZES['large'])
             
             plt.tight_layout()
-            plt.savefig(plots_dir / 'latent_space_distributions.pdf')
+            plt.savefig(plots_dir / 'vae_latent_space_distributions.pdf', dpi=300, bbox_inches='tight')
             plt.close()
             
-            # 3. 2D visualization of latent space (first two dimensions)
+            # 4. 2D Latent Space Projection
             if self.latent_dim >= 2:
-                plt.figure(figsize=(10, 10))
+                plt.figure(figsize=get_figure_size('single', ratio=1.0))
                 plt.scatter(
                     self._encoded_data[0][:, 0],
                     self._encoded_data[0][:, 1],
                     alpha=0.5,
-                    s=2
+                    s=MARKER_SIZES['tiny'],
+                    c=get_color_cycle('aesthetic')[0]
                 )
-                plt.title('2D Latent Space Projection')
-                plt.xlabel('First Latent Dimension')
-                plt.ylabel('Second Latent Dimension')
-                plt.savefig(plots_dir / 'latent_space_2d.pdf')
+                plt.title('2D Latent Space Projection', fontsize=FONT_SIZES['xlarge'])
+                plt.xlabel('z₁', fontsize=FONT_SIZES['large'])
+                plt.ylabel('z₂', fontsize=FONT_SIZES['large'])
+                plt.tight_layout()
+                plt.savefig(plots_dir / 'vae_latent_space_2d.pdf', dpi=300, bbox_inches='tight')
                 plt.close()
-        
-        # 4. Beta Schedule Visualization
-        epochs = range(self.beta_schedule['warmup_epochs'] + self.beta_schedule['cycle_epochs'])
-        betas = []
-        for epoch in epochs:
-            if epoch < self.beta_schedule['warmup_epochs']:
-                beta = self.beta_schedule['start']
-            else:
-                cycle_position = (epoch - self.beta_schedule['warmup_epochs']) % self.beta_schedule['cycle_epochs']
-                cycle_ratio = cycle_position / self.beta_schedule['cycle_epochs']
-                beta = self.beta_schedule['start'] + (self.beta_schedule['end'] - self.beta_schedule['start']) * \
-                       (np.sin(cycle_ratio * np.pi) + 1) / 2
-            betas.append(beta)
-        
-        plt.figure(figsize=(10, 5))
-        plt.plot(epochs, betas)
-        plt.title('Beta Annealing Schedule')
-        plt.xlabel('Epoch')
-        plt.ylabel('Beta Value')
-        plt.grid(True)
-        plt.savefig(plots_dir / 'beta_schedule.pdf')
-        plt.close() 
+
+        print(f"VAE plots saved to: {plots_dir}")
