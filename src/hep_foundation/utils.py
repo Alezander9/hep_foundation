@@ -196,6 +196,13 @@ ATLAS_CATALOG_COUNTS = {
     '00311481': 552,
 }                                      
 
+# Signal keys and their catalog file names
+SIGNAL_CATALOGS = {
+            "zprime": "mc20_13TeV_MC_Pythia8EvtGen_A14NNPDF23LO_zprime3000_tt",
+            "wprime_qq": "mc20_13TeV_MC_Pythia8EvtGen_A14NNPDF23LO_Wprime_qq_3000",
+            "zprime_bb": "mc20_13TeV_MC_Pythia8EvtGen_A14NNPDF23LO_Zprimebb3000"
+            }
+
 def get_catalog_count(run_number: str) -> int:
     """Get the number of catalogs for a run number from lookup table"""
     if run_number not in ATLAS_CATALOG_COUNTS:

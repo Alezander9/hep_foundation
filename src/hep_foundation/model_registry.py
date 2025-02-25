@@ -12,8 +12,6 @@ import numpy as np
 import sys
 import psutil
 
-from hep_foundation.processed_dataset_manager import ProcessedDatasetManager
-
 class ModelRegistry:
     """
     Enhanced central registry for managing ML experiments, models, and metrics
@@ -33,477 +31,48 @@ class ModelRegistry:
         self.base_path.mkdir(parents=True, exist_ok=True)
         self.model_store.mkdir(parents=True, exist_ok=True)
         
-        # Initialize database
-        self._initialize_db()
+        # Initialize registry structure
+        self._initialize_model_registry()
         
-    def _initialize_db(self):
-        """Create database tables if they don't exist"""
-        with sqlite3.connect(self.db_path) as conn:
-            # Main experiments table
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS experiments (
-                    experiment_id TEXT PRIMARY KEY,
-                    timestamp DATETIME,
-                    name TEXT,
-                    description TEXT,
-                    status TEXT,
-                    environment_info JSON
-                )
-            """)
-            
-            # Dataset configuration table - include all columns in initial creation
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS dataset_configs (
-                    experiment_id TEXT PRIMARY KEY,
-                    dataset_id TEXT,
-                    dataset_path TEXT,
-                    creation_date TEXT,
-                    atlas_version TEXT,
-                    software_versions JSON,
-                    run_numbers JSON,
-                    track_selections JSON,
-                    event_selections JSON,
-                    max_tracks_per_event INTEGER,
-                    min_tracks_per_event INTEGER,
-                    normalization_params JSON,
-                    train_fraction FLOAT,
-                    validation_fraction FLOAT,
-                    test_fraction FLOAT,
-                    batch_size INTEGER,
-                    shuffle_buffer INTEGER,
-                    data_quality_metrics JSON,
-                    FOREIGN KEY(experiment_id) REFERENCES experiments(experiment_id)
-                )
-            """)
-            
-            # Model configuration table
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS model_configs (
-                    experiment_id TEXT PRIMARY KEY,
-                    model_type TEXT,
-                    architecture JSON,
-                    hyperparameters JSON,
-                    FOREIGN KEY(experiment_id) REFERENCES experiments(experiment_id)
-                )
-            """)
-            
-            # Training configuration and results
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS training_info (
-                    experiment_id TEXT PRIMARY KEY,
-                    config JSON,
-                    start_time DATETIME,
-                    end_time DATETIME,
-                    epochs_completed INTEGER,
-                    training_history JSON,
-                    final_metrics JSON,
-                    hardware_metrics JSON,
-                    status TEXT,
-                    FOREIGN KEY(experiment_id) REFERENCES experiments(experiment_id)
-                )
-            """)
-            
-            # Checkpoints table
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS checkpoints (
-                    checkpoint_id TEXT PRIMARY KEY,
-                    experiment_id TEXT,
-                    name TEXT,
-                    timestamp DATETIME,
-                    metadata JSON,
-                    FOREIGN KEY(experiment_id) REFERENCES experiments(experiment_id)
-                )
-            """)
-            
-    def register_experiment(self,
-                          name: str,
-                          dataset_id: str,
-                          model_config: dict,
-                          training_config: dict,
-                          description: str = "") -> str:
-        """Register new experiment using existing dataset"""
-        experiment_id = str(uuid.uuid4())
-        timestamp = datetime.now()
+    def _initialize_model_registry(self):
+        """Initialize the model registry folder structure and index tracking"""
+        # Create base directory if it doesn't exist
+        self.base_path.mkdir(parents=True, exist_ok=True)
         
-        with sqlite3.connect(self.db_path) as conn:
-            # Store experiment info
-            conn.execute(
-                """
-                INSERT INTO experiments 
-                (experiment_id, timestamp, name, description, status, environment_info)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    experiment_id,
-                    timestamp,
-                    name,
-                    description,
-                    "created",
-                    json.dumps(self._get_environment_info())
-                )
-            )
-            
-            # Store dataset reference
-            conn.execute(
-                """
-                INSERT INTO dataset_configs 
-                (experiment_id, dataset_id) 
-                VALUES (?, ?)
-                """,
-                (experiment_id, dataset_id)
-            )
-            
-            # Store other configs
-            conn.execute(
-                """
-                INSERT INTO model_configs 
-                (experiment_id, model_type, architecture, hyperparameters)
-                VALUES (?, ?, ?, ?)
-                """,
-                (
-                    experiment_id,
-                    model_config["model_type"],
-                    json.dumps(model_config["architecture"]),
-                    json.dumps(model_config["hyperparameters"])
-                )
-            )
-            
-            conn.execute(
-                """
-                INSERT INTO training_info 
-                (experiment_id, config, status)
-                VALUES (?, ?, ?)
-                """,
-                (experiment_id, json.dumps(training_config), "pending")
-            )
-            
-        return experiment_id
-        
-    def ensure_serializable(self, obj):
-        """Recursively convert numpy/tensorflow types to Python native types"""
-        if isinstance(obj, dict):
-            return {key: self.ensure_serializable(value) for key, value in obj.items()}
-        elif isinstance(obj, list):
-            return [self.ensure_serializable(item) for item in obj]
-        elif isinstance(obj, (np.integer, np.floating)):
-            return float(obj)
-        elif isinstance(obj, np.ndarray):
-            return obj.tolist()
-        elif isinstance(obj, tf.Tensor):
-            return obj.numpy().tolist()
-        elif obj is None:
-            return "null"  # Convert None to string "null"
-        return obj
+        # Initialize or load the model index
+        self.index_file = self.base_path / "model_index.json"
+        if self.index_file.exists():
+            with open(self.index_file, 'r') as f:
+                index_data = json.load(f)
+                self.current_index = index_data.get('current_index', 0)
+        else:
+            self.current_index = 0
+            self._save_index()
 
-    def update_training_progress(self,
-                               experiment_id: str,
-                               epoch: int,
-                               metrics: Dict[str, float],
-                               hardware_metrics: Optional[Dict] = None):
-        """Update training progress and metrics"""
-        with sqlite3.connect(self.db_path) as conn:
-            current = conn.execute(
-                "SELECT training_history FROM training_info WHERE experiment_id = ?",
-                (experiment_id,)
-            ).fetchone()
-            
-            if current is None:
-                raise ValueError(f"No experiment found with id {experiment_id}")
-                
-            # Ensure metrics are serializable
-            metrics = self.ensure_serializable(metrics)
-            if hardware_metrics:
-                hardware_metrics = self.ensure_serializable(hardware_metrics)
-            
-            # Initialize or load history
-            history = json.loads(current[0]) if current[0] else {}
-            
-            # Update history
-            if str(epoch) not in history:
-                history[str(epoch)] = {}
-            history[str(epoch)].update(metrics)
-            
-            # Update training info
-            updates = {
-                "epochs_completed": epoch,
-                "training_history": json.dumps(history)
-            }
-            
-            if hardware_metrics:
-                updates["hardware_metrics"] = json.dumps(hardware_metrics)
-                
-            update_sql = "UPDATE training_info SET " + \
-                        ", ".join(f"{k} = ?" for k in updates.keys()) + \
-                        " WHERE experiment_id = ?"
-            
-            conn.execute(update_sql, list(updates.values()) + [experiment_id])
-            
-    def complete_training(self, experiment_id: str, final_metrics: Dict):
-        """Record final training results"""
-        # Start with actual metrics
-        metrics = dict(final_metrics)  # Make a copy
-                
-        # Ensure test metrics are properly named
-        if 'test_loss' not in metrics and 'test_mse' in metrics:
-            metrics['test_loss'] = metrics['test_mse']
-        
-        # Only fill in missing metrics with defaults
-        defaults = {
-            'train_loss': 0.0,
-            'val_loss': 0.0,
-            'test_loss': 0.0,
-            'training_duration': 0.0
-        }
-        
-        for key, default_value in defaults.items():
-            if key not in metrics:
-                metrics[key] = default_value
-        
-        # Ensure metrics are serializable
-        metrics = self.ensure_serializable(metrics)
-                
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                """
-                UPDATE training_info 
-                SET final_metrics = ?, status = 'completed'
-                WHERE experiment_id = ?
-                """,
-                (json.dumps(metrics), experiment_id)
-            )
-            
-            conn.execute(
-                """
-                UPDATE experiments 
-                SET status = 'completed'
-                WHERE experiment_id = ?
-                """,
-                (experiment_id,)
-            )
+    def _save_index(self):
+        """Save the current model index"""
+        with open(self.index_file, 'w') as f:
+            json.dump({'current_index': self.current_index}, f)
 
-        print("Training metrics saved to database")
-
-    def save_checkpoint(self, 
-                       experiment_id: str,
-                       models: Dict[str, Any],
-                       checkpoint_name: str = "latest",
-                       metadata: Optional[Dict] = None):
+    def _create_experiment_folders(self, experiment_name: str) -> Path:
         """
-        Save model checkpoints for an experiment
-        
-        Args:
-            experiment_id: Experiment identifier
-            models: Dictionary of named models to save
-            checkpoint_name: Name for this checkpoint
-            metadata: Optional metadata about the checkpoint
+        Create folder structure for a new experiment
+        Returns the path to the experiment directory
         """
-        exp_dir = self.model_store / experiment_id
-        checkpoint_dir = exp_dir / "checkpoints" / checkpoint_name
-        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        # Increment index and format experiment name
+        self.current_index += 1
+        formatted_name = f"{self.current_index:03d}_{experiment_name}"
         
-        checkpoint_id = str(uuid.uuid4())
+        # Create experiment directory structure
+        exp_dir = self.base_path / formatted_name
+        (exp_dir / "models").mkdir(parents=True, exist_ok=True)
+        (exp_dir / "training_history").mkdir(parents=True, exist_ok=True)
+        (exp_dir / "testing").mkdir(parents=True, exist_ok=True)
         
-        # Save each model
-        for name, model in models.items():
-            model_path = checkpoint_dir / name
-            model.save(model_path)
-            
-        # Save checkpoint metadata
-        if metadata is None:
-            metadata = {}
-        metadata.update({
-            "saved_models": list(models.keys()),
-            "checkpoint_path": str(checkpoint_dir)
-        })
-            
-        # Record checkpoint in database
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                """
-                INSERT INTO checkpoints
-                (checkpoint_id, experiment_id, name, timestamp, metadata)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    checkpoint_id,
-                    experiment_id,
-                    checkpoint_name,
-                    datetime.now(),
-                    json.dumps(metadata)
-                )
-            )
-            
-            # Update experiment status
-            conn.execute(
-                "UPDATE experiments SET status = ? WHERE experiment_id = ?",
-                ("checkpoint_saved", experiment_id)
-            )
-
-        print("Model checkpoint saved to database")
-    # def load_checkpoint(self, 
-    #                    experiment_id: str,
-    #                    checkpoint_name: str = "latest") -> Dict[str, str]:
-    #     """
-    #     Get paths to saved model checkpoints
+        # Save updated index
+        self._save_index()
         
-    #     Returns:
-    #         Dictionary of model names to their saved paths
-    #     """
-    #     with sqlite3.connect(self.db_path) as conn:
-    #         result = conn.execute(
-    #             """
-    #             SELECT metadata FROM checkpoints 
-    #             WHERE experiment_id = ? AND name = ?
-    #             ORDER BY timestamp DESC LIMIT 1
-    #             """,
-    #             (experiment_id, checkpoint_name)
-    #         ).fetchone()
-            
-    #     if result is None:
-    #         raise ValueError(
-    #             f"No checkpoint '{checkpoint_name}' found for experiment {experiment_id}"
-    #         )
-            
-    #     metadata = json.loads(result[0])
-    #     checkpoint_path = Path(metadata["checkpoint_path"])
-        
-    #     if not checkpoint_path.exists():
-    #         raise ValueError(f"Checkpoint directory not found: {checkpoint_path}")
-            
-    #     return {
-    #         model_name: str(checkpoint_path / model_name)
-    #         for model_name in metadata["saved_models"]
-    #         if (checkpoint_path / model_name).exists()
-    #     }
-
-    def get_experiment_details(self, experiment_id: str) -> Dict:
-        """Get full experiment details including dataset, model, and training configs"""
-        with sqlite3.connect(self.db_path) as conn:
-            # Get experiment info
-            cursor = conn.execute(
-                """
-                SELECT timestamp, name, description, status, environment_info
-                FROM experiments WHERE experiment_id = ?
-                """, 
-                (experiment_id,)
-            )
-            exp_row = cursor.fetchone()
-            if exp_row is None:
-                raise ValueError(f"No experiment found with ID {experiment_id}")
-            
-            # Get dataset config - use column names explicitly
-            cursor = conn.execute(
-                """
-                SELECT dataset_id, dataset_path, creation_date, atlas_version, 
-                       software_versions, run_numbers, track_selections, event_selections
-                FROM dataset_configs WHERE experiment_id = ?
-                """,
-                (experiment_id,)
-            )
-            dataset_row = cursor.fetchone()
-            
-            # Get model config - use column names explicitly
-            cursor = conn.execute(
-                """
-                SELECT model_type, architecture, hyperparameters 
-                FROM model_configs WHERE experiment_id = ?
-                """,
-                (experiment_id,)
-            )
-            model_row = cursor.fetchone()
-            
-            # Get training info - use column names explicitly
-            cursor = conn.execute(
-                """
-                SELECT config, epochs_completed, training_history, final_metrics 
-                FROM training_info WHERE experiment_id = ?
-                """,
-                (experiment_id,)
-            )
-            training_row = cursor.fetchone()
-            
-            # Safely decode JSON with defaults
-            def safe_json_decode(json_str, default=None):
-                if json_str is None:
-                    return default
-                try:
-                    return json.loads(json_str)
-                except json.JSONDecodeError:
-                    return default
-            
-            return {
-                'experiment_info': {
-                    'experiment_id': experiment_id,
-                    'timestamp': exp_row[0],
-                    'name': exp_row[1],
-                    'description': exp_row[2],
-                    'status': exp_row[3],
-                    'environment_info': safe_json_decode(exp_row[4], {})
-                },
-                'dataset_config': {
-                    'dataset_id': dataset_row[0] if dataset_row else None,
-                    'dataset_path': dataset_row[1] if dataset_row else None,
-                    'creation_date': dataset_row[2] if dataset_row else None,
-                    'atlas_version': dataset_row[3] if dataset_row else None,
-                    'software_versions': safe_json_decode(dataset_row[4], {}) if dataset_row else {},
-                    'run_numbers': safe_json_decode(dataset_row[5], []) if dataset_row else [],
-                    'track_selections': safe_json_decode(dataset_row[6], {}) if dataset_row else {},
-                    'event_selections': safe_json_decode(dataset_row[7], {}) if dataset_row else {}
-                } if dataset_row else None,
-                'model_config': {
-                    'model_type': model_row[0] if model_row else None,
-                    'architecture': safe_json_decode(model_row[1], {}) if model_row else {},
-                    'hyperparameters': safe_json_decode(model_row[2], {}) if model_row else {}
-                } if model_row else None,
-                'training_info': {
-                    'config': safe_json_decode(training_row[0], {}) if training_row else {},
-                    'epochs_completed': training_row[1] if training_row else 0,
-                    'training_history': safe_json_decode(training_row[2], {}) if training_row else {},
-                    'final_metrics': safe_json_decode(training_row[3], {}) if training_row else {}
-                } if training_row else None
-            }
-
-    def get_performance_summary(self, experiment_id: str) -> Dict:
-        """Get summary of model performance metrics"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute(
-                "SELECT epochs_completed, training_history, final_metrics FROM training_info WHERE experiment_id = ?",
-                (experiment_id,)
-            )
-            row = cursor.fetchone()
-            if row is None:
-                raise ValueError(f"No training info found for experiment {experiment_id}")
-            
-            # Use safe_json_decode for metrics
-            def safe_json_decode(json_str, default=None):
-                if json_str is None:
-                    return default
-                try:
-                    return json.loads(json_str)
-                except json.JSONDecodeError:
-                    return default
-            
-            # Reorganize history by metric name instead of by epoch
-            history_by_epoch = safe_json_decode(row[1], {})
-            history_by_metric = {}
-            
-            # Convert epoch-based history to metric-based history
-            for epoch, metrics in history_by_epoch.items():
-                for metric_name, value in metrics.items():
-                    if metric_name not in history_by_metric:
-                        history_by_metric[metric_name] = []
-                    history_by_metric[metric_name].append(value)
-            
-            return {
-                'epochs_completed': row[0],
-                'metric_progression': history_by_metric,
-                'final_metrics': safe_json_decode(row[2], {
-                    'loss': 0.0,
-                    'val_loss': 0.0,
-                    'test_loss': 0.0,
-                    'training_duration': 0.0
-                })
-            }
+        return exp_dir
 
     def _get_environment_info(self) -> Dict:
         """Collect information about the execution environment"""
@@ -530,5 +99,242 @@ class ModelRegistry:
             },
             'timestamp': str(datetime.now())
         }
+
+
+    def register_experiment(self,
+                          name: str,
+                          dataset_id: str,
+                          model_config: dict,
+                          training_config: dict,
+                          description: str = "") -> str:
+        """
+        Register new experiment using existing dataset
+        Returns the experiment directory name (which serves as the experiment ID)
+        """
+        # Create experiment directory and folder structure
+        exp_dir = self._create_experiment_folders(name)
+        
+        # Prepare experiment data
+        experiment_data = {
+            'experiment_info': {
+                'name': name,
+                'description': description,
+                'timestamp': str(datetime.now()),
+                'status': 'created',
+                'environment_info': self._get_environment_info()
+            },
+            'dataset_config': {
+                'dataset_id': dataset_id
+            },
+            'model_config': {
+                'model_type': model_config['model_type'],
+                'architecture': model_config['architecture'],
+                'hyperparameters': model_config['hyperparameters']
+            },
+            'training_config': training_config
+        }
+        
+        # Save experiment data
+        with open(exp_dir / "experiment_data.json", 'w') as f:
+            json.dump(experiment_data, f, indent=2, default=self.ensure_serializable)
+        
+        # Create a training history file
+        with open(exp_dir / "training_history" / "metrics.json", 'w') as f:
+            json.dump({
+                'epochs_completed': 0,
+                'history': {},
+                'final_metrics': None
+            }, f, indent=2)
+        
+        return exp_dir.name
+        
+    def ensure_serializable(self, obj):
+        """Recursively convert numpy/tensorflow types to Python native types"""
+        if isinstance(obj, dict):
+            return {key: self.ensure_serializable(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [self.ensure_serializable(item) for item in obj]
+        elif isinstance(obj, (np.integer, np.floating)):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, tf.Tensor):
+            return obj.numpy().tolist()
+        elif obj is None:
+            return "null"  # Convert None to string "null"
+        return obj
+
+    def complete_training(self, experiment_id: str, final_metrics: Dict):
+        """
+        Record final training results and history
+        
+        Args:
+            experiment_id: The experiment directory name
+            final_metrics: Dictionary containing final metrics and training history
+        """
+        exp_dir = self.base_path / experiment_id
+        
+        # Ensure metrics are serializable
+        metrics = self.ensure_serializable(final_metrics)
+        
+        # Update experiment status in experiment_data.json
+        exp_data_path = exp_dir / "experiment_data.json"
+        with open(exp_data_path, 'r') as f:
+            experiment_data = json.load(f)
+        experiment_data['experiment_info']['status'] = 'completed'
+        with open(exp_data_path, 'w') as f:
+            json.dump(experiment_data, f, indent=2)
+
+        # Save training history to CSV
+        history_dir = exp_dir / "training_history"
+        
+        # Save epoch-wise metrics (including all loss components)
+        if 'history' in metrics:
+            history_df = []
+            for epoch, epoch_metrics in metrics['history'].items():
+                epoch_data = {'epoch': int(epoch)}
+                epoch_data.update(epoch_metrics)
+                history_df.append(epoch_data)
+            
+            # Save using numpy to handle any remaining numpy types
+            import numpy as np
+            np.savetxt(
+                history_dir / "training_history.csv",
+                [list(d.values()) for d in history_df],
+                delimiter=',',
+                header=','.join(history_df[0].keys()),
+                comments=''
+            )
+
+        # Save final metrics summary
+        final_metrics_path = history_dir / "final_metrics.json"
+        final_metrics_data = {
+            'training_duration': metrics.get('training_duration', 0.0),
+            'epochs_completed': metrics.get('epochs_completed', 0),
+            'final_metrics': {
+                k: v for k, v in metrics.items() 
+                if k not in ['history', 'training_duration', 'epochs_completed']
+            }
+        }
+        
+        with open(final_metrics_path, 'w') as f:
+            json.dump(final_metrics_data, f, indent=2)
+
+        print(f"\nTraining results saved to {history_dir}")
+
+
+    def save_model(self, 
+                   experiment_id: str,
+                   models: Dict[str, Any],
+                   model_name: str = "full_model",
+                   metadata: Optional[Dict] = None):
+        """
+        Save model(s) for an experiment
+        
+        Args:
+            experiment_id: The experiment directory name (e.g. '001_vae_test')
+            models: Dictionary of named models to save (e.g. {'encoder': encoder_model, 'decoder': decoder_model})
+            model_name: Name for this model version (e.g. 'full_model', 'quantized', 'pruned')
+            metadata: Optional metadata about the model (e.g. quantization params, performance metrics)
+        """
+        exp_dir = self.base_path / experiment_id
+        model_dir = exp_dir / "models" / model_name
+        model_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save each model component
+        for component_name, model in models.items():
+            model_path = model_dir / component_name
+            model.save(model_path)
+        
+        # Prepare and save metadata
+        if metadata is None:
+            metadata = {}
+        
+        metadata.update({
+            "saved_components": list(models.keys()),
+            "save_timestamp": str(datetime.now()),
+            "model_path": str(model_dir)
+        })
+        
+        # Save metadata
+        with open(model_dir / "model_info.json", 'w') as f:
+            json.dump(metadata, f, indent=2, default=self.ensure_serializable)
+
+        print(f"\nModel saved to {model_dir}")
+
+    def load_model(self, 
+                   experiment_id: str,
+                   model_name: str = "full_model") -> Dict[str, str]:
+        """
+        Get paths to saved model components
+        
+        Args:
+            experiment_id: The experiment directory name
+            model_name: Name of the model version to load
+            
+        Returns:
+            Dictionary of model component names to their saved paths
+        """
+        exp_dir = self.base_path / experiment_id
+        model_dir = exp_dir / "models" / model_name
+        
+        if not model_dir.exists():
+            raise ValueError(f"No model '{model_name}' found for experiment {experiment_id}")
+        
+        # Load metadata
+        try:
+            with open(model_dir / "model_info.json", 'r') as f:
+                metadata = json.load(f)
+        except FileNotFoundError:
+            raise ValueError(f"Model metadata not found for {model_name}")
+        
+        # Verify each component exists and return paths
+        model_paths = {}
+        for component_name in metadata["saved_components"]:
+            component_path = model_dir / component_name
+            if not component_path.exists():
+                print(f"Warning: Model component '{component_name}' not found at {component_path}")
+                continue
+            model_paths[component_name] = str(component_path)
+        
+        if not model_paths:
+            raise ValueError(f"No valid model components found in {model_dir}")
+        
+        return model_paths
+
+    def get_experiment_data(self, experiment_id: str) -> Dict:
+        """
+        Load experiment data from experiment_data.json
+        
+        Args:
+            experiment_id: The experiment directory name (e.g. '001_vae_test')
+            
+        Returns:
+            Dictionary containing all experiment configuration and metadata
+        """
+        exp_dir = self.base_path / experiment_id
+        exp_data_path = exp_dir / "experiment_data.json"
+        
+        if not exp_dir.exists():
+            raise ValueError(f"No experiment found with ID {experiment_id}")
+        
+        if not exp_data_path.exists():
+            raise ValueError(f"No experiment data file found for {experiment_id}")
+        
+        try:
+            with open(exp_data_path, 'r') as f:
+                experiment_data = json.load(f)
+                
+            # Optionally load final metrics if training is completed
+            metrics_path = exp_dir / "training_history" / "final_metrics.json"
+            if metrics_path.exists():
+                with open(metrics_path, 'r') as f:
+                    metrics_data = json.load(f)
+                    experiment_data['training_results'] = metrics_data
+                    
+            return experiment_data
+            
+        except json.JSONDecodeError:
+            raise ValueError(f"Invalid JSON format in experiment data file for {experiment_id}")
 
    

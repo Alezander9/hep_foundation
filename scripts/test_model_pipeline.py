@@ -11,12 +11,15 @@ from hep_foundation.utils import ATLAS_RUN_NUMBERS
 from hep_foundation.model_registry import ModelRegistry
 from hep_foundation.model_factory import ModelFactory
 from hep_foundation.model_trainer import ModelTrainer
+from hep_foundation.variational_autoencoder import VariationalAutoEncoder
 from hep_foundation.processed_dataset_manager import ProcessedDatasetManager 
+from hep_foundation.model_tester import ModelTester
 
 @dataclass
 class DatasetConfig:
     """Configuration for dataset processing"""
     run_numbers: List[str]
+    signal_keys: Optional[List[str]]  # New property for signal datasets
     catalog_limit: int
     track_selections: Dict
     event_selections: Dict
@@ -144,8 +147,31 @@ def test_model_pipeline(
             test_fraction=dataset_config.test_fraction,
             batch_size=dataset_config.batch_size,
             shuffle_buffer=dataset_config.shuffle_buffer,
-            plot_distributions=dataset_config.plot_distributions
+            plot_distributions=dataset_config.plot_distributions,
+            delete_catalogs=True # Delete catalogs after processing
         )
+        
+        # Load signal datasets if specified
+        if dataset_config.signal_keys:
+            print("\nSetting up signal data pipeline...")
+            signal_datasets = data_manager.load_signal_datasets(
+                config={
+                    'signal_types': dataset_config.signal_keys,
+                    'track_selections': dataset_config.track_selections,
+                    'event_selections': dataset_config.event_selections,
+                    'max_tracks_per_event': dataset_config.max_tracks,
+                    'min_tracks_per_event': dataset_config.min_tracks,
+                    'catalog_limit': dataset_config.catalog_limit
+                },
+                batch_size=dataset_config.batch_size,
+                plot_distributions=dataset_config.plot_distributions
+            )
+
+        # confirm that signal datasets are loaded
+        if signal_datasets:
+            print(f"Loaded {len(signal_datasets)} signal datasets")
+        else:
+            print("No signal datasets loaded")
         
         # 3. Prepare configs for registry
         model_config_dict = {
@@ -161,21 +187,6 @@ def test_model_pipeline(
         if model_config.model_type == "variational_autoencoder":
             model_config_dict['beta_schedule'] = model_config.beta_schedule
         
-        model_config_registry = {
-            "model_type": model_config.model_type,
-            "architecture": {
-                "input_dim": dataset_config.max_tracks,
-                "latent_dim": model_config.latent_dim,
-                "encoder_layers": model_config.encoder_layers,
-                "decoder_layers": model_config.decoder_layers
-            },
-            "hyperparameters": {
-                "activation": model_config.activation,
-                "quant_bits": model_config.quant_bits,
-                **({"beta_schedule": model_config.beta_schedule} 
-                   if model_config.model_type == "variational_autoencoder" else {})
-            }
-        }
         
         training_config = {
             "batch_size": dataset_config.batch_size,
@@ -191,8 +202,8 @@ def test_model_pipeline(
         print("Registering experiment...")
         experiment_id = registry.register_experiment(
             name=experiment_name,
-            dataset_id=data_manager.get_current_dataset_id(),
-            model_config=model_config_registry,
+            dataset_id=dataset_config,
+            model_config=model_config,
             training_config=training_config,
             description=experiment_description
         )
@@ -218,23 +229,13 @@ def test_model_pipeline(
             training_config=training_config
         )
         
-        # Setup callbacks
-        class RegistryCallback(tf.keras.callbacks.Callback):
-            def on_epoch_end(self, epoch, logs=None):
-                logs = ensure_serializable(logs or {})
-                registry.update_training_progress(
-                    experiment_id=experiment_id,
-                    epoch=epoch,
-                    metrics=logs,
-                )
-                
+        # Setup callbacks - only essential training callbacks
         callbacks = [
             tf.keras.callbacks.EarlyStopping(
                 patience=training_config["early_stopping"]["patience"],
                 min_delta=training_config["early_stopping"]["min_delta"],
                 restore_best_weights=True
-            ),
-            RegistryCallback()
+            )
         ]
         
         # Add debug mode for training
@@ -258,15 +259,81 @@ def test_model_pipeline(
         # Start training with additional debugging
         print("\nStarting training...")
         try:
-            training_start_time = datetime.now()
             training_results = trainer.train(
                 dataset=train_dataset,
                 validation_data=val_dataset,
                 callbacks=callbacks,
                 plot_training=model_config.plot_training,
-                plots_dir=Path(f"experiments/plots/{experiment_id}")  # Save plots with experiment
+                plots_dir=Path(f"experiments/{experiment_id}/plots") 
             )
-            training_end_time = datetime.now()
+            
+            # Evaluate Model
+            print("Evaluating model...")
+            test_results = trainer.evaluate(test_dataset)
+            
+            # Combine all results
+            final_metrics = {
+                **training_results['final_metrics'],  # Final training metrics
+                **test_results,                       # Test metrics
+                'training_duration': training_results['training_duration'],
+                'epochs_completed': training_results['epochs_completed'],
+                'history': training_results['history']  # Complete training history
+            }
+
+            # Complete training in registry
+            registry.complete_training(
+                experiment_id=experiment_id,
+                final_metrics=ensure_serializable(final_metrics)
+            )
+            
+            # Save the trained model
+            print("Saving trained model...")
+            model_metadata = {
+                "test_loss": test_results.get('test_loss', 0.0),
+                "test_mse": test_results.get('test_mse', 0.0),
+                "final_train_loss": training_results['final_metrics'].get('loss', 0.0),
+                "final_val_loss": training_results['final_metrics'].get('val_loss', 0.0),
+                "training_duration": training_results['training_duration']
+            }
+
+            if isinstance(model, VariationalAutoEncoder):
+                # Save encoder and decoder separately for VAE
+                registry.save_model(
+                    experiment_id=experiment_id,
+                    models={
+                        "encoder": model.encoder,
+                        "decoder": model.decoder,
+                        "full_model": model.model
+                    },
+                    model_name="full_model",
+                    metadata=ensure_serializable(model_metadata)
+                )
+            else:
+                # Save single model for standard autoencoder
+                registry.save_model(
+                    experiment_id=experiment_id,
+                    models={"full_model": model.model},
+                    model_name="full_model",
+                    metadata=ensure_serializable(model_metadata)
+                )
+
+            # After saving the model, add testing section
+            if isinstance(model, VariationalAutoEncoder):
+                print("\nRunning model tests...")
+                
+                # Initialize model tester
+                tester = ModelTester(
+                    model=model,
+                    test_dataset=test_dataset,
+                    signal_datasets=signal_datasets,  # From data_manager.load_signal_datasets()
+                    experiment_id=experiment_id,
+                    base_path=registry.base_path
+                )
+                
+                # Run anomaly detection test
+                test_results = tester.run_anomaly_detection_test()
+                
+                print("\nTest results saved to experiment data")
         except Exception as e:
             print(f"\nTraining failed with error: {str(e)}")
             print("\nDataset inspection:")
@@ -275,97 +342,36 @@ def test_model_pipeline(
                 print(f"Sample of data: \n{batch[0, :5, :]}")  # Show first 5 tracks of first event
             raise
         
-        # 8. Evaluate Model
-        print("Evaluating model...")
-        test_results = trainer.evaluate(test_dataset)
-        print(f"Test results: {test_results}")  # Add debug print
-
-        # After evaluation
-        print("\nCollecting all metrics...")
-        all_metrics = {
-            **training_results['metrics'],  # Training metrics
-            **test_results,                 # Test metrics
-            'training_duration': (training_end_time - training_start_time).total_seconds()
-        }
-
-        # print("\nFinal metrics collected:")
-        # for metric, value in all_metrics.items():
-        #     print(f"  {metric}: {value:.6f}")
-
-        registry.complete_training(
-            experiment_id=experiment_id,
-            final_metrics=ensure_serializable(all_metrics)
-        )
-        
-        # 9. Save Model
-        print("Saving model checkpoint...")
-        checkpoint_metadata = {
-            "test_loss": test_results.get('loss', 0.0),
-            "test_mse": test_results.get('mse', 0.0),
-            "final_train_loss": training_results.get('final_loss', 0.0),
-            "final_val_loss": training_results.get('final_val_loss', 0.0)
-        }
-
-        registry.save_checkpoint(
-            experiment_id=experiment_id,
-            models={"autoencoder": model.model},
-            checkpoint_name="final",
-            metadata=ensure_serializable(checkpoint_metadata)
-        )
-        
-        # 10. Display Results
+        # Display Results
         print("\n" + "="*50)
         print("Experiment Results")
         print("="*50)
 
-        details = registry.get_experiment_details(experiment_id)
-        performance = registry.get_performance_summary(experiment_id)
-
-        print(f"\nExperiment ID: {experiment_id}")
-        print(f"Status: {details['experiment_info']['status']}")
-
-        # Handle potential None values for duration
-        duration = performance.get('training_duration')
-        if duration is not None:
-            print(f"Training Duration: {duration:.2f}s")
-        else:
-            print("Training Duration: Not available")
-
-        print(f"Epochs Completed: {performance['epochs_completed']}")
-
-        print("\nMetrics:")
-        def print_metrics(metrics, indent=2):
-            """Helper function to print metrics with proper formatting"""
-            for key, value in metrics.items():
-                indent_str = " " * indent
-                if isinstance(value, dict):
-                    print(f"{indent_str}{key}:")
-                    print_metrics(value, indent + 2)
-                elif isinstance(value, (float, int)):
-                    print(f"{indent_str}{key}: {value:.6f}")
-                else:
-                    print(f"{indent_str}{key}: {value}")
-
-        # Print metrics using the helper function
-        print_metrics(performance['final_metrics'])
+        experiment_data = registry.get_experiment_data(experiment_id)
         
-        # 11. Visualize Results
-        if True:  # Change to control visualization
-            plt.figure(figsize=(12, 6))
-            history = performance.get('metric_progression', {})
+        print(f"\nExperiment ID: {experiment_id}")
+        print(f"Status: {experiment_data['experiment_info']['status']}")
+
+        if 'training_results' in experiment_data:
+            training_results = experiment_data['training_results']
+            print(f"Training Duration: {training_results['training_duration']:.2f}s")
+            print(f"Epochs Completed: {training_results['epochs_completed']}")
             
-            # Add safety checks
-            if 'loss' in history and 'val_loss' in history:
-                plt.plot(history['loss'], label='Training Loss')
-                plt.plot(history['val_loss'], label='Validation Loss')
-                plt.xlabel('Epoch')
-                plt.ylabel('Loss')
-                plt.title('Training History')
-                plt.legend()
-                plt.grid(True)
-                plt.show()
-            else:
-                print("Warning: Training history metrics not available for plotting")
+            print("\nMetrics:")
+            def print_metrics(metrics, indent=2):
+                """Helper function to print metrics with proper formatting"""
+                for key, value in metrics.items():
+                    indent_str = " " * indent
+                    if isinstance(value, dict):
+                        print(f"{indent_str}{key}:")
+                        print_metrics(value, indent + 2)
+                    elif isinstance(value, (float, int)):
+                        print(f"{indent_str}{key}: {value:.6f}")
+                    else:
+                        print(f"{indent_str}{key}: {value}")
+
+            print_metrics(training_results['final_metrics'])
+        
         
         print("Pipeline test completed successfully")
         
@@ -376,22 +382,33 @@ def test_model_pipeline(
         print(f"Error context:")
         raise
 
+
+
+
+
+
+
+
+
+
 def main():
     """Main function serving as control panel for experiments"""
     
     # Choose experiment type
     MODEL_TYPE = "vae"  # "vae" or "autoencoder"
+    
     # Dataset configuration - common for both models
     dataset_config = DatasetConfig(
-        run_numbers=ATLAS_RUN_NUMBERS[-1:],
-        catalog_limit=2,
+        run_numbers=ATLAS_RUN_NUMBERS[-2:],
+        signal_keys=["zprime", "wprime_qq", "zprime_bb"],
+        catalog_limit=3,
         track_selections={
             'eta': (-2.5, 2.5),
             'chi2_per_ndof': (0.0, 10.0),
         },
         event_selections={},
         max_tracks=30,
-        min_tracks=3,
+        min_tracks=10,
         validation_fraction=0.15,
         test_fraction=0.15,
         batch_size=1024,

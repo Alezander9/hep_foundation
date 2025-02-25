@@ -6,6 +6,7 @@ from pathlib import Path
 from qkeras import QDense, QActivation, quantized_bits, quantized_relu
 import matplotlib.pyplot as plt
 import seaborn as sns
+import logging
 
 from hep_foundation.base_model import BaseModel
 from hep_foundation.plot_utils import (
@@ -86,7 +87,7 @@ class BetaSchedule(keras.callbacks.Callback):
             beta = self.beta_start + (self.beta_end - self.beta_start) * \
                    (np.sin(cycle_ratio * np.pi) + 1) / 2
             
-        print(f"\nEpoch {epoch+1}: beta = {beta:.4f}")
+        logging.info(f"\nEpoch {epoch+1}: beta = {beta:.4f}")
         self.model.beta.assign(beta)
         self.model.get_layer('vae_layer').beta.assign(beta)
 
@@ -104,6 +105,13 @@ class VariationalAutoEncoder(BaseModel):
         name: str = 'vae'
     ):
         super().__init__()
+        # Setup logging
+        logging.basicConfig(
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            level=logging.INFO,
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        
         self.input_shape = input_shape
         self.latent_dim = latent_dim
         self.encoder_layers = encoder_layers
@@ -128,6 +136,8 @@ class VariationalAutoEncoder(BaseModel):
         if input_shape is None:
             input_shape = self.input_shape
         
+        logging.info("\nBuilding VAE architecture...")
+        
         # Build Encoder
         encoder_inputs = keras.Input(shape=input_shape, name='encoder_input')
         x = keras.layers.Reshape((-1,))(encoder_inputs)
@@ -149,6 +159,8 @@ class VariationalAutoEncoder(BaseModel):
                 x = keras.layers.Dense(units, name=f'encoder_{i}_dense')(x)
                 x = keras.layers.Activation(self.activation, name=f'encoder_{i}_activation')(x)
             x = keras.layers.BatchNormalization(name=f'encoder_{i}_bn')(x)
+        
+        logging.info("Built encoder layers")
         
         # VAE latent space parameters
         if self.quant_bits:
@@ -173,6 +185,7 @@ class VariationalAutoEncoder(BaseModel):
         
         # Create encoder model
         self.encoder = keras.Model(encoder_inputs, [z_mean, z_log_var, z], name='encoder')
+        logging.info("Built encoder model")
         
         # Build Decoder
         decoder_inputs = keras.Input(shape=(self.latent_dim,), name='decoder_input')
@@ -196,6 +209,8 @@ class VariationalAutoEncoder(BaseModel):
                 x = keras.layers.Activation(self.activation, name=f'decoder_{i}_activation')(x)
             x = keras.layers.BatchNormalization(name=f'decoder_{i}_bn')(x)
         
+        logging.info("Built decoder layers")
+        
         # Output layer
         if self.quant_bits:
             x = QDense(
@@ -211,6 +226,7 @@ class VariationalAutoEncoder(BaseModel):
         
         # Create decoder model
         self.decoder = keras.Model(decoder_inputs, decoder_outputs, name='decoder')
+        logging.info("Built decoder model")
         
         # Create VAE model
         vae_inputs = keras.Input(shape=input_shape, name='vae_input')
@@ -220,6 +236,8 @@ class VariationalAutoEncoder(BaseModel):
         # Add beta parameter
         self.beta = tf.Variable(0.0, dtype=tf.float32, trainable=False)
         self.model.beta = self.beta
+        
+        logging.info("Completed VAE architecture build")
 
     def get_config(self) -> dict:
         """Get model configuration"""
@@ -237,17 +255,17 @@ class VariationalAutoEncoder(BaseModel):
 
     def create_plots(self, plots_dir: Path) -> None:
         """Create VAE-specific visualization plots"""
-        print("\nCreating VAE-specific plots...")
+        logging.info("\nCreating VAE-specific plots...")
         plots_dir.mkdir(parents=True, exist_ok=True)
         
         try:
             if hasattr(self.model, 'history') and self.model.history is not None:
                 self._history = self.model.history.history
             else:
-                print("Warning: No training history found in model")
+                logging.warning("No training history found in model")
                 return
 
-            print(f"Available metrics: {list(self._history.keys())}")
+            logging.info(f"Available metrics: {list(self._history.keys())}")
             
             from hep_foundation.plot_utils import (
                 set_science_style, get_figure_size, get_color_cycle,
@@ -295,12 +313,13 @@ class VariationalAutoEncoder(BaseModel):
                 
                 plt.savefig(plots_dir / 'training_history.pdf', dpi=300, bbox_inches='tight')
                 plt.close()
+                logging.info("Created training history plot")
                 
             else:
-                print("Warning: No history data available for plotting")
+                logging.warning("No history data available for plotting")
             
         except Exception as e:
-            print(f"Error creating VAE plots: {str(e)}")
+            logging.error(f"Error creating VAE plots: {str(e)}")
             import traceback
             traceback.print_exc()
 
@@ -325,6 +344,7 @@ class VariationalAutoEncoder(BaseModel):
             plt.tight_layout()
             plt.savefig(plots_dir / 'vae_latent_space_distributions.pdf', dpi=300, bbox_inches='tight')
             plt.close()
+            logging.info("Created latent space distribution plots")
             
             # 4. 2D Latent Space Projection
             if self.latent_dim >= 2:
@@ -342,5 +362,6 @@ class VariationalAutoEncoder(BaseModel):
                 plt.tight_layout()
                 plt.savefig(plots_dir / 'vae_latent_space_2d.pdf', dpi=300, bbox_inches='tight')
                 plt.close()
+                logging.info("Created 2D latent space projection plot")
 
-        print(f"VAE plots saved to: {plots_dir}")
+        logging.info(f"VAE plots saved to: {plots_dir}")

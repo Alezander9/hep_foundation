@@ -1,15 +1,13 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python Debugger: Current File",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${file}",
-            "console": "integratedTerminal"
+            "name": "Run Pipeline",          // Name that appears in VSCode's Run menu
+            "type": "debugpy",                // Language/runtime to use
+            "request": "launch",             // "launch" new process vs "attach" to existing
+            "program": "scripts/run_pipeline.py",  // Path to script (relative to workspace root)
+            "console": "integratedTerminal", // Use VSCode's integrated terminal
+            "justMyCode": true              // Don't step into library code when debugging
         }
     ]
 }

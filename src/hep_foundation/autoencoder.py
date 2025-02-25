@@ -4,6 +4,7 @@ from qkeras import QDense, QActivation, quantized_bits, quantized_relu
 import numpy as np
 from pathlib import Path
 import tensorflow as tf
+import logging
 
 from hep_foundation.base_model import BaseModel
 
@@ -20,6 +21,13 @@ class AutoEncoder(BaseModel):
         name: str = 'track_autoencoder'
     ):
         super().__init__()
+        # Setup logging
+        logging.basicConfig(
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            level=logging.INFO,
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        
         self.input_shape = input_shape
         self.latent_dim = latent_dim
         self.encoder_layers = encoder_layers
@@ -81,9 +89,9 @@ class AutoEncoder(BaseModel):
         # Create model
         self.model = keras.Model(inputs=inputs, outputs=outputs, name=self.name)
         
-        print("\nModel layer structure:")
+        logging.info("\nModel layer structure:")
         for layer in self.model.layers:
-            print(f"Layer: {layer.name}, Type: {type(layer)}")
+            logging.info(f"Layer: {layer.name}, Type: {type(layer)}")
         
     def _add_dense_block(self, x, units: int, prefix: str):
         """Helper to add a dense block with activation and batch norm"""
@@ -124,7 +132,7 @@ class AutoEncoder(BaseModel):
         # 2. Reconstruction examples
         # 3. Loss components if using custom loss
         
-        print("\nCreating autoencoder-specific plots...")
+        logging.info("\nCreating autoencoder-specific plots...")
         
         # Example: Plot model architecture
         tf.keras.utils.plot_model(
@@ -134,6 +142,8 @@ class AutoEncoder(BaseModel):
             show_layer_names=True,
             expand_nested=True
         )
+
+        logging.info("Created model architecture plot")
         
         # Could add more autoencoder-specific visualizations:
         # - Latent space clustering

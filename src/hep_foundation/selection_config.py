@@ -52,24 +52,16 @@ class SelectionConfig:
     
     def apply_event_selections(self, event_features: Dict[str, float]) -> bool:
         """Apply event-level selections"""
-        # print(f"\nApplying event selections:")
-        # print(f"Configured selections: {self.event_selections}")
-        # print(f"Event features: {event_features}")
         
         if not self.event_selections:
-            # print("No event selections configured - passing event")
             return True
             
         for feature, (min_val, max_val) in self.event_selections.items():
             if feature not in event_features:
-                # print(f"Warning: Feature {feature} not found in event")
                 continue
             value = event_features[feature]
             if min_val is not None and value < min_val:
-                # print(f"Failed {feature} min cut: {value} < {min_val}")
                 return False
             if max_val is not None and value > max_val:
-                # print(f"Failed {feature} max cut: {value} > {max_val}")
                 return False
-        # print("Passed all event selections")
         return True

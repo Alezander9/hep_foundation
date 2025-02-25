@@ -3,7 +3,9 @@ from typing import Optional
 from tqdm import tqdm
 import requests
 import json
-from hep_foundation.utils import ATLAS_CATALOG_COUNTS
+import logging
+import sys
+from hep_foundation.utils import ATLAS_CATALOG_COUNTS, SIGNAL_CATALOGS
 
 class ATLASDataManager:
     """Manages ATLAS PHYSLITE data access"""
@@ -12,6 +14,13 @@ class ATLASDataManager:
     VERSION = "1.0.0"  # Major.Minor.Patch format
     
     def __init__(self, base_dir: str = "atlas_data"):
+        # Setup logging
+        logging.basicConfig(
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            level=logging.INFO,
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        
         self.base_dir = Path(base_dir)
         self.base_url = "https://opendata.cern.ch/record/80001/files"
         self.signal_base_url = "https://opendata.cern.ch/record/80011/files"
@@ -22,11 +31,7 @@ class ATLASDataManager:
         self.signal_catalog_counts = {}  # For signal data
         
         # Signal types mapping
-        self.signal_types = {
-            "zprime": "mc20_13TeV_MC_Pythia8EvtGen_A14NNPDF23LO_zprime3000_tt",
-            "wprime_qq": "mc20_13TeV_MC_Pythia8EvtGen_A14NNPDF23LO_Wprime_qq_3000",
-            "zprime_bb": "mc20_13TeV_MC_Pythia8EvtGen_A14NNPDF23LO_Zprimebb3000"
-        }
+        self.signal_types = SIGNAL_CATALOGS
     
     def get_version(self) -> str:
         """Return the version of the ATLASDataManager"""
@@ -63,7 +68,7 @@ class ATLASDataManager:
             if self._download_file(url, output_path, f"Downloading catalog {index} for Run {run_number}"):
                 return output_path
         except Exception as e:
-            print(f"Failed to download catalog {index} for run {run_number}: {str(e)}")
+            logging.error(f"Failed to download catalog {index} for run {run_number}: {str(e)}")
             if output_path.exists():
                 output_path.unlink()  # Clean up partial download
             return None
@@ -79,10 +84,22 @@ class ATLASDataManager:
         if output_path.exists():
             return False
         
-        print(f"Downloading file: {url}")    
+        logging.info(f"Downloading file: {url}")    
         response = requests.get(f"https://opendata.cern.ch{url}", stream=True)
         if response.status_code == 200:
             total_size = int(response.headers.get('content-length', 0))
+            
+            # Check if output is interactive
+            is_interactive = hasattr(sys.stdout, 'isatty') and sys.stdout.isatty()
+            
+            if is_interactive:
+                # Use normal progress bar for interactive terminal
+                bar_format = None
+                mininterval = 0.1
+            else:
+                # Use simplified progress for log files
+                bar_format = '{desc}: {percentage:3.0f}%|{n_fmt}/{total_fmt} [{elapsed}<{remaining}]'
+                mininterval = 30
             
             with open(output_path, 'wb') as f, tqdm(
                 desc=desc,
@@ -90,10 +107,13 @@ class ATLASDataManager:
                 unit='iB',
                 unit_scale=True,
                 unit_divisor=1024,
+                mininterval=mininterval,
+                bar_format=bar_format
             ) as pbar:
                 for data in response.iter_content(chunk_size=1024):
                     size = f.write(data)
                     pbar.update(size)
+            logging.info(f"Download complete: {desc}")
             return True
         else:
             raise Exception(f"Download failed with status code: {response.status_code}")
@@ -143,7 +163,7 @@ class ATLASDataManager:
                 return output_path
             return output_path if output_path.exists() else None
         except Exception as e:
-            print(f"Failed to download {signal_key} catalog {index}: {str(e)}")
+            logging.error(f"Failed to download {signal_key} catalog {index}: {str(e)}")
             if output_path.exists():
                 output_path.unlink()
             return None
