@@ -27,7 +27,6 @@ class DatasetConfig:
     min_tracks: int
     validation_fraction: float
     test_fraction: float
-    batch_size: int
     shuffle_buffer: int
     plot_distributions: bool
 
@@ -44,20 +43,35 @@ class DatasetConfig:
 
 @dataclass
 class ModelConfig:
-    """Configuration for model architecture and training"""
+    """Configuration for model architecture"""
     model_type: str
-    latent_dim: int
-    encoder_layers: List[int]
-    decoder_layers: List[int]
-    quant_bits: Optional[int]
-    activation: str
-    learning_rate: float
-    epochs: int
-    early_stopping_patience: int
-    early_stopping_min_delta: float
-    plot_training: bool
-    # VAE-specific parameters
-    beta_schedule: Optional[Dict] = None
+    architecture: Dict[str, Any]  # Contains network architecture
+    hyperparameters: Dict[str, Any]  # Contains model hyperparameters
+
+    def __init__(
+        self,
+        model_type: str,
+        latent_dim: int,
+        encoder_layers: List[int],
+        decoder_layers: List[int],
+        quant_bits: Optional[int],
+        activation: str,
+        beta_schedule: Optional[Dict] = None
+    ):
+        self.model_type = model_type
+        # Group architecture-related parameters
+        self.architecture = {
+            'latent_dim': latent_dim,
+            'encoder_layers': encoder_layers,
+            'decoder_layers': decoder_layers,
+            'activation': activation
+        }
+        # Group hyperparameters
+        self.hyperparameters = {
+            'quant_bits': quant_bits
+        }
+        if beta_schedule:
+            self.hyperparameters['beta_schedule'] = beta_schedule
 
     def validate(self) -> None:
         """Validate model configuration parameters"""
@@ -65,23 +79,64 @@ class ModelConfig:
         if self.model_type not in valid_types:
             raise ValueError(f"model_type must be one of {valid_types}")
         
-        if self.latent_dim < 1:
+        # Validate architecture
+        if self.architecture['latent_dim'] < 1:
             raise ValueError("latent_dim must be positive")
             
-        if not self.encoder_layers or not self.decoder_layers:
+        if not self.architecture['encoder_layers'] or not self.architecture['decoder_layers']:
             raise ValueError("encoder_layers and decoder_layers cannot be empty")
             
+        # Validate VAE-specific parameters
         if self.model_type == "variational_autoencoder":
-            if not self.beta_schedule:
+            if 'beta_schedule' not in self.hyperparameters:
                 raise ValueError("beta_schedule required for VAE")
             required_beta_fields = ["start", "end", "warmup_epochs", "cycle_epochs"]
-            missing = [f for f in required_beta_fields if f not in self.beta_schedule]
+            missing = [f for f in required_beta_fields if f not in self.hyperparameters['beta_schedule']]
             if missing:
                 raise ValueError(f"beta_schedule missing required fields: {missing}")
+
+@dataclass
+class TrainingConfig:
+    """Configuration for model training"""
+    batch_size: int
+    epochs: int
+    learning_rate: float
+    early_stopping: Dict[str, Any]
+    plot_training: bool
+
+    def __init__(
+        self,
+        batch_size: int,
+        learning_rate: float,
+        epochs: int,
+        early_stopping_patience: int,
+        early_stopping_min_delta: float,
+        plot_training: bool
+    ):
+        self.batch_size = batch_size
+        self.epochs = epochs
+        self.learning_rate = learning_rate
+        self.early_stopping = {
+            "patience": early_stopping_patience,
+            "min_delta": early_stopping_min_delta
+        }
+        self.plot_training = plot_training
+
+    def validate(self) -> None:
+        """Validate training configuration parameters"""
+        if self.learning_rate <= 0:
+            raise ValueError("learning_rate must be positive")
+        if self.epochs < 1:
+            raise ValueError("epochs must be positive")
+        if self.early_stopping["patience"] < 0:
+            raise ValueError("early_stopping_patience must be non-negative")
+        if self.early_stopping["min_delta"] < 0:
+            raise ValueError("early_stopping_min_delta must be non-negative")
 
 def test_model_pipeline(
     dataset_config: DatasetConfig,
     model_config: ModelConfig,
+    training_config: TrainingConfig,
     experiment_name: str,
     experiment_description: str
 ) -> bool:
@@ -90,13 +145,15 @@ def test_model_pipeline(
     
     Args:
         dataset_config: Configuration for dataset processing
-        model_config: Configuration for model architecture and training
+        model_config: Configuration for model architecture
+        training_config: Configuration for model training
         experiment_name: Name for the experiment
         experiment_description: Description of the experiment
     """
     # Validate configurations
     dataset_config.validate()
     model_config.validate()
+    training_config.validate()
 
     print("\n" + "="*50)
     print("Starting Model Pipeline Test")
@@ -145,11 +202,14 @@ def test_model_pipeline(
             },
             validation_fraction=dataset_config.validation_fraction,
             test_fraction=dataset_config.test_fraction,
-            batch_size=dataset_config.batch_size,
+            batch_size=training_config.batch_size,
             shuffle_buffer=dataset_config.shuffle_buffer,
             plot_distributions=dataset_config.plot_distributions,
             delete_catalogs=True # Delete catalogs after processing
         )
+        
+        # Get the dataset ID from the data manager
+        dataset_id = data_manager.get_current_dataset_id()
         
         # Load signal datasets if specified
         if dataset_config.signal_keys:
@@ -163,48 +223,40 @@ def test_model_pipeline(
                     'min_tracks_per_event': dataset_config.min_tracks,
                     'catalog_limit': dataset_config.catalog_limit
                 },
-                batch_size=dataset_config.batch_size,
+                batch_size=training_config.batch_size,
                 plot_distributions=dataset_config.plot_distributions
             )
 
-        # confirm that signal datasets are loaded
         if signal_datasets:
             print(f"Loaded {len(signal_datasets)} signal datasets")
         else:
             print("No signal datasets loaded")
         
-        # 3. Prepare configs for registry
+        # 3. Prepare configs for registry - now just add input shape to architecture
         model_config_dict = {
-            'input_shape': (dataset_config.max_tracks, 6),
-            'latent_dim': model_config.latent_dim,
-            'encoder_layers': model_config.encoder_layers,
-            'decoder_layers': model_config.decoder_layers,
-            'quant_bits': model_config.quant_bits,
-            'activation': model_config.activation
+            'model_type': model_config.model_type,
+            'architecture': {
+                **model_config.architecture,
+                'input_shape': (dataset_config.max_tracks, 6)
+            },
+            'hyperparameters': model_config.hyperparameters
         }
         
-        # Add VAE-specific parameters if needed
-        if model_config.model_type == "variational_autoencoder":
-            model_config_dict['beta_schedule'] = model_config.beta_schedule
-        
-        
-        training_config = {
-            "batch_size": dataset_config.batch_size,
-            "epochs": model_config.epochs,
-            "learning_rate": model_config.learning_rate,
-            "early_stopping": {
-                "patience": model_config.early_stopping_patience,
-                "min_delta": model_config.early_stopping_min_delta
-            }
+        # Training config is already in the right format
+        training_config_dict = {
+            "batch_size": training_config.batch_size,
+            "epochs": training_config.epochs,
+            "learning_rate": training_config.learning_rate,
+            "early_stopping": training_config.early_stopping
         }
         
         # 4. Register experiment with existing dataset
         print("Registering experiment...")
         experiment_id = registry.register_experiment(
             name=experiment_name,
-            dataset_id=dataset_config,
-            model_config=model_config,
-            training_config=training_config,
+            dataset_id=dataset_id,
+            model_config=model_config_dict,
+            training_config=training_config_dict,
             description=experiment_description
         )
         print(f"Created experiment: {experiment_id}")
@@ -214,7 +266,7 @@ def test_model_pipeline(
         try:
             model = ModelFactory.create_model(
                 model_type=model_config.model_type,
-                config=model_config_dict
+                config=model_config_dict  # Pass the nested config directly
             )
             model.build()
         except Exception as e:
@@ -222,18 +274,18 @@ def test_model_pipeline(
             print(f"Model config used: {json.dumps(model_config_dict, indent=2)}")
             raise
         
-        # 6. Setup Training
+        # 6. Train Model
         print("Setting up training...")
         trainer = ModelTrainer(
             model=model,
-            training_config=training_config
+            training_config=training_config_dict
         )
         
         # Setup callbacks - only essential training callbacks
         callbacks = [
             tf.keras.callbacks.EarlyStopping(
-                patience=training_config["early_stopping"]["patience"],
-                min_delta=training_config["early_stopping"]["min_delta"],
+                patience=training_config.early_stopping["patience"],
+                min_delta=training_config.early_stopping["min_delta"],
                 restore_best_weights=True
             )
         ]
@@ -241,7 +293,7 @@ def test_model_pipeline(
         # Add debug mode for training
         print("\nSetting up model compilation...")
         model.compile(
-            optimizer=tf.keras.optimizers.Adam(learning_rate=training_config["learning_rate"]),
+            optimizer=tf.keras.optimizers.Adam(learning_rate=training_config.learning_rate),
             loss='mse',
             run_eagerly=True  # Add this for debugging
         )
@@ -263,7 +315,7 @@ def test_model_pipeline(
                 dataset=train_dataset,
                 validation_data=val_dataset,
                 callbacks=callbacks,
-                plot_training=model_config.plot_training,
+                plot_training=training_config.plot_training,
                 plots_dir=Path(f"experiments/{experiment_id}/plots") 
             )
             
@@ -285,6 +337,24 @@ def test_model_pipeline(
                 experiment_id=experiment_id,
                 final_metrics=ensure_serializable(final_metrics)
             )
+
+            # After training the model, add testing section
+            if isinstance(model, VariationalAutoEncoder):
+                print("\nRunning model tests...")
+                
+                # Initialize model tester
+                tester = ModelTester(
+                    model=model,
+                    test_dataset=test_dataset,
+                    signal_datasets=signal_datasets,  # From data_manager.load_signal_datasets()
+                    experiment_id=experiment_id,
+                    base_path=registry.base_path
+                )
+                
+                # Run anomaly detection test
+                additional_test_results = tester.run_anomaly_detection_test()
+                
+                print(f"\nTest results: {additional_test_results}")
             
             # Save the trained model
             print("Saving trained model...")
@@ -317,23 +387,6 @@ def test_model_pipeline(
                     metadata=ensure_serializable(model_metadata)
                 )
 
-            # After saving the model, add testing section
-            if isinstance(model, VariationalAutoEncoder):
-                print("\nRunning model tests...")
-                
-                # Initialize model tester
-                tester = ModelTester(
-                    model=model,
-                    test_dataset=test_dataset,
-                    signal_datasets=signal_datasets,  # From data_manager.load_signal_datasets()
-                    experiment_id=experiment_id,
-                    base_path=registry.base_path
-                )
-                
-                # Run anomaly detection test
-                test_results = tester.run_anomaly_detection_test()
-                
-                print("\nTest results saved to experiment data")
         except Exception as e:
             print(f"\nTraining failed with error: {str(e)}")
             print("\nDataset inspection:")
@@ -411,38 +464,28 @@ def main():
         min_tracks=10,
         validation_fraction=0.15,
         test_fraction=0.15,
-        batch_size=1024,
         shuffle_buffer=50000,
         plot_distributions=True
     )
     
     # Model configurations
-    ae_config = ModelConfig(
+    ae_model_config = ModelConfig(
         model_type="autoencoder",
         latent_dim=16,
         encoder_layers=[128, 64, 32],
         decoder_layers=[32, 64, 128],
         quant_bits=8,
         activation='relu',
-        learning_rate=0.001,
-        epochs=5,
-        early_stopping_patience=3,
-        early_stopping_min_delta=1e-4,
-        plot_training=True
+        beta_schedule=None
     )
     
-    vae_config = ModelConfig(
+    vae_model_config = ModelConfig(
         model_type="variational_autoencoder",
         latent_dim=16,
         encoder_layers=[128, 64, 32],
         decoder_layers=[32, 64, 128],
         quant_bits=8,
         activation='relu',
-        learning_rate=0.001,
-        epochs=20,
-        early_stopping_patience=3,
-        early_stopping_min_delta=1e-4,
-        plot_training=True,
         beta_schedule={
             'start': 0.0,
             'end': 0.01,
@@ -450,14 +493,25 @@ def main():
             'cycle_epochs': 5
         }
     )
+
+    # Training configuration - common for both models
+    training_config = TrainingConfig(
+        batch_size=1024,  # Move from dataset_config to training_config
+        learning_rate=0.001,
+        epochs=2,
+        early_stopping_patience=3,
+        early_stopping_min_delta=1e-4,
+        plot_training=True
+    )
     
     # Select model configuration based on type
-    model_config = vae_config if MODEL_TYPE == "vae" else ae_config
+    model_config = vae_model_config if MODEL_TYPE == "vae" else ae_model_config
     
     try:
         success = test_model_pipeline(
             dataset_config=dataset_config,
             model_config=model_config,
+            training_config=training_config,
             experiment_name=f"{MODEL_TYPE}_test",
             experiment_description=f"Testing {MODEL_TYPE} model with explicit parameters"
         )

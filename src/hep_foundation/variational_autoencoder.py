@@ -272,7 +272,7 @@ class VariationalAutoEncoder(BaseModel):
                 FONT_SIZES, LINE_WIDTHS
             )
             
-            set_science_style(use_tex=True)
+            set_science_style(use_tex=False)
             
             if self._history:
                 colors = get_color_cycle('high_contrast', 3)
@@ -283,23 +283,23 @@ class VariationalAutoEncoder(BaseModel):
                 
                 epochs = range(1, len(self._history['reconstruction_loss']) + 1)
                 
-                # Plot with LaTeX labels
+                # Plot with simple labels
                 ax1.plot(epochs, self._history['reconstruction_loss'], 
-                        color=colors[0], label=r'$\mathcal{L}_\mathrm{recon}$', 
+                        color=colors[0], label='Reconstruction Loss', 
                         linewidth=LINE_WIDTHS['thick'])
                 ax1.plot(epochs, self._history['kl_loss'], 
-                        color=colors[1], label=r'$\mathcal{L}_\mathrm{KL}$',
+                        color=colors[1], label='KL Loss',
                         linewidth=LINE_WIDTHS['thick'])
                 
                 # Calculate beta schedule
                 betas = self._calculate_beta_schedule(len(epochs))
                 ax2.plot(epochs, betas, color=colors[2], linestyle='--', 
-                        label=r'$\beta$', linewidth=LINE_WIDTHS['thick'])
+                        label='Beta', linewidth=LINE_WIDTHS['thick'])
                 
-                # LaTeX labels
-                ax1.set_xlabel(r'\textbf{Epoch}', fontsize=FONT_SIZES['large'])
-                ax1.set_ylabel(r'\textbf{Loss Components}', fontsize=FONT_SIZES['large'])
-                ax2.set_ylabel(r'$\boldsymbol{\beta}$', fontsize=FONT_SIZES['large'], color=colors[2])
+                # Simple labels
+                ax1.set_xlabel('Epoch', fontsize=FONT_SIZES['large'])
+                ax1.set_ylabel('Loss Components', fontsize=FONT_SIZES['large'])
+                ax2.set_ylabel('Beta', fontsize=FONT_SIZES['large'], color=colors[2])
                 
                 # Combined legend
                 lines1, labels1 = ax1.get_legend_handles_labels()
@@ -308,7 +308,7 @@ class VariationalAutoEncoder(BaseModel):
                           loc='upper right', fontsize=FONT_SIZES['normal'])
                 
                 ax1.grid(True, alpha=0.3)
-                plt.title(r'\textbf{Training Losses and Annealing Schedule}', 
+                plt.title('Training Losses and Annealing Schedule', 
                          fontsize=FONT_SIZES['xlarge'])
                 
                 plt.savefig(plots_dir / 'training_history.pdf', dpi=300, bbox_inches='tight')
@@ -331,14 +331,14 @@ class VariationalAutoEncoder(BaseModel):
             plt.subplot(121)
             sns.histplot(self._encoded_data[0].flatten(), bins=50)
             plt.title('Latent Space Mean Distribution', fontsize=FONT_SIZES['large'])
-            plt.xlabel('zμ', fontsize=FONT_SIZES['large'])
+            plt.xlabel('Mean (z)', fontsize=FONT_SIZES['large'])
             plt.ylabel('Count', fontsize=FONT_SIZES['large'])
             
             # Plot z_log_var distribution
             plt.subplot(122)
             sns.histplot(self._encoded_data[1].flatten(), bins=50)
             plt.title('Latent Space Log Variance Distribution', fontsize=FONT_SIZES['large'])
-            plt.xlabel('zlog(σ²)', fontsize=FONT_SIZES['large'])
+            plt.xlabel('Log Variance (z)', fontsize=FONT_SIZES['large'])
             plt.ylabel('Count', fontsize=FONT_SIZES['large'])
             
             plt.tight_layout()
@@ -357,8 +357,8 @@ class VariationalAutoEncoder(BaseModel):
                     c=get_color_cycle('aesthetic')[0]
                 )
                 plt.title('2D Latent Space Projection', fontsize=FONT_SIZES['xlarge'])
-                plt.xlabel('z₁', fontsize=FONT_SIZES['large'])
-                plt.ylabel('z₂', fontsize=FONT_SIZES['large'])
+                plt.xlabel('z1', fontsize=FONT_SIZES['large'])
+                plt.ylabel('z2', fontsize=FONT_SIZES['large'])
                 plt.tight_layout()
                 plt.savefig(plots_dir / 'vae_latent_space_2d.pdf', dpi=300, bbox_inches='tight')
                 plt.close()

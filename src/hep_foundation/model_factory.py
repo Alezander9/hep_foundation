@@ -9,17 +9,29 @@ class ModelFactory:
     # Define required parameters for each model type
     REQUIRED_PARAMS = {
         "autoencoder": {
-            "input_shape": "Shape of input data (n_tracks, n_features)",
-            "latent_dim": "Dimension of latent space",
-            "encoder_layers": "List of layer sizes for encoder",
-            "decoder_layers": "List of layer sizes for decoder"
+            "architecture": {
+                "input_shape": "Shape of input data (n_tracks, n_features)",
+                "latent_dim": "Dimension of latent space",
+                "encoder_layers": "List of layer sizes for encoder",
+                "decoder_layers": "List of layer sizes for decoder",
+                "activation": "Activation function to use"
+            },
+            "hyperparameters": {
+                "quant_bits": "Number of bits for quantization (optional)"
+            }
         },
         "variational_autoencoder": {
-            "input_shape": "Shape of input data (n_tracks, n_features)",
-            "latent_dim": "Dimension of latent space",
-            "encoder_layers": "List of layer sizes for encoder",
-            "decoder_layers": "List of layer sizes for decoder",
-            "beta_schedule": "Dictionary containing beta annealing parameters"
+            "architecture": {
+                "input_shape": "Shape of input data (n_tracks, n_features)",
+                "latent_dim": "Dimension of latent space",
+                "encoder_layers": "List of layer sizes for encoder",
+                "decoder_layers": "List of layer sizes for decoder",
+                "activation": "Activation function to use"
+            },
+            "hyperparameters": {
+                "quant_bits": "Number of bits for quantization (optional)",
+                "beta_schedule": "Dictionary containing beta annealing parameters"
+            }
         }
     }
     
@@ -41,32 +53,39 @@ class ModelFactory:
                 f"Supported types are: {list(ModelFactory.REQUIRED_PARAMS.keys())}"
             )
         
-        # Check for missing required parameters
+        # Check for missing required groups
+        required_groups = ["architecture", "hyperparameters"]
+        missing_groups = [group for group in required_groups if group not in config]
+        if missing_groups:
+            raise ValueError(
+                f"Configuration missing required groups: {missing_groups}"
+            )
+        
+        # Check for missing required parameters in each group
         required = ModelFactory.REQUIRED_PARAMS[model_type]
-        missing = [
-            param for param in required 
-            if param not in config
-        ]
+        missing = []
+        
+        # Check architecture parameters
+        for param in required["architecture"]:
+            if param not in config["architecture"]:
+                missing.append(f"architecture.{param}: {required['architecture'][param]}")
+        
+        # Check required hyperparameters (skip optional ones)
+        if model_type == "variational_autoencoder":
+            if "beta_schedule" not in config["hyperparameters"]:
+                missing.append(f"hyperparameters.beta_schedule: {required['hyperparameters']['beta_schedule']}")
+            elif "beta_schedule" in config["hyperparameters"]:
+                beta_schedule = config["hyperparameters"]["beta_schedule"]
+                required_beta_params = ["start", "end", "warmup_epochs", "cycle_epochs"]
+                missing_beta = [param for param in required_beta_params if param not in beta_schedule]
+                if missing_beta:
+                    missing.append(f"beta_schedule missing parameters: {missing_beta}")
         
         if missing:
             raise ValueError(
                 f"Model type '{model_type}' requires the following missing parameters:\n"
-                + "\n".join(f"  - {param}: {required[param]}" for param in missing)
+                + "\n".join(f"  - {param}" for param in missing)
             )
-        
-        # Additional validation for specific parameters
-        if model_type == "variational_autoencoder":
-            beta_schedule = config["beta_schedule"]
-            required_beta_params = ["start", "end", "warmup_epochs", "cycle_epochs"]
-            missing_beta = [
-                param for param in required_beta_params 
-                if param not in beta_schedule
-            ]
-            
-            if missing_beta:
-                raise ValueError(
-                    f"Beta schedule for VAE missing required parameters: {missing_beta}"
-                )
     
     @staticmethod
     def create_model(model_type: str, config: Dict) -> BaseModel:
@@ -75,7 +94,7 @@ class ModelFactory:
         
         Args:
             model_type: Type of model to create
-            config: Model configuration dictionary
+            config: Model configuration dictionary with architecture and hyperparameters groups
             
         Returns:
             Instance of specified model type
@@ -86,26 +105,30 @@ class ModelFactory:
         # Validate configuration
         ModelFactory.validate_config(model_type, config)
         
+        # Extract parameters from nested structure
+        arch = config["architecture"]
+        hyper = config["hyperparameters"]
+        
         if model_type == "autoencoder":
             return AutoEncoder(
-                input_shape=config['input_shape'],
-                latent_dim=config['latent_dim'],
-                encoder_layers=config['encoder_layers'],
-                decoder_layers=config['decoder_layers'],
-                quant_bits=config.get('quant_bits'),
-                activation=config.get('activation', 'relu'),
+                input_shape=arch['input_shape'],
+                latent_dim=arch['latent_dim'],
+                encoder_layers=arch['encoder_layers'],
+                decoder_layers=arch['decoder_layers'],
+                quant_bits=hyper.get('quant_bits'),
+                activation=arch.get('activation', 'relu'),
                 name=config.get('name', 'autoencoder')
             )
             
         elif model_type == "variational_autoencoder":
             return VariationalAutoEncoder(
-                input_shape=config['input_shape'],
-                latent_dim=config['latent_dim'],
-                encoder_layers=config['encoder_layers'],
-                decoder_layers=config['decoder_layers'],
-                quant_bits=config.get('quant_bits'),
-                activation=config.get('activation', 'relu'),
-                beta_schedule=config.get('beta_schedule'),
+                input_shape=arch['input_shape'],
+                latent_dim=arch['latent_dim'],
+                encoder_layers=arch['encoder_layers'],
+                decoder_layers=arch['decoder_layers'],
+                quant_bits=hyper.get('quant_bits'),
+                activation=arch.get('activation', 'relu'),
+                beta_schedule=hyper['beta_schedule'],
                 name=config.get('name', 'vae')
             )
             
@@ -119,12 +142,16 @@ class ModelFactory:
     def get_default_config(model_type: str) -> Dict:
         """Get default configuration for specified model type"""
         base_config = {
-            'input_shape': (20, 6),
-            'latent_dim': 32,
-            'encoder_layers': [256, 128, 64],
-            'decoder_layers': [64, 128, 256],
-            'quant_bits': 8,
-            'activation': 'relu'
+            'architecture': {
+                'input_shape': (20, 6),
+                'latent_dim': 32,
+                'encoder_layers': [256, 128, 64],
+                'decoder_layers': [64, 128, 256],
+                'activation': 'relu'
+            },
+            'hyperparameters': {
+                'quant_bits': 8
+            }
         }
         
         if model_type == "autoencoder":
@@ -133,11 +160,14 @@ class ModelFactory:
         elif model_type == "variational_autoencoder":
             return {
                 **base_config,
-                'beta_schedule': {
-                    'start': 0.0,
-                    'end': 1.0,
-                    'warmup_epochs': 50,
-                    'cycle_epochs': 20
+                'hyperparameters': {
+                    **base_config['hyperparameters'],
+                    'beta_schedule': {
+                        'start': 0.0,
+                        'end': 1.0,
+                        'warmup_epochs': 50,
+                        'cycle_epochs': 20
+                    }
                 }
             }
             

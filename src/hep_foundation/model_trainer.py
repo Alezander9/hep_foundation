@@ -219,7 +219,7 @@ class ModelTrainer:
         return self.get_training_summary()
         
     def _create_training_plots(self, plots_dir: Path):
-        """Create standard training plots with LaTeX formatting"""
+        """Create standard training plots with simple formatting"""
         logging.info(f"\nCreating training plots in: {plots_dir.absolute()}")
         plots_dir.mkdir(parents=True, exist_ok=True)
         
@@ -229,18 +229,17 @@ class ModelTrainer:
                 FONT_SIZES, LINE_WIDTHS
             )
             
-            set_science_style(use_tex=True)
+            set_science_style(use_tex=False)
             
             plt.figure(figsize=get_figure_size('single', ratio=1.2))
             history = self.metrics_history
             colors = get_color_cycle('high_contrast')
             color_idx = 0
             
-            # Plot metrics with LaTeX labels
+            # Plot metrics with simple labels
             for metric in history.keys():
                 if 'loss' in metric.lower() and not metric.lower().startswith(('val_', 'test_')):
                     label = metric.replace('_', ' ').title()
-                    label = rf'$\mathcal{{L}}_\mathrm{{{label}}}$'
                     plt.plot(
                         history[metric], 
                         label=label,
@@ -250,9 +249,9 @@ class ModelTrainer:
                     color_idx += 1
             
             plt.yscale('log')  # Set y-axis to logarithmic scale
-            plt.xlabel(r'\textbf{Epoch}', fontsize=FONT_SIZES['large'])
-            plt.ylabel(r'\textbf{Loss} $(\log)$', fontsize=FONT_SIZES['large'])  # Updated ylabel
-            plt.title(r'\textbf{Training History}', fontsize=FONT_SIZES['xlarge'])
+            plt.xlabel('Epoch', fontsize=FONT_SIZES['large'])
+            plt.ylabel('Loss (log)', fontsize=FONT_SIZES['large'])
+            plt.title('Training History', fontsize=FONT_SIZES['xlarge'])
             plt.legend(fontsize=FONT_SIZES['normal'], loc='upper right')
             plt.grid(True, alpha=0.3, which='both')  # Grid lines for both major and minor ticks
             

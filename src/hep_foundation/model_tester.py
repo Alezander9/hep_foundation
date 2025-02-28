@@ -96,9 +96,6 @@ class ModelTester:
         reconstruction_losses = []
         kl_losses = []
         
-        # Get the VAE layer which contains our loss calculations
-        vae_layer = self.model.model.get_layer('vae_layer')
-        
         for batch in dataset:
             # Get encoder outputs
             z_mean, z_log_var, z = self.model.encoder(batch)
@@ -125,8 +122,8 @@ class ModelTester:
                 )
             )
             
-            reconstruction_losses.extend(recon_loss.numpy())
-            kl_losses.extend(kl_loss.numpy())
+            reconstruction_losses.append(float(recon_loss.numpy()))
+            kl_losses.append(float(kl_loss.numpy()))
         
         return np.array(reconstruction_losses), np.array(kl_losses)
 
@@ -255,7 +252,7 @@ class ModelTester:
     ) -> None:
         """Create plots comparing background and signal loss distributions"""
         # Set style
-        set_science_style(use_tex=True)
+        set_science_style(use_tex=False)
         colors = get_color_cycle('high_contrast')
         
         # 1. Loss distributions
@@ -266,7 +263,7 @@ class ModelTester:
                  label='Background', density=True)
         ax1.hist(sig_recon_losses, bins=50, alpha=0.5, color=colors[1],
                  label=signal_name, density=True)
-        ax1.set_xlabel(r'Reconstruction Loss ($\mathcal{L}_\mathrm{recon}$)')
+        ax1.set_xlabel('Reconstruction Loss')
         ax1.set_ylabel('Density')
         ax1.legend()
         ax1.grid(True, alpha=0.3)
@@ -276,7 +273,7 @@ class ModelTester:
                  label='Background', density=True)
         ax2.hist(sig_kl_losses, bins=50, alpha=0.5, color=colors[1],
                  label=signal_name, density=True)
-        ax2.set_xlabel(r'KL Divergence ($\mathcal{L}_\mathrm{KL}$)')
+        ax2.set_xlabel('KL Divergence')
         ax2.set_ylabel('Density')
         ax2.legend()
         ax2.grid(True, alpha=0.3)

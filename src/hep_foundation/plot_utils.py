@@ -5,6 +5,7 @@ Provides color palettes, sizing guidelines, and helper functions for scientific 
 
 import matplotlib.pyplot as plt
 from typing import List, Tuple
+import logging
 
 # Disable LaTeX rendering by default
 plt.rcParams['text.usetex'] = False
@@ -74,11 +75,14 @@ MARKER_SIZES = {
 # Style Configuration
 # ============================================================================
 
-def set_science_style(use_tex: bool = True) -> None:
+def set_science_style(use_tex: bool = False) -> None:
     """Configure matplotlib for scientific publication plots"""
     plt.style.use('seaborn-v0_8-paper')
     
-    # Enable LaTeX rendering
+    # Disable LaTeX warnings
+    logging.getLogger('matplotlib.font_manager').setLevel(logging.ERROR)
+    
+    # Enable LaTeX rendering only if explicitly requested
     if use_tex:
         plt.rcParams.update({
             'text.usetex': True,
