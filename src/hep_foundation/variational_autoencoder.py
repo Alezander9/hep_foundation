@@ -365,3 +365,41 @@ class VariationalAutoEncoder(BaseModel):
                 logging.info("Created 2D latent space projection plot")
 
         logging.info(f"VAE plots saved to: {plots_dir}")
+
+    def _calculate_beta_schedule(self, num_epochs):
+        """
+        Calculate beta values for each epoch based on the beta schedule configuration.
+        
+        Args:
+            num_epochs: Number of epochs to calculate beta values for
+            
+        Returns:
+            List of beta values for each epoch
+        """
+        if not hasattr(self, 'beta_schedule') or not self.beta_schedule:
+            # Default constant beta if no schedule is provided
+            return [0.0] * num_epochs
+        
+        start = self.beta_schedule.get('start', 0.0)
+        end = self.beta_schedule.get('end', 1.0)
+        warmup_epochs = self.beta_schedule.get('warmup_epochs', 0)
+        cycle_epochs = self.beta_schedule.get('cycle_epochs', 0)
+        
+        betas = []
+        for epoch in range(num_epochs):
+            if cycle_epochs > 0 and epoch >= warmup_epochs:
+                # Cyclic beta schedule after warmup
+                cycle_position = (epoch - warmup_epochs) % cycle_epochs
+                cycle_ratio = cycle_position / cycle_epochs
+                # Use sine wave for smooth cycling (0 to 1 to 0)
+                beta = start + (end - start) * (np.sin(cycle_ratio * np.pi) + 1) / 2
+            elif warmup_epochs > 0 and epoch < warmup_epochs:
+                # Linear warmup
+                beta = start + (end - start) * (epoch / warmup_epochs)
+            else:
+                # Constant beta after warmup if no cycling
+                beta = end
+            
+            betas.append(beta)
+        
+        return betas

@@ -96,7 +96,15 @@ class ModelTester:
         reconstruction_losses = []
         kl_losses = []
         
+        # Log dataset info
+        total_batches = 0
+        total_events = 0
+        
+        logging.info("\nCalculating losses for dataset...")
         for batch in dataset:
+            total_batches += 1
+            total_events += batch.shape[0]
+            
             # Get encoder outputs
             z_mean, z_log_var, z = self.model.encoder(batch)
             
@@ -107,23 +115,25 @@ class ModelTester:
             flat_inputs = tf.reshape(batch, [-1, tf.reduce_prod(batch.shape[1:])])
             flat_reconstructions = tf.reshape(reconstructions, [-1, tf.reduce_prod(reconstructions.shape[1:])])
             
-            # Calculate losses per sample
-            recon_loss = tf.reduce_mean(
-                tf.reduce_sum(
-                    tf.square(flat_inputs - flat_reconstructions),
-                    axis=1
-                )
-            )
+            # Calculate losses per event (not taking the mean)
+            recon_losses_batch = tf.reduce_sum(
+                tf.square(flat_inputs - flat_reconstructions),
+                axis=1
+            ).numpy()
             
-            kl_loss = -0.5 * tf.reduce_mean(
-                tf.reduce_sum(
-                    1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var),
-                    axis=1
-                )
-            )
+            kl_losses_batch = -0.5 * tf.reduce_sum(
+                1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var),
+                axis=1
+            ).numpy()
             
-            reconstruction_losses.append(float(recon_loss.numpy()))
-            kl_losses.append(float(kl_loss.numpy()))
+            # Append individual event losses
+            reconstruction_losses.extend(recon_losses_batch.tolist())
+            kl_losses.extend(kl_losses_batch.tolist())
+        
+        logging.info(f"Dataset stats:")
+        logging.info(f"  Total batches: {total_batches}")
+        logging.info(f"  Total events: {total_events}")
+        logging.info(f"  Events per batch: {total_events/total_batches if total_batches > 0 else 0:.1f}")
         
         return np.array(reconstruction_losses), np.array(kl_losses)
 
@@ -195,14 +205,24 @@ class ModelTester:
         plots_dir = test_dir / "plots"
         plots_dir.mkdir(parents=True, exist_ok=True)
         
+        # Log dataset info before testing
+        logging.info("\nDataset information before testing:")
+        for batch in self.test_dataset:
+            logging.info(f"Background test dataset batch shape: {batch.shape}")
+            break
+        for signal_name, signal_dataset in self.signal_datasets.items():
+            for batch in signal_dataset:
+                logging.info(f"{signal_name} signal dataset batch shape: {batch.shape}")
+                break
+        
         # Calculate losses for background dataset
-        logging.info("Calculating losses for background dataset...")
+        logging.info("\nCalculating losses for background dataset...")
         bg_recon_losses, bg_kl_losses = self._calculate_losses(self.test_dataset)
         
         # Calculate losses for each signal dataset
         signal_results = {}
         for signal_name, signal_dataset in self.signal_datasets.items():
-            logging.info(f"Calculating losses for signal dataset: {signal_name}")
+            logging.info(f"\nCalculating losses for signal dataset: {signal_name}")
             sig_recon_losses, sig_kl_losses = self._calculate_losses(signal_dataset)
             
             # Calculate separation metrics
@@ -258,11 +278,15 @@ class ModelTester:
         # 1. Loss distributions
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=get_figure_size('double'))
         
+        # Calculate percentile-based limits for better visualization
+        recon_upper_limit = np.percentile(np.concatenate([bg_recon_losses, sig_recon_losses]), 99)
+        kl_upper_limit = np.percentile(np.concatenate([bg_kl_losses, sig_kl_losses]), 99)
+        
         # Reconstruction loss
         ax1.hist(bg_recon_losses, bins=50, alpha=0.5, color=colors[0],
-                 label='Background', density=True)
+                 label='Background', density=True, range=(0, recon_upper_limit))
         ax1.hist(sig_recon_losses, bins=50, alpha=0.5, color=colors[1],
-                 label=signal_name, density=True)
+                 label=signal_name, density=True, range=(0, recon_upper_limit))
         ax1.set_xlabel('Reconstruction Loss')
         ax1.set_ylabel('Density')
         ax1.legend()
@@ -270,18 +294,22 @@ class ModelTester:
         
         # KL divergence
         ax2.hist(bg_kl_losses, bins=50, alpha=0.5, color=colors[0],
-                 label='Background', density=True)
+                 label='Background', density=True, range=(0, kl_upper_limit))
         ax2.hist(sig_kl_losses, bins=50, alpha=0.5, color=colors[1],
-                 label=signal_name, density=True)
+                 label=signal_name, density=True, range=(0, kl_upper_limit))
         ax2.set_xlabel('KL Divergence')
         ax2.set_ylabel('Density')
         ax2.legend()
         ax2.grid(True, alpha=0.3)
         
+        # Add percentile information to the plot titles
+        ax1.set_title(f'Reconstruction Loss (99th percentile: {recon_upper_limit:.1f})')
+        ax2.set_title(f'KL Divergence (99th percentile: {kl_upper_limit:.1f})')
+        
         plt.suptitle(f'Loss Distributions: Background vs {signal_name}')
         plt.tight_layout()
         plt.savefig(plots_dir / f'loss_distributions_{signal_name}.pdf')
-        plt.close()
+        
         
         # 2. ROC curves
         plt.figure(figsize=get_figure_size('single'))
