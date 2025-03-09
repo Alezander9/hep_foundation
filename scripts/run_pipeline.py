@@ -12,9 +12,9 @@ def create_configs(model_type: str = "vae") -> Dict[str, Any]:
     
     # Dataset configuration - common for both models
     dataset_config = DatasetConfig(
-        run_numbers=ATLAS_RUN_NUMBERS[-2:],
+        run_numbers=ATLAS_RUN_NUMBERS[-3:],
         signal_keys=["zprime", "wprime_qq", "zprime_bb"],
-        catalog_limit=3,
+        catalog_limit=20,
         track_selections={
             'eta': (-2.5, 2.5),
             'chi2_per_ndof': (0.0, 10.0),
@@ -47,8 +47,8 @@ def create_configs(model_type: str = "vae") -> Dict[str, Any]:
         quant_bits=8,
         activation='relu',
         beta_schedule={
-            'start': 0.0,
-            'end': 0.01,
+            'start': 0.01,
+            'end': 0.1,
             'warmup_epochs': 5,
             'cycle_epochs': 5
         }
@@ -58,7 +58,7 @@ def create_configs(model_type: str = "vae") -> Dict[str, Any]:
     training_config = TrainingConfig(
         batch_size=1024,
         learning_rate=0.001,
-        epochs=2,
+        epochs=50,
         early_stopping_patience=3,
         early_stopping_min_delta=1e-4,
         plot_training=True

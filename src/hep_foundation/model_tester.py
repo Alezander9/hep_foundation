@@ -173,14 +173,33 @@ class ModelTester:
         fpr, tpr, thresholds = roc_curve(labels, scores)
         roc_auc = auc(fpr, tpr)
         
-        metrics.update({
-            'roc_auc': float(roc_auc),
-            'roc_curve': {
+        metrics['roc_auc'] = float(roc_auc)
+        
+        # Option 1: Don't store ROC curve data in JSON at all
+        # Just store the AUC value which is what we primarily care about
+        
+        # Option 2: Downsample the ROC curve to reduce size
+        # Only include a maximum of 20 points to keep the JSON file manageable
+        if len(fpr) > 20:
+            # Get indices for approximately 20 evenly spaced points
+            indices = np.linspace(0, len(fpr) - 1, 20).astype(int)
+            # Make sure to always include the endpoints
+            if indices[0] != 0:
+                indices[0] = 0
+            if indices[-1] != len(fpr) - 1:
+                indices[-1] = len(fpr) - 1
+            
+            metrics['roc_curve'] = {
+                'fpr': fpr[indices].tolist(),
+                'tpr': tpr[indices].tolist(),
+                'thresholds': thresholds[indices].tolist() if len(thresholds) > 0 else []
+            }
+        else:
+            metrics['roc_curve'] = {
                 'fpr': fpr.tolist(),
                 'tpr': tpr.tolist(),
                 'thresholds': thresholds.tolist()
             }
-        })
         
         return metrics
 

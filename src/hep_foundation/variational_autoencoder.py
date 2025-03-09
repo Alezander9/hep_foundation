@@ -279,11 +279,11 @@ class VariationalAutoEncoder(BaseModel):
                 
                 plt.figure(figsize=get_figure_size('single', ratio=1.2))
                 ax1 = plt.gca()
+                ax1.set_yscale('log')
                 ax2 = ax1.twinx()
                 
                 epochs = range(1, len(self._history['reconstruction_loss']) + 1)
                 
-                # Plot with simple labels
                 ax1.plot(epochs, self._history['reconstruction_loss'], 
                         color=colors[0], label='Reconstruction Loss', 
                         linewidth=LINE_WIDTHS['thick'])
@@ -291,17 +291,14 @@ class VariationalAutoEncoder(BaseModel):
                         color=colors[1], label='KL Loss',
                         linewidth=LINE_WIDTHS['thick'])
                 
-                # Calculate beta schedule
                 betas = self._calculate_beta_schedule(len(epochs))
                 ax2.plot(epochs, betas, color=colors[2], linestyle='--', 
                         label='Beta', linewidth=LINE_WIDTHS['thick'])
                 
-                # Simple labels
                 ax1.set_xlabel('Epoch', fontsize=FONT_SIZES['large'])
-                ax1.set_ylabel('Loss Components', fontsize=FONT_SIZES['large'])
-                ax2.set_ylabel('Beta', fontsize=FONT_SIZES['large'], color=colors[2])
+                ax1.set_ylabel('Loss Components (log scale)', fontsize=FONT_SIZES['large'])
+                ax2.set_ylabel('Beta (linear scale)', fontsize=FONT_SIZES['large'], color=colors[2])
                 
-                # Combined legend
                 lines1, labels1 = ax1.get_legend_handles_labels()
                 lines2, labels2 = ax2.get_legend_handles_labels()
                 ax1.legend(lines1 + lines2, labels1 + labels2, 
