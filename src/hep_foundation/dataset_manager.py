@@ -20,7 +20,7 @@ from hep_foundation.atlas_data_manager import ATLASDataManager
 from hep_foundation.selection_config import SelectionConfig
 from hep_foundation.utils import TypeConverter, ConfigSerializer
 
-class ProcessedDatasetManager:
+class DatasetManager:
     """Manages pre-processed ATLAS datasets with integrated processing capabilities"""
     
     def __init__(self, 

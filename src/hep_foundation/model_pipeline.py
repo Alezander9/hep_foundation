@@ -12,7 +12,7 @@ from hep_foundation.model_registry import ModelRegistry
 from hep_foundation.model_factory import ModelFactory
 from hep_foundation.model_trainer import ModelTrainer
 from hep_foundation.variational_autoencoder import VariationalAutoEncoder
-from hep_foundation.processed_dataset_manager import ProcessedDatasetManager 
+from hep_foundation.dataset_manager import DatasetManager 
 from hep_foundation.model_tester import ModelTester
 
 @dataclass
@@ -187,7 +187,7 @@ def test_model_pipeline(
         
         # 1. Initialize managers
         print("Initializing managers...")
-        data_manager = ProcessedDatasetManager()
+        data_manager = DatasetManager()
         
         # 2. Load or create dataset
         print("Setting up data pipeline...")

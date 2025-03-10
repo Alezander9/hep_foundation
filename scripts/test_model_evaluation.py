@@ -5,7 +5,7 @@ from typing import Dict
 
 from hep_foundation.utils import ATLAS_RUN_NUMBERS
 from hep_foundation.model_registry import ModelRegistry
-from hep_foundation.processed_dataset_manager import ProcessedDatasetManager
+from hep_foundation.dataset_manager import DatasetManager
 from hep_foundation.model_tester import ModelTester
 from hep_foundation.variational_autoencoder import VariationalAutoEncoder
 
@@ -63,7 +63,7 @@ def main():
     try:
         # Initialize registry and data manager
         registry = ModelRegistry(str(BASE_PATH))
-        data_manager = ProcessedDatasetManager()
+        data_manager = DatasetManager()
         
         logging.info(f"\nLoading datasets...")
         # Load datasets

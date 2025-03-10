@@ -19,10 +19,10 @@ pip install -e .
 ### Basic Pipeline
 ```python
 from hep_foundation.model_factory import ModelFactory
-from hep_foundation.processed_dataset_manager import ProcessedDatasetManager
+from hep_foundation.dataset_manager import DatasetManager
 
 # Setup data pipeline
-data_manager = ProcessedDatasetManager()
+data_manager = DatasetManager()
 train_dataset, val_dataset, test_dataset = data_manager.load_datasets(
 config={
 'run_numbers': ["00296939", "00296942", "00297447"],
