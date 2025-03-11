@@ -29,6 +29,7 @@ class DatasetConfig:
     test_fraction: float
     shuffle_buffer: int
     plot_distributions: bool
+    include_labels: bool = False  # Whether to include MET labels in the dataset
 
     def validate(self) -> None:
         """Validate dataset configuration parameters"""
@@ -204,6 +205,7 @@ def test_model_pipeline(
             test_fraction=dataset_config.test_fraction,
             batch_size=training_config.batch_size,
             shuffle_buffer=dataset_config.shuffle_buffer,
+            include_labels=dataset_config.include_labels,
             plot_distributions=dataset_config.plot_distributions,
             delete_catalogs=True # Delete catalogs after processing
         )
@@ -212,6 +214,7 @@ def test_model_pipeline(
         dataset_id = data_manager.get_current_dataset_id()
         
         # Load signal datasets if specified
+        signal_datasets = {}
         if dataset_config.signal_keys:
             print("\nSetting up signal data pipeline...")
             signal_datasets = data_manager.load_signal_datasets(
@@ -224,6 +227,7 @@ def test_model_pipeline(
                     'catalog_limit': dataset_config.catalog_limit
                 },
                 batch_size=training_config.batch_size,
+                include_labels=dataset_config.include_labels,
                 plot_distributions=dataset_config.plot_distributions
             )
 
@@ -465,7 +469,8 @@ def main():
         validation_fraction=0.15,
         test_fraction=0.15,
         shuffle_buffer=50000,
-        plot_distributions=True
+        plot_distributions=True,
+        include_labels=False  # Don't include labels for VAE training
     )
     
     # Model configurations

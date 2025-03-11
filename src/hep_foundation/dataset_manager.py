@@ -148,6 +148,7 @@ class DatasetManager:
             
             # Process all runs
             all_events = []
+            all_labels = []
             total_stats = {
                 'total_events': 0,
                 'processed_events': 0,
@@ -156,7 +157,7 @@ class DatasetManager:
             }
             
             for run_number in config['run_numbers']:
-                events, stats = self._process_data(
+                events, labels, stats = self._process_data(
                     selection_config=selection_config,
                     run_number=run_number,
                     catalog_limit=config.get('catalog_limit'),
@@ -164,6 +165,7 @@ class DatasetManager:
                     delete_catalogs=delete_catalogs
                 )
                 all_events.extend(events)
+                all_labels.extend(labels)
                 
                 # Update total statistics
                 for key in total_stats:
@@ -172,21 +174,65 @@ class DatasetManager:
             if not all_events:
                 raise ValueError("No events passed selection criteria")
             
-            # Create HDF5 dataset
+            # Create HDF5 dataset with new structure
             with h5py.File(output_path, 'w') as f:
-                features = f.create_dataset(
-                    'features', 
+                # Create features group
+                features_group = f.create_group('features')
+                
+                # Save track features
+                tracks_dataset = features_group.create_dataset(
+                    'tracks', 
                     data=np.stack(all_events),
                     chunks=True,
                     compression='gzip'
                 )
+                
+                # Compute normalization for features
+                features_norm = self._compute_normalization(tracks_dataset[:])
+                
+                # Create labels group and save labels if available
+                has_labels = len(all_labels) == len(all_events)
+                labels_norm = {}
+                
+                if has_labels:
+                    labels_group = f.create_group('labels')
+                    
+                    # Extract each label component
+                    met_x_values = np.array([label['met_x'] for label in all_labels])
+                    met_y_values = np.array([label['met_y'] for label in all_labels])
+                    sumet_values = np.array([label['sumet'] for label in all_labels])
+                    
+                    # Save each component as a separate dataset
+                    met_x_dataset = labels_group.create_dataset('met_x', data=met_x_values, compression='gzip')
+                    met_y_dataset = labels_group.create_dataset('met_y', data=met_y_values, compression='gzip')
+                    sumet_dataset = labels_group.create_dataset('sumet', data=sumet_values, compression='gzip')
+                    
+                    # Compute normalization for labels
+                    labels_norm = {
+                        'met_x': {
+                            'mean': float(np.mean(met_x_values)),
+                            'std': float(np.std(met_x_values) or 1.0)  # Avoid zero std
+                        },
+                        'met_y': {
+                            'mean': float(np.mean(met_y_values)),
+                            'std': float(np.std(met_y_values) or 1.0)
+                        },
+                        'sumet': {
+                            'mean': float(np.mean(sumet_values)),
+                            'std': float(np.std(sumet_values) or 1.0)
+                        }
+                    }
                 
                 # Store all attributes
                 attrs_dict = {
                     'config': json.dumps(config),
                     'creation_date': str(datetime.now()),
                     'dataset_id': dataset_id,
-                    'normalization_params': json.dumps(self._compute_normalization(features[:])),
+                    'has_labels': has_labels,
+                    'normalization_params': json.dumps({
+                        'features': features_norm,
+                        'labels': labels_norm
+                    }),
                     'processing_stats': json.dumps(total_stats)
                 }
                 
@@ -232,6 +278,7 @@ class DatasetManager:
                      test_fraction: float = 0.15,
                      batch_size: int = 1000,
                      shuffle_buffer: int = 10000,
+                     include_labels: bool = False,
                      plot_distributions: bool = False,
                      delete_catalogs: bool = True) -> Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
         """Load and split dataset into train/val/test"""
@@ -274,13 +321,30 @@ class DatasetManager:
                 missing_attrs = [attr for attr in required_attrs if attr not in f.attrs]
                 if missing_attrs:
                     raise ValueError(f"Dataset missing required attributes: {missing_attrs}")
+                
+                # Check if file has the new structure with features/labels groups
+                if 'features' in f and isinstance(f['features'], h5py.Group):
+                    # New structure
+                    features = TypeConverter.to_numpy(f['features']['tracks'][:], dtype=np.float32)
                     
-                # Convert data to float32 immediately when loading
-                data = TypeConverter.to_numpy(f['features'][:], dtype=np.float32)
+                    has_labels = f.attrs.get('has_labels', False)
+                    if include_labels and has_labels and 'labels' in f:
+                        labels = {
+                            'met_x': TypeConverter.to_numpy(f['labels']['met_x'][:], dtype=np.float32),
+                            'met_y': TypeConverter.to_numpy(f['labels']['met_y'][:], dtype=np.float32),
+                            'sumet': TypeConverter.to_numpy(f['labels']['sumet'][:], dtype=np.float32)
+                        }
+                    else:
+                        labels = None
+                else:
+                    # Old structure (backward compatibility)
+                    features = TypeConverter.to_numpy(f['features'][:], dtype=np.float32)
+                    labels = None
+                    
                 stored_config = json.loads(f.attrs['config'])
                 norm_params = json.loads(f.attrs['normalization_params'])
                 
-                if len(data) == 0:
+                if len(features) == 0:
                     raise ValueError("Dataset is empty")
             
             # Verify config matches
@@ -289,21 +353,32 @@ class DatasetManager:
             logging.info("Verified that saved config of loaded dataset matches desired config")
 
             # Convert normalization parameters to tensorflow tensors
-            means = TypeConverter.to_tensorflow(norm_params['means'])
-            stds = TypeConverter.to_tensorflow(norm_params['stds'])
+            if isinstance(norm_params, dict) and 'features' in norm_params:
+                # New structure
+                means = TypeConverter.to_tensorflow(norm_params['features']['means'])
+                stds = TypeConverter.to_tensorflow(norm_params['features']['stds'])
+            else:
+                # Old structure
+                means = TypeConverter.to_tensorflow(norm_params['means'])
+                stds = TypeConverter.to_tensorflow(norm_params['stds'])
             
             # Create TF dataset
             logging.info("Creating tf dataset...")
-            dataset = tf.data.Dataset.from_tensor_slices(data)
-            logging.info("Created tf dataset")
-
-            # Normalize data
-            logging.info("Normalizing data...")
-            dataset = dataset.map(lambda x: (x - means) / stds)
-            logging.info("Normalized data")
+            if labels is not None and include_labels:
+                # Combine labels into a single tensor
+                combined_labels = np.stack([labels['met_x'], labels['met_y'], labels['sumet']], axis=1)
+                dataset = tf.data.Dataset.from_tensor_slices((features, combined_labels))
+                
+                # Normalize features only (not labels yet)
+                dataset = dataset.map(lambda x, y: ((x - means) / stds, y))
+            else:
+                dataset = tf.data.Dataset.from_tensor_slices(features)
+                dataset = dataset.map(lambda x: (x - means) / stds)
+            
+            logging.info("Created and normalized tf dataset")
             
             # Calculate split sizes
-            total_size = len(data)
+            total_size = len(features)
             val_size = int(validation_fraction * total_size)
             test_size = int(test_fraction * total_size)
             train_size = total_size - val_size - test_size
@@ -340,9 +415,9 @@ class DatasetManager:
 
     def _process_event(self, 
                       event_tracks: Dict[str, np.ndarray], 
-                      selection_config: SelectionConfig) -> Optional[np.ndarray]:
-        """Process a single event's tracks with selections"""
-        n_initial_tracks = len(event_tracks['d0'])
+                      selection_config: SelectionConfig,
+                      event_met: Optional[Dict[str, np.ndarray]] = None) -> Tuple[Optional[np.ndarray], Optional[Dict[str, float]]]:
+        """Process a single event's tracks with selections and extract MET information"""
         
         # Calculate derived quantities
         track_features = {
@@ -363,7 +438,7 @@ class DatasetManager:
         
         # Apply event-level selections
         if not selection_config.apply_event_selections(event_features):
-            return None
+            return None, None
         
         # Apply track-level selections
         good_tracks_mask = selection_config.apply_track_selections(track_features)
@@ -371,7 +446,7 @@ class DatasetManager:
         
         # Check if we have enough tracks
         if len(good_tracks) < selection_config.min_tracks_per_event:
-            return None
+            return None, None
         
         # Sort by pT and take top N tracks
         track_pts = track_features['pt'][good_tracks]
@@ -392,8 +467,18 @@ class DatasetManager:
         if len(features) < selection_config.max_tracks_per_event:
             padding = np.zeros((selection_config.max_tracks_per_event - len(features), 6))
             features = np.vstack([features, padding])
+        
+        # Extract MET information if available
+        labels = None
+        if event_met is not None and all(key in event_met for key in ['mpx', 'mpy', 'sumet']):
+            # MET values are typically arrays with a single value for the event
+            labels = {
+                'met_x': float(event_met['mpx'][0]) if len(event_met['mpx']) > 0 else 0.0,
+                'met_y': float(event_met['mpy'][0]) if len(event_met['mpy']) > 0 else 0.0,
+                'sumet': float(event_met['sumet'][0]) if len(event_met['sumet']) > 0 else 0.0
+            }
             
-        return features
+        return features, labels
 
     def _get_catalog_paths(self, 
                           run_number: Optional[str] = None,
@@ -429,7 +514,7 @@ class DatasetManager:
                      signal_key: Optional[str] = None,
                      catalog_limit: Optional[int] = None,
                      plot_distributions: bool = False,
-                     delete_catalogs: bool = True) -> Tuple[List[np.ndarray], Dict]:
+                     delete_catalogs: bool = True) -> Tuple[List[np.ndarray], List[Dict[str, float]], Dict]:
         """Process either ATLAS or signal data using common code"""
         logging.info(f"\nProcessing {'signal' if signal_key else 'ATLAS'} data")
         
@@ -442,6 +527,7 @@ class DatasetManager:
         }
         
         processed_events = []
+        processed_labels = []
         
         # Add statistics collection
         pre_selection_stats = {
@@ -467,7 +553,8 @@ class DatasetManager:
                 
                 with uproot.open(catalog_path) as file:
                     tree = file["CollectionTree;1"]
-                    branches = [
+                    # Track branches
+                    track_branches = [
                         "InDetTrackParticlesAuxDyn.d0",
                         "InDetTrackParticlesAuxDyn.z0",
                         "InDetTrackParticlesAuxDyn.phi",
@@ -477,10 +564,21 @@ class DatasetManager:
                         "InDetTrackParticlesAuxDyn.numberDoF"
                     ]
                     
-                    for arrays in tree.iterate(branches, library="np", step_size=1000):
+                    # MET branches
+                    met_branches = [
+                        "MET_Core_AnalysisMETAuxDyn.mpx",
+                        "MET_Core_AnalysisMETAuxDyn.mpy",
+                        "MET_Core_AnalysisMETAuxDyn.sumet"
+                    ]
+                    
+                    # Combine all branches
+                    all_branches = track_branches + met_branches
+                    
+                    for arrays in tree.iterate(all_branches, library="np", step_size=1000):
                         catalog_stats['events'] += len(arrays["InDetTrackParticlesAuxDyn.d0"])
                         
                         for evt_idx in range(len(arrays["InDetTrackParticlesAuxDyn.d0"])):
+                            # Extract track information
                             raw_event = {
                                 'd0': arrays["InDetTrackParticlesAuxDyn.d0"][evt_idx],
                                 'z0': arrays["InDetTrackParticlesAuxDyn.z0"][evt_idx],
@@ -490,6 +588,17 @@ class DatasetManager:
                                 'chiSquared': arrays["InDetTrackParticlesAuxDyn.chiSquared"][evt_idx],
                                 'numberDoF': arrays["InDetTrackParticlesAuxDyn.numberDoF"][evt_idx]
                             }
+                            
+                            # Extract MET information if available
+                            raw_met = {}
+                            try:
+                                for branch in met_branches:
+                                    field = branch.split('.')[-1]
+                                    if branch in arrays:
+                                        raw_met[field] = arrays[branch][evt_idx]
+                            except Exception as e:
+                                logging.warning(f"Could not extract MET information: {str(e)}")
+                                raw_met = None
                             
                             if len(raw_event['d0']) == 0:
                                 continue
@@ -509,9 +618,11 @@ class DatasetManager:
                                 pre_selection_stats[feature].extend(values)
                             
                             # Process event
-                            processed_event = self._process_event(raw_event, selection_config)
+                            processed_event, processed_label = self._process_event(raw_event, selection_config, raw_met)
                             if processed_event is not None:
                                 processed_events.append(processed_event)
+                                if processed_label is not None:
+                                    processed_labels.append(processed_label)
                                 catalog_stats['processed'] += 1
                                 stats['total_tracks'] += np.sum(np.any(processed_event != 0, axis=1))
                                 
@@ -559,7 +670,7 @@ class DatasetManager:
             self._plot_distributions(pre_selection_stats, post_selection_stats, plots_dir)
         
         # Convert stats to native Python types before returning
-        return processed_events, {
+        return processed_events, processed_labels, {
             'total_events': int(stats['total_events']),
             'processed_events': int(stats['processed_events']),
             'total_tracks': int(stats['total_tracks']),
@@ -755,7 +866,7 @@ class DatasetManager:
                 # Create group for each signal type
                 for signal_key in config['signal_types']:
                     logging.info(f"\nProcessing signal type: {signal_key}")
-                    events, stats = self._process_data(
+                    events, labels, stats = self._process_data(
                         selection_config=selection_config,
                         signal_key=signal_key,
                         catalog_limit=config.get('catalog_limit'),
@@ -769,18 +880,59 @@ class DatasetManager:
                     
                     # Create dataset for this signal type
                     signal_group = f.create_group(signal_key)
-                    features = signal_group.create_dataset(
-                        'features',
+                    
+                    # Create features group
+                    features_group = signal_group.create_group('features')
+                    features_dataset = features_group.create_dataset(
+                        'tracks',
                         data=np.stack(events),
                         chunks=True,
                         compression='gzip'
                     )
                     
+                    # Compute normalization for features
+                    features_norm = self._compute_normalization(features_dataset[:])
+                    
+                    # Create labels group if labels are available
+                    has_labels = len(labels) == len(events)
+                    labels_norm = {}
+                    
+                    if has_labels:
+                        labels_group = signal_group.create_group('labels')
+                        
+                        # Extract each label component
+                        met_x_values = np.array([label['met_x'] for label in labels])
+                        met_y_values = np.array([label['met_y'] for label in labels])
+                        sumet_values = np.array([label['sumet'] for label in labels])
+                        
+                        # Save each component as a separate dataset
+                        met_x_dataset = labels_group.create_dataset('met_x', data=met_x_values, compression='gzip')
+                        met_y_dataset = labels_group.create_dataset('met_y', data=met_y_values, compression='gzip')
+                        sumet_dataset = labels_group.create_dataset('sumet', data=sumet_values, compression='gzip')
+                        
+                        # Compute normalization for labels
+                        labels_norm = {
+                            'met_x': {
+                                'mean': float(np.mean(met_x_values)),
+                                'std': float(np.std(met_x_values) or 1.0)  # Avoid zero std
+                            },
+                            'met_y': {
+                                'mean': float(np.mean(met_y_values)),
+                                'std': float(np.std(met_y_values) or 1.0)
+                            },
+                            'sumet': {
+                                'mean': float(np.mean(sumet_values)),
+                                'std': float(np.std(sumet_values) or 1.0)
+                            }
+                        }
+                    
                     # Store signal-specific stats
                     signal_group.attrs['processing_stats'] = json.dumps(stats)
-                    signal_group.attrs['normalization_params'] = json.dumps(
-                        self._compute_normalization(features[:])
-                    )
+                    signal_group.attrs['has_labels'] = has_labels
+                    signal_group.attrs['normalization_params'] = json.dumps({
+                        'features': features_norm,
+                        'labels': labels_norm
+                    })
                 
                 # Store global attributes
                 f.attrs.update({
@@ -803,6 +955,7 @@ class DatasetManager:
         self,
         config: Dict,
         batch_size: int = 1000,
+        include_labels: bool = False,
         plot_distributions: bool = False
     ) -> Dict[str, tf.data.Dataset]:
         """
@@ -817,6 +970,7 @@ class DatasetManager:
                 - min_tracks_per_event: Minimum tracks required
                 - catalog_limit: Optional limit on catalogs to process
             batch_size: Size of batches in returned dataset
+            include_labels: Whether to include MET labels in the dataset
             plot_distributions: Whether to generate distribution plots
             
         Returns:
@@ -853,24 +1007,57 @@ class DatasetManager:
                         continue
                         
                     signal_group = f[signal_key]
-                    # Explicitly cast features to float32
-                    features = signal_group['features'][:].astype(np.float32)
-                    normalization = json.loads(signal_group.attrs['normalization_params'])
                     
-                    # Create dataset with explicit type
-                    dataset = tf.data.Dataset.from_tensor_slices(
-                        features
-                    )
+                    # Check if file has the new structure with features/labels groups
+                    if 'features' in signal_group and isinstance(signal_group['features'], h5py.Group):
+                        # New structure
+                        features = signal_group['features']['tracks'][:].astype(np.float32)
+                        
+                        has_labels = signal_group.attrs.get('has_labels', False)
+                        if include_labels and has_labels and 'labels' in signal_group:
+                            labels = {
+                                'met_x': signal_group['labels']['met_x'][:].astype(np.float32),
+                                'met_y': signal_group['labels']['met_y'][:].astype(np.float32),
+                                'sumet': signal_group['labels']['sumet'][:].astype(np.float32)
+                            }
+                        else:
+                            labels = None
+                            
+                        # Get normalization parameters
+                        norm_params = json.loads(signal_group.attrs['normalization_params'])
+                        if 'features' in norm_params:
+                            features_norm = norm_params['features']
+                        else:
+                            features_norm = norm_params
+                    else:
+                        # Old structure
+                        features = signal_group['features'][:].astype(np.float32)
+                        labels = None
+                        features_norm = json.loads(signal_group.attrs['normalization_params'])
                     
                     # Ensure normalization parameters are float32
-                    means = tf.constant(normalization['means'], dtype=tf.float32)
-                    stds = tf.constant(normalization['stds'], dtype=tf.float32)
+                    means = tf.constant(features_norm['means'], dtype=tf.float32)
+                    stds = tf.constant(features_norm['stds'], dtype=tf.float32)
                     
-                    # Apply normalization with explicit casting
-                    dataset = dataset.map(
-                        lambda x: (tf.cast(x, tf.float32) - means) / stds,
-                        num_parallel_calls=tf.data.AUTOTUNE
-                    )
+                    # Create dataset with explicit type
+                    if labels is not None and include_labels:
+                        # Combine labels into a single tensor
+                        combined_labels = np.stack([labels['met_x'], labels['met_y'], labels['sumet']], axis=1)
+                        dataset = tf.data.Dataset.from_tensor_slices((features, combined_labels))
+                        
+                        # Apply normalization with explicit casting to features only
+                        dataset = dataset.map(
+                            lambda x, y: ((tf.cast(x, tf.float32) - means) / stds, y),
+                            num_parallel_calls=tf.data.AUTOTUNE
+                        )
+                    else:
+                        dataset = tf.data.Dataset.from_tensor_slices(features)
+                        
+                        # Apply normalization with explicit casting
+                        dataset = dataset.map(
+                            lambda x: (tf.cast(x, tf.float32) - means) / stds,
+                            num_parallel_calls=tf.data.AUTOTUNE
+                        )
                     
                     # Batch and prefetch
                     dataset = dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
