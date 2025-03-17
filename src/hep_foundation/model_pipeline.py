@@ -11,9 +11,8 @@ from hep_foundation.utils import ATLAS_RUN_NUMBERS
 from hep_foundation.model_registry import ModelRegistry
 from hep_foundation.model_factory import ModelFactory
 from hep_foundation.model_trainer import ModelTrainer
-from hep_foundation.variational_autoencoder import VariationalAutoEncoder
+from hep_foundation.variational_autoencoder import VariationalAutoEncoder, AnomalyDetectionEvaluator
 from hep_foundation.dataset_manager import DatasetManager 
-from hep_foundation.model_tester import ModelTester
 
 @dataclass
 class DatasetConfig:
@@ -347,7 +346,7 @@ def test_model_pipeline(
                 print("\nRunning model tests...")
                 
                 # Initialize model tester
-                tester = ModelTester(
+                tester = AnomalyDetectionEvaluator(
                     model=model,
                     test_dataset=test_dataset,
                     signal_datasets=signal_datasets,  # From data_manager.load_signal_datasets()

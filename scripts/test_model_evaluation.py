@@ -6,8 +6,7 @@ from typing import Dict
 from hep_foundation.utils import ATLAS_RUN_NUMBERS
 from hep_foundation.model_registry import ModelRegistry
 from hep_foundation.dataset_manager import DatasetManager
-from hep_foundation.model_tester import ModelTester
-from hep_foundation.variational_autoencoder import VariationalAutoEncoder
+from hep_foundation.variational_autoencoder import VariationalAutoEncoder, AnomalyDetectionEvaluator
 
 def load_model_from_experiment(experiment_id: str, registry: ModelRegistry) -> VariationalAutoEncoder:
     """Load trained model from experiment directory"""
@@ -94,7 +93,7 @@ def main():
         
         # Initialize and run model tester
         logging.info("\nInitializing model tester...")
-        tester = ModelTester(
+        tester = AnomalyDetectionEvaluator(
             model=model,
             test_dataset=test_dataset,
             signal_datasets=signal_datasets,

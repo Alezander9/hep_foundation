@@ -2,21 +2,112 @@ Metadata-Version: 2.1
 Name: hep_foundation
 Version: 0.1.0
 Summary: HEP Foundation Package for ML in High Energy Physics
+Home-page: https://github.com/yourusername/hep_foundation
 Author: Your Name
+Author-email: your.email@example.com
 Classifier: Development Status :: 3 - Alpha
 Classifier: Intended Audience :: Science/Research
 Classifier: Topic :: Scientific/Engineering :: Physics
 Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: License :: OSI Approved :: MIT License
 Requires-Python: >=3.7
 Description-Content-Type: text/markdown
-Requires-Dist: numpy
-Requires-Dist: tensorflow
-Requires-Dist: qkeras
-Requires-Dist: uproot
-Requires-Dist: matplotlib
-Requires-Dist: tqdm
-Requires-Dist: psutil
-Requires-Dist: pyyaml
-Requires-Dist: requests
+Requires-Dist: numpy>=1.24.3
+Requires-Dist: tensorflow>=2.13.1
+Requires-Dist: qkeras>=0.9.0
+Requires-Dist: pandas>=2.2.3
+Requires-Dist: uproot>=5.5.1
+Requires-Dist: h5py>=3.12.1
+Requires-Dist: awkward>=2.7.2
+Requires-Dist: matplotlib>=3.9.4
+Requires-Dist: seaborn>=0.13.0
+Requires-Dist: pydot>=1.4.2
+Requires-Dist: graphviz>=0.20.1
+Requires-Dist: tqdm>=4.67.1
+Requires-Dist: psutil>=6.1.0
+Requires-Dist: pyyaml>=6.0.2
+Requires-Dist: requests>=2.32.3
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: ipykernel; extra == "dev"
+Requires-Dist: jupyter; extra == "dev"
+Provides-Extra: docs
+Requires-Dist: sphinx; extra == "docs"
+Requires-Dist: sphinx-rtd-theme; extra == "docs"
 
-# HEP Foundation\n\nML tools for High Energy Physics analysis.
+# HEP Foundation
+
+ML tools for High Energy Physics analysis, focusing on ATLAS PHYSLITE data processing and autoencoder training.
+
+## Quick Start
+```bash
+Clone repository
+git clone https://github.com/Alezander9/hep_foundation
+cd hep_foundation
+Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate # On Windows: venv\Scripts\activate
+Install package
+pip install -e .
+```
+
+## Usage
+
+### Basic Pipeline
+```python
+from hep_foundation.model_factory import ModelFactory
+from hep_foundation.dataset_manager import DatasetManager
+
+# Setup data pipeline
+data_manager = DatasetManager()
+train_dataset, val_dataset, test_dataset = data_manager.load_datasets(
+config={
+'run_numbers': ["00296939", "00296942", "00297447"],
+'track_selections': {
+'eta': (-2.5, 2.5),
+'chi2_per_ndof': (0.0, 10.0),
+},
+'max_tracks_per_event': 20,
+'min_tracks_per_event': 3,
+'catalog_limit': 5
+}
+)
+# Create and train model
+model = ModelFactory.create_model(
+model_type="autoencoder",
+config={
+'input_shape': (20, 6),
+'latent_dim': 32,
+'encoder_layers': [128, 64, 32],
+'decoder_layers': [32, 64, 128],
+'activation': 'relu'
+}
+)
+```
+For full training pipeline example, see scripts/test_model_pipeline.py
+```bash
+Run full pipeline test
+python scripts/test_model_pipeline.py
+```
+
+## Project Structure
+- `src/hep_foundation/`: Core package code
+- `scripts/`: Example scripts and tests
+- `experiments/`: Output directory for model registry and results
+- `processed_datasets/`: Storage for processed datasets
+
+## Dependencies
+Core requirements are handled by setup.py. For development:
+
+```bash
+pip install -e ".[dev]"
+```
+
+## Data Access
+The package automatically handles ATLAS PHYSLITE data download from CERN OpenData.
+
+## Questions?
+Contact: alexyue@stanford.edu
