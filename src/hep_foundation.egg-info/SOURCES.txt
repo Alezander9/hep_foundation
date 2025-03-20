@@ -1,7 +1,7 @@
 README.md
 setup.py
 src/hep_foundation/__init__.py
-src/hep_foundation/atlas_data_manager.py
+src/hep_foundation/atlas_file_manager.py
 src/hep_foundation/autoencoder.py
 src/hep_foundation/base_model.py
 src/hep_foundation/dataset_manager.py

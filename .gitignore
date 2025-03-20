@@ -3,3 +3,5 @@ experiments
 processed_datasets
 notebooks
 logs
+__pycache__/
+*.pyc

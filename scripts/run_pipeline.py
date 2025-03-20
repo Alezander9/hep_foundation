@@ -6,13 +6,14 @@ from typing import Dict, Any
 
 from hep_foundation.utils import ATLAS_RUN_NUMBERS
 from hep_foundation.model_pipeline import DatasetConfig, ModelConfig, TrainingConfig
+from hep_foundation.task_config import TaskConfig
 
 def create_configs(model_type: str = "vae") -> Dict[str, Any]:
     """Create configuration objects for the model pipeline"""
     
     # Dataset configuration - common for both models
     dataset_config = DatasetConfig(
-        run_numbers=ATLAS_RUN_NUMBERS[-3:],
+        run_numbers=ATLAS_RUN_NUMBERS[-1:],
         signal_keys=["zprime", "wprime_qq", "zprime_bb"],
         catalog_limit=20,
         track_selections={
@@ -27,6 +28,40 @@ def create_configs(model_type: str = "vae") -> Dict[str, Any]:
         shuffle_buffer=50000,
         plot_distributions=True,
         include_labels=False  # Don't include labels for VAE training by default
+    )
+
+    # Create the actual TaskConfig
+    task_config = TaskConfig.create_from_branch_names(
+        input_features={}, 
+        input_array_features={
+            "InDetTrackParticlesAuxDyn.d0": {'min': -5.0, 'max': 5.0},
+            "InDetTrackParticlesAuxDyn.z0": {'min': -100.0, 'max': 100.0},
+            "InDetTrackParticlesAuxDyn.phi": {},  # No range constraints
+            "InDetTrackParticlesAuxDyn.theta": {},  # No range constraints
+            "InDetTrackParticlesAuxDyn.qOverP": {},  # No range constraints
+            "InDetTrackParticlesAuxDyn.chiSquared": {'max': 50.0},  # Simple upper bound
+            "InDetTrackParticlesAuxDyn.numberDoF": {'min': 1.0}  # Ensure positive DoF
+        },
+        input_array_aggregators = [{
+            'input_branches': [
+                "InDetTrackParticlesAuxDyn.d0",
+                "InDetTrackParticlesAuxDyn.z0",
+                "InDetTrackParticlesAuxDyn.phi",
+                "InDetTrackParticlesAuxDyn.theta",
+                "InDetTrackParticlesAuxDyn.qOverP",
+                "InDetTrackParticlesAuxDyn.chiSquared",
+                "InDetTrackParticlesAuxDyn.numberDoF"
+            ],
+            'sort_by_branch': "InDetTrackParticlesAuxDyn.qOverP",  # Sort by qOverP as requested
+            'min_length': 10,   # Minimum number of tracks
+            'max_length': 30    # Maximum number of tracks (will pad or truncate)
+        }],
+        label_features=[{
+            "MET_Core_AnalysisMETAuxDyn.mpx": {}, # No range constraints
+            "MET_Core_AnalysisMETAuxDyn.mpy": {}, # No range constraints
+            "MET_Core_AnalysisMETAuxDyn.sumet": {} # No range constraints
+        }], 
+        name="MET_Prediction_Task"
     )
     
     # Model configurations
@@ -142,11 +177,15 @@ sys.exit(0 if success else 1)
         with open(pid_file, 'w') as pf:
             pf.write(str(process.pid))
         
-        print(f"Started pipeline process (PID: {process.pid})")
+        print("="*80)
+        print(f"PIPELINE PROCESS ID: {process.pid}")
+        print("="*80)
+        print(f"Started pipeline process at {timestamp}")
         print(f"Logging output to: {log_file}")
         print(f"PID saved to: {pid_file}")
         print("Process is running in background. You can close VSCode safely.")
         print(f"To stop the process, run: python -m scripts.stop_pipeline {process.pid}")
+        print("="*80)
         
     except Exception as e:
         print(f"Failed to start pipeline: {str(e)}")

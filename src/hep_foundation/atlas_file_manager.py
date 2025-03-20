@@ -7,7 +7,7 @@ import logging
 import sys
 from hep_foundation.utils import ATLAS_CATALOG_COUNTS, SIGNAL_CATALOGS
 
-class ATLASDataManager:
+class ATLASFileManager:
     """Manages ATLAS PHYSLITE data access"""
     
     # Add version as a class attribute
@@ -34,7 +34,7 @@ class ATLASDataManager:
         self.signal_types = SIGNAL_CATALOGS
     
     def get_version(self) -> str:
-        """Return the version of the ATLASDataManager"""
+        """Return the version of the ATLASFileManager"""
         return self.VERSION
     
     def get_catalog_count(self, run_number: str) -> int:

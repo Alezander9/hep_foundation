@@ -16,8 +16,8 @@ import time
 from tqdm import tqdm
 import os
 import logging
-from hep_foundation.atlas_data_manager import ATLASDataManager
-from hep_foundation.selection_config import SelectionConfig
+from hep_foundation.atlas_file_manager import ATLASFileManager
+from hep_foundation.task_config import SelectionConfig
 from hep_foundation.utils import TypeConverter, ConfigSerializer
 
 class DatasetManager:
@@ -25,7 +25,7 @@ class DatasetManager:
     
     def __init__(self, 
                  base_dir: str = "processed_datasets",
-                 atlas_manager: Optional[ATLASDataManager] = None):
+                 atlas_manager: Optional[ATLASFileManager] = None):
         # Setup logging
         logging.basicConfig(
             format='%(asctime)s - %(levelname)s - %(message)s',
@@ -38,7 +38,7 @@ class DatasetManager:
         self.configs_dir = self.base_dir / "configs"
         self.datasets_dir.mkdir(parents=True, exist_ok=True)
         self.configs_dir.mkdir(parents=True, exist_ok=True)
-        self.atlas_manager = atlas_manager or ATLASDataManager()
+        self.atlas_manager = atlas_manager or ATLASFileManager()
         
         # Add state tracking
         self.current_dataset_id = None
