@@ -109,49 +109,6 @@ def get_branch_info(file_path: Union[str, Path], max_entries: int = 100) -> Dict
         
         return branch_info
 
-def get_common_branches(file_path: Union[str, Path]) -> Dict[str, List[str]]:
-    """
-    Get commonly used branches and verify their existence in the file.
-    This focuses on branches that are known to work well with uproot.
-    
-    Args:
-        file_path: Path to ROOT file
-        
-    Returns:
-        Dictionary of common branches organized by category
-    """
-    # Define common branches we know are important and usually accessible
-    common_branches = {
-        'InDetTrackParticlesAuxDyn': [
-            'd0', 'z0', 'phi', 'theta', 'qOverP', 'chiSquared', 'numberDoF'
-        ],
-        'MET_Core_AnalysisMETAuxDyn': [
-            'mpx', 'mpy', 'sumet'
-        ],
-        'PrimaryVerticesAuxDyn': [
-            'x', 'y', 'z', 'sumPt2', 'nTrackParticles'
-        ],
-        'EventInfoAuxDyn': [
-            'eventNumber', 'runNumber', 'lumiBlock'
-        ]
-    }
-    
-    # Verify existence in file
-    verified_branches = {}
-    
-    with uproot.open(file_path) as file:
-        tree = file["CollectionTree;1"]
-        available_branches = set(tree.keys())
-        
-        for category, branches in common_branches.items():
-            verified_branches[category] = []
-            for branch in branches:
-                full_branch = f"{category}.{branch}"
-                if full_branch in available_branches:
-                    verified_branches[category].append(branch)
-    
-    return verified_branches
-
 def analyze_branch_sample(file_path: Union[str, Path], 
                          category: str, 
                          feature: str, 

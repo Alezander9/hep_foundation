@@ -7,7 +7,7 @@ import json
 
 # Attempt to import the branch index, with graceful fallback
 try:
-    from hep_foundation.physlite_branch_index import PHYSLITE_BRANCHES, PHYSLITE_COMMON_BRANCHES
+    from hep_foundation.physlite_branch_index import PHYSLITE_BRANCHES
     HAS_BRANCH_INDEX = True
 except ImportError:
     logging.warning("PhysLite branch index not found. Branch validation will be limited.")
@@ -33,23 +33,21 @@ def get_branch_info(branch_name: str) -> Tuple[bool, BranchType, Optional[Dict[s
         - Boolean indicating if branch exists
         - BranchType enum value
         - Dictionary with branch information if available, None otherwise
+        
+    Raises:
+        RuntimeError: If branch index is not available
     """
-    # If branch index is not available, return limited info
+    # If branch index is not available, raise error
     if not HAS_BRANCH_INDEX:
-        # Check if it's a commonly used branch we know
-        if '.' in branch_name:
-            category, feature = branch_name.split('.', 1)
-            if (category in PHYSLITE_COMMON_BRANCHES and 
-                feature in PHYSLITE_COMMON_BRANCHES.get(category, [])):
-                # Most common branches are arrays of values
-                return True, BranchType.FEATURE_ARRAY, None
-        return False, BranchType.UNKNOWN, None
+        raise RuntimeError(
+            "PhysLite branch index not found. Cannot validate branches or determine their types. "
+            "Please ensure the branch index is properly installed and accessible."
+        )
     
     # Handle branch names without dots (in "Other" category)
     if '.' not in branch_name:
         if 'Other' in PHYSLITE_BRANCHES and branch_name in PHYSLITE_BRANCHES['Other']:
             branch_info = PHYSLITE_BRANCHES['Other'][branch_name]
-            # Determine type from shape
             branch_type = _determine_branch_type(branch_info)
             return True, branch_type, branch_info
         return False, BranchType.UNKNOWN, None
@@ -175,14 +173,72 @@ class PhysliteBranch:
             return None
         return self.info['dtype']
 
+class PhysliteFeatureSelector:
+    """
+    Selector for scalar PhysLite features (single value per event).
+    
+    Attributes:
+        branch: The PhysliteBranch to select
+    """
+    
+    def __init__(self, branch: PhysliteBranch):
+        """
+        Initialize a feature selector.
+        
+        Args:
+            branch: PhysliteBranch to select
+            
+        Raises:
+            ValueError: If branch is not a scalar feature type
+        """
+        if not branch.is_feature:
+            raise ValueError(f"Branch {branch.name} is not a scalar feature. Use PhysliteFeatureArraySelector instead.")
+        
+        self.branch = branch
+    
+    def __str__(self) -> str:
+        return f"FeatureSelector({self.branch.name})"
+    
+    def __repr__(self) -> str:
+        return self.__str__()
+
+class PhysliteFeatureArraySelector:
+    """
+    Selector for PhysLite feature arrays (multiple values per event).
+    
+    Attributes:
+        branch: The PhysliteBranch to select
+    """
+    
+    def __init__(self, branch: PhysliteBranch):
+        """
+        Initialize a feature array selector.
+        
+        Args:
+            branch: PhysliteBranch to select
+            
+        Raises:
+            ValueError: If branch is not a feature array type
+        """
+        if not branch.is_feature_array:
+            raise ValueError(f"Branch {branch.name} is not a feature array. Use PhysliteFeatureSelector instead.")
+        
+        self.branch = branch
+    
+    def __str__(self) -> str:
+        return f"FeatureArraySelector({self.branch.name})"
+    
+    def __repr__(self) -> str:
+        return self.__str__()
+
 class PhysliteFeatureFilter:
     """
     Filter for scalar PhysLite features (single value per event).
     
     Attributes:
         branch: The PhysliteBranch to filter on
-        min_value: Optional minimum allowed value
-        max_value: Optional maximum allowed value
+        min_value: Minimum allowed value (None means no minimum)
+        max_value: Maximum allowed value (None means no maximum)
     """
     
     def __init__(self, 
@@ -198,15 +254,17 @@ class PhysliteFeatureFilter:
             max_value: Maximum allowed value (None means no maximum)
             
         Raises:
-            ValueError: If branch is not a scalar feature type
+            ValueError: If branch is not a scalar feature type or if both min_value and max_value are None
         """
         if not branch.is_feature:
             raise ValueError(f"Branch {branch.name} is not a scalar feature. Use PhysliteFeatureArrayFilter instead.")
         
+        if min_value is None and max_value is None:
+            raise ValueError("At least one of min_value or max_value must be specified")
+        
         self.branch = branch
         self.min_value = min_value
         self.max_value = max_value
-    
     
     def __str__(self) -> str:
         min_str = str(self.min_value) if self.min_value is not None else "-∞"
@@ -216,15 +274,14 @@ class PhysliteFeatureFilter:
     def __repr__(self) -> str:
         return self.__str__()
 
-
 class PhysliteFeatureArrayFilter:
     """
     Filter for PhysLite feature arrays (multiple values per event).
     
     Attributes:
         branch: The PhysliteBranch to filter on
-        min_value: Optional minimum allowed value
-        max_value: Optional maximum allowed value
+        min_value: Minimum allowed value (None means no minimum)
+        max_value: Maximum allowed value (None means no maximum)
     """
     
     def __init__(self, 
@@ -240,10 +297,13 @@ class PhysliteFeatureArrayFilter:
             max_value: Maximum allowed value (None means no maximum)
             
         Raises:
-            ValueError: If branch is not a feature array type
+            ValueError: If branch is not a feature array type or if both min_value and max_value are None
         """
         if not branch.is_feature_array:
             raise ValueError(f"Branch {branch.name} is not a feature array. Use PhysliteFeatureFilter instead.")
+            
+        if min_value is None and max_value is None:
+            raise ValueError("At least one of min_value or max_value must be specified")
         
         self.branch = branch
         self.min_value = min_value
@@ -265,23 +325,26 @@ class PhysliteFeatureArrayAggregator:
     and aggregating feature arrays from PhysLite events.
     
     Attributes:
-        input_branches: List of feature array filters for input data
-        sort_by_branch: Feature array filter to use for sorting (typically pT)
+        input_branches: List of feature array selectors for input data collection
+        filter_branches: List of feature array filters for filtering data
+        sort_by_branch: Feature array selector to use for sorting (typically pT), or None to keep original order
         min_length: Minimum number of array elements required after filtering
         max_length: Maximum number of array elements to keep (truncation/padding size)
     """
     
     def __init__(self, 
-                input_branches: List[PhysliteFeatureArrayFilter],
-                sort_by_branch: PhysliteFeatureArrayFilter,
+                input_branches: List[PhysliteFeatureArraySelector],
+                filter_branches: List[PhysliteFeatureArrayFilter],
+                sort_by_branch: Optional[PhysliteFeatureArraySelector] = None,
                 min_length: int = 1,
                 max_length: int = 100):
         """
         Initialize a feature array aggregator configuration.
         
         Args:
-            input_branches: List of feature array filters to extract and filter
-            sort_by_branch: Feature array filter to use for sorting values
+            input_branches: List of feature array selectors to extract
+            filter_branches: List of feature array filters to apply filtering
+            sort_by_branch: Feature array selector to use for sorting values, or None to keep original order
             min_length: Minimum number of elements required after filtering
             max_length: Maximum number of elements to keep (will pad or truncate)
             
@@ -301,19 +364,23 @@ class PhysliteFeatureArrayAggregator:
             raise ValueError(f"min_length ({min_length}) cannot be greater than max_length ({max_length})")
         
         self.input_branches = input_branches
+        self.filter_branches = filter_branches
         self.sort_by_branch = sort_by_branch
         self.min_length = min_length
         self.max_length = max_length
         
         # Get branch names for easier reference
         self.input_branch_names = [f.branch.name for f in input_branches]
-        self.sort_by_branch_name = sort_by_branch.branch.name
-    
+        self.filter_branch_names = [f.branch.name for f in filter_branches]
+        self.sort_by_branch_name = sort_by_branch.branch.name if sort_by_branch is not None else None
     
     def __str__(self) -> str:
-        branch_str = ", ".join(self.input_branch_names)
-        return (f"FeatureArrayAggregator(branches=[{branch_str}], "
-                f"sort_by={self.sort_by_branch_name}, "
+        input_str = ", ".join(self.input_branch_names)
+        filter_str = ", ".join(self.filter_branch_names) if self.filter_branches else "none"
+        sort_str = self.sort_by_branch_name if self.sort_by_branch_name is not None else "none"
+        return (f"FeatureArrayAggregator(branches=[{input_str}], "
+                f"filters=[{filter_str}], "
+                f"sort_by={sort_str}, "
                 f"length={self.min_length}-{self.max_length})")
     
     def __repr__(self) -> str:
@@ -323,46 +390,41 @@ class PhysliteSelectionConfig:
     """
     High-level configuration for PhysLite data selection and feature extraction.
     
-    This class bundles together all parameters needed to define a complete
-    data selection task for PhysLite data processing.
+    This class bundles together all parameters needed to define what features
+    to extract from PhysLite data processing. Filtering is handled separately.
     
     Attributes:
-        feature_filters: List of scalar feature filters
-        feature_array_filters: List of feature array filters
-        feature_array_aggregators: List of feature array aggregators
+        feature_selectors: List of scalar feature selectors for individual values
+        feature_array_aggregators: List of feature array aggregators for collecting arrays
         name: Optional name for this configuration
     """
     
     def __init__(self,
-                feature_filters: List[PhysliteFeatureFilter] = None,
-                feature_array_filters: List[PhysliteFeatureArrayFilter] = None,
+                feature_selectors: List[PhysliteFeatureSelector] = None,
                 feature_array_aggregators: List[PhysliteFeatureArrayAggregator] = None,
                 name: str = "PhysliteSelection"):
         """
         Initialize a PhysLite selection configuration.
         
         Args:
-            feature_filters: List of scalar feature filters
-            feature_array_filters: List of feature array filters
-            feature_array_aggregators: List of feature array aggregators 
+            feature_selectors: List of scalar feature selectors for individual values
+            feature_array_aggregators: List of feature array aggregators for collecting arrays
             name: Optional name for this configuration
             
         Raises:
-            ValueError: If all filter lists are empty
+            ValueError: If no selectors or aggregators are provided
         """
-        self.feature_filters = feature_filters or []
-        self.feature_array_filters = feature_array_filters or []
+        self.feature_selectors = feature_selectors or []
         self.feature_array_aggregators = feature_array_aggregators or []
         self.name = name
         
-        # Ensure at least one filter is provided
-        if not (self.feature_filters or self.feature_array_filters or self.feature_array_aggregators):
-            raise ValueError("At least one filter or aggregator must be provided")
+        # Ensure at least one selector or aggregator is provided
+        if not (self.feature_selectors or self.feature_array_aggregators):
+            raise ValueError("At least one feature selector or aggregator must be provided")
     
     def __str__(self) -> str:
         return (f"PhysliteSelectionConfig(name='{self.name}', "
-                f"feature_filters={len(self.feature_filters)}, "
-                f"feature_array_filters={len(self.feature_array_filters)}, "
+                f"feature_selectors={len(self.feature_selectors)}, "
                 f"feature_array_aggregators={len(self.feature_array_aggregators)})")
     
     def __repr__(self) -> str:

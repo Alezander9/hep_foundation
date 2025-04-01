@@ -2,14 +2,6 @@
 # Generated from run 00311481, catalog 1
 # Success rate: 750/956 branches (78.5%)
 
-# Commonly used branches that have been verified to work
-# PHYSLITE_COMMON_BRANCHES = {
-#     'EventInfoAuxDyn': ['eventNumber', 'runNumber', 'lumiBlock'],
-#     'InDetTrackParticlesAuxDyn': ['d0', 'z0', 'phi', 'theta', 'qOverP', 'chiSquared', 'numberDoF'],
-#     'MET_Core_AnalysisMETAuxDyn': ['mpx', 'mpy', 'sumet'],
-#     'PrimaryVerticesAuxDyn': ['x', 'y', 'z'],
-# }
-
 # Full branch information dictionary
 PHYSLITE_BRANCHES = {
     'AnalysisElectronsAux': {

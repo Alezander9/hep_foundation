@@ -12,23 +12,20 @@ from hep_foundation.model_registry import ModelRegistry
 from hep_foundation.model_factory import ModelFactory
 from hep_foundation.model_trainer import ModelTrainer
 from hep_foundation.variational_autoencoder import VariationalAutoEncoder, AnomalyDetectionEvaluator
-from hep_foundation.dataset_manager import DatasetManager 
+from hep_foundation.dataset_manager import DatasetManager
+from hep_foundation.task_config import TaskConfig
 
 @dataclass
 class DatasetConfig:
     """Configuration for dataset processing"""
     run_numbers: List[str]
-    signal_keys: Optional[List[str]]  # New property for signal datasets
+    signal_keys: Optional[List[str]]
     catalog_limit: int
-    track_selections: Dict
-    event_selections: Dict
-    max_tracks: int
-    min_tracks: int
     validation_fraction: float
     test_fraction: float
     shuffle_buffer: int
     plot_distributions: bool
-    include_labels: bool = False  # Whether to include MET labels in the dataset
+    include_labels: bool = False
 
     def validate(self) -> None:
         """Validate dataset configuration parameters"""
@@ -36,8 +33,6 @@ class DatasetConfig:
             raise ValueError("run_numbers cannot be empty")
         if self.catalog_limit < 1:
             raise ValueError("catalog_limit must be positive")
-        if self.max_tracks < self.min_tracks:
-            raise ValueError("max_tracks must be greater than min_tracks")
         if not 0 <= self.validation_fraction + self.test_fraction < 1:
             raise ValueError("Sum of validation and test fractions must be less than 1")
 
@@ -137,6 +132,7 @@ def test_model_pipeline(
     dataset_config: DatasetConfig,
     model_config: ModelConfig,
     training_config: TrainingConfig,
+    task_config: TaskConfig,
     experiment_name: str,
     experiment_description: str
 ) -> bool:
@@ -147,6 +143,7 @@ def test_model_pipeline(
         dataset_config: Configuration for dataset processing
         model_config: Configuration for model architecture
         training_config: Configuration for model training
+        task_config: Configuration for task processing
         experiment_name: Name for the experiment
         experiment_description: Description of the experiment
     """
@@ -192,21 +189,13 @@ def test_model_pipeline(
         # 2. Load or create dataset
         print("Setting up data pipeline...")
         train_dataset, val_dataset, test_dataset = data_manager.load_datasets(
-            config={
-                'run_numbers': dataset_config.run_numbers,
-                'track_selections': dataset_config.track_selections,
-                'event_selections': dataset_config.event_selections,
-                'max_tracks_per_event': dataset_config.max_tracks,
-                'min_tracks_per_event': dataset_config.min_tracks,
-                'catalog_limit': dataset_config.catalog_limit
-            },
+            task_config=task_config,
             validation_fraction=dataset_config.validation_fraction,
             test_fraction=dataset_config.test_fraction,
             batch_size=training_config.batch_size,
             shuffle_buffer=dataset_config.shuffle_buffer,
             include_labels=dataset_config.include_labels,
-            plot_distributions=dataset_config.plot_distributions,
-            delete_catalogs=True # Delete catalogs after processing
+            plot_distributions=dataset_config.plot_distributions
         )
         
         # Get the dataset ID from the data manager
@@ -217,14 +206,7 @@ def test_model_pipeline(
         if dataset_config.signal_keys:
             print("\nSetting up signal data pipeline...")
             signal_datasets = data_manager.load_signal_datasets(
-                config={
-                    'signal_types': dataset_config.signal_keys,
-                    'track_selections': dataset_config.track_selections,
-                    'event_selections': dataset_config.event_selections,
-                    'max_tracks_per_event': dataset_config.max_tracks,
-                    'min_tracks_per_event': dataset_config.min_tracks,
-                    'catalog_limit': dataset_config.catalog_limit
-                },
+                task_config=task_config,
                 batch_size=training_config.batch_size,
                 include_labels=dataset_config.include_labels,
                 plot_distributions=dataset_config.plot_distributions
@@ -240,7 +222,7 @@ def test_model_pipeline(
             'model_type': model_config.model_type,
             'architecture': {
                 **model_config.architecture,
-                'input_shape': (dataset_config.max_tracks, 6)
+                'input_shape': (task_config.max_tracks, 6)
             },
             'hyperparameters': model_config.hyperparameters
         }
@@ -458,13 +440,6 @@ def main():
         run_numbers=ATLAS_RUN_NUMBERS[-2:],
         signal_keys=["zprime", "wprime_qq", "zprime_bb"],
         catalog_limit=3,
-        track_selections={
-            'eta': (-2.5, 2.5),
-            'chi2_per_ndof': (0.0, 10.0),
-        },
-        event_selections={},
-        max_tracks=30,
-        min_tracks=10,
         validation_fraction=0.15,
         test_fraction=0.15,
         shuffle_buffer=50000,
@@ -516,6 +491,13 @@ def main():
             dataset_config=dataset_config,
             model_config=model_config,
             training_config=training_config,
+            task_config=TaskConfig(
+                run_numbers=ATLAS_RUN_NUMBERS[-2:],
+                signal_keys=["zprime", "wprime_qq", "zprime_bb"],
+                catalog_limit=3,
+                max_tracks=30,
+                min_tracks=10
+            ),
             experiment_name=f"{MODEL_TYPE}_test",
             experiment_description=f"Testing {MODEL_TYPE} model with explicit parameters"
         )

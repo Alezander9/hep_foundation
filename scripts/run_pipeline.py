@@ -11,38 +11,28 @@ from hep_foundation.task_config import TaskConfig
 def create_configs(model_type: str = "vae") -> Dict[str, Any]:
     """Create configuration objects for the model pipeline"""
     
-    # Dataset configuration - common for both models
+    # Simplified DatasetConfig without track/event selections
     dataset_config = DatasetConfig(
         run_numbers=ATLAS_RUN_NUMBERS[-1:],
         signal_keys=["zprime", "wprime_qq", "zprime_bb"],
         catalog_limit=20,
-        track_selections={
-            'eta': (-2.5, 2.5),
-            'chi2_per_ndof': (0.0, 10.0),
-        },
-        event_selections={},
-        max_tracks=30,
-        min_tracks=10,
         validation_fraction=0.15,
         test_fraction=0.15,
         shuffle_buffer=50000,
         plot_distributions=True,
-        include_labels=False  # Don't include labels for VAE training by default
+        include_labels=False
     )
 
-    # Create the actual TaskConfig
+    # Create TaskConfig with the new structure
     task_config = TaskConfig.create_from_branch_names(
-        input_features={}, 
-        input_array_features={
-            "InDetTrackParticlesAuxDyn.d0": {'min': -5.0, 'max': 5.0},
-            "InDetTrackParticlesAuxDyn.z0": {'min': -100.0, 'max': 100.0},
-            "InDetTrackParticlesAuxDyn.phi": {},  # No range constraints
-            "InDetTrackParticlesAuxDyn.theta": {},  # No range constraints
-            "InDetTrackParticlesAuxDyn.qOverP": {},  # No range constraints
-            "InDetTrackParticlesAuxDyn.chiSquared": {'max': 50.0},  # Simple upper bound
-            "InDetTrackParticlesAuxDyn.numberDoF": {'min': 1.0}  # Ensure positive DoF
-        },
-        input_array_aggregators = [{
+        # No event filters for now
+        event_filter_dict={},
+        
+        # Input features - empty list since we only have aggregators
+        input_features=[],
+        
+        # Input array aggregators with separated selectors and filters
+        input_array_aggregators=[{
             'input_branches': [
                 "InDetTrackParticlesAuxDyn.d0",
                 "InDetTrackParticlesAuxDyn.z0",
@@ -52,16 +42,34 @@ def create_configs(model_type: str = "vae") -> Dict[str, Any]:
                 "InDetTrackParticlesAuxDyn.chiSquared",
                 "InDetTrackParticlesAuxDyn.numberDoF"
             ],
-            'sort_by_branch': "InDetTrackParticlesAuxDyn.qOverP",  # Sort by qOverP as requested
-            'min_length': 10,   # Minimum number of tracks
-            'max_length': 30    # Maximum number of tracks (will pad or truncate)
+            'filter_branches': [
+                {'branch': "InDetTrackParticlesAuxDyn.d0", 'min': -5.0, 'max': 5.0},
+                {'branch': "InDetTrackParticlesAuxDyn.z0", 'min': -100.0, 'max': 100.0},
+                {'branch': "InDetTrackParticlesAuxDyn.chiSquared", 'max': 50.0},
+                {'branch': "InDetTrackParticlesAuxDyn.numberDoF", 'min': 1.0}
+            ],
+            'sort_by_branch': {
+                'branch': "InDetTrackParticlesAuxDyn.qOverP"
+            },
+            'min_length': 10,
+            'max_length': 30
         }],
-        label_features=[{
-            "MET_Core_AnalysisMETAuxDyn.mpx": {}, # No range constraints
-            "MET_Core_AnalysisMETAuxDyn.mpy": {}, # No range constraints
-            "MET_Core_AnalysisMETAuxDyn.sumet": {} # No range constraints
-        }], 
-        name="MET_Prediction_Task"
+        
+        # Empty label features list
+        label_features=[[]],
+        
+        # Modified label array aggregator
+        label_array_aggregators=[[{
+            'input_branches': [
+                "MET_Core_AnalysisMETAuxDyn.mpx",
+                "MET_Core_AnalysisMETAuxDyn.mpy",
+                "MET_Core_AnalysisMETAuxDyn.sumet"
+            ],
+            'filter_branches': [],  # Add empty filter list
+            'sort_by_branch': None,  # Explicitly set to None
+            'min_length': 1,
+            'max_length': 1
+        }]]
     )
     
     # Model configurations
@@ -106,7 +114,8 @@ def create_configs(model_type: str = "vae") -> Dict[str, Any]:
     return {
         'dataset_config': dataset_config,
         'model_config': model_config,
-        'training_config': training_config
+        'training_config': training_config,
+        'task_config': task_config
     }
 
 def run_pipeline(
@@ -162,6 +171,7 @@ success = test_model_pipeline(
     dataset_config=configs['dataset_config'],
     model_config=configs['model_config'],
     training_config=configs['training_config'],
+    task_config=configs['task_config'],
     experiment_name="{experiment_name}",
     experiment_description="{experiment_description}"
 )
