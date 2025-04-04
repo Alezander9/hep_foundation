@@ -1,6 +1,7 @@
 import json
 from typing import Dict, List, Optional, Union, Any
 from pathlib import Path
+import logging
 
 from hep_foundation.physlite_utilities import (
     PhysliteBranch,
@@ -61,7 +62,17 @@ class TaskConfig:
         Returns:
             JSON string representation of the task configuration
         """
-        task_dict = {
+        return json.dumps(self.to_dict(), indent=indent)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Convert task configuration to a dictionary.
+        
+        Returns:
+            Dictionary representation of the task configuration
+        """
+        print("DEBUG: Converting TaskConfig to dict")
+        return {
             'event_filters': [
                 {
                     'branch_name': f.branch.name,
@@ -72,8 +83,6 @@ class TaskConfig:
             'input': self._selection_config_to_dict(self.input),
             'labels': [self._selection_config_to_dict(label) for label in self.labels]
         }
-        
-        return json.dumps(task_dict, indent=indent)
     
     def _selection_config_to_dict(self, config: PhysliteSelectionConfig) -> Dict[str, Any]:
         """Helper method to convert a PhysliteSelectionConfig to a dictionary."""
@@ -101,10 +110,8 @@ class TaskConfig:
             
             # Convert sort_by_branch
             sort_by_branch = {
-                'branch_name': agg.sort_by_branch.branch.name,
-                'min_value': agg.sort_by_branch.min_value,
-                'max_value': agg.sort_by_branch.max_value
-            }
+                'branch_name': agg.sort_by_branch.branch.name
+            } if agg.sort_by_branch else None
             
             feature_array_aggregators.append({
                 'input_branches': input_branches,
@@ -183,6 +190,8 @@ class TaskConfig:
     @staticmethod
     def _dict_to_selection_config(config_dict: Dict[str, Any]) -> PhysliteSelectionConfig:
         """Helper method to convert a dictionary to a PhysliteSelectionConfig."""
+        logging.info(f"DEBUG: Converting dict to selection config: {config_dict}")
+        
         # Create feature selectors
         feature_selectors = []
         for selector_dict in config_dict.get('feature_selectors', []):
@@ -193,6 +202,8 @@ class TaskConfig:
         # Create feature array aggregators
         feature_array_aggregators = []
         for agg_dict in config_dict.get('feature_array_aggregators', []):
+            logging.info(f"DEBUG: Processing aggregator dict: {agg_dict}")
+            
             # Create input branch selectors
             input_branches = []
             for input_dict in agg_dict.get('input_branches', []):
@@ -207,47 +218,62 @@ class TaskConfig:
                 if branch.is_feature_array:
                     filter_branches.append(PhysliteFeatureArrayFilter(
                         branch=branch,
-                        min_value=filter_dict.get('min_value'),
-                        max_value=filter_dict.get('max_value')
+                        min_value=filter_dict.get('min'),
+                        max_value=filter_dict.get('max')
                     ))
             
             # Create sort by branch filter
             sort_dict = agg_dict.get('sort_by_branch', {})
-            if 'branch' in sort_dict:
+            logging.info(f"DEBUG: Sort dict: {sort_dict}")
+            
+            sort_by_branch = None
+            if sort_dict and 'branch' in sort_dict:
                 branch_name = sort_dict.get('branch')
+                logging.info(f"DEBUG: Creating sort branch for: {branch_name}")
                 branch = PhysliteBranch(branch_name)
                 if branch.is_feature_array:
-                    # Need to ensure at least one of min/max is specified
-                    min_val = sort_dict.get('min')
-                    max_val = sort_dict.get('max')
-                    
-                    # If both are None, default to min=0 to satisfy requirements
-                    if min_val is None and max_val is None:
-                        min_val = 0
-                        
-                    sort_by_branch = PhysliteFeatureArrayFilter(
-                        branch=branch,
-                        min_value=min_val,
-                        max_value=max_val
+                    sort_by_branch = PhysliteFeatureArraySelector(branch=branch)
+            
+            # Create aggregator if we have input branches
+            if input_branches:
+                try:
+                    aggregator = PhysliteFeatureArrayAggregator(
+                        input_branches=input_branches,
+                        filter_branches=filter_branches,
+                        sort_by_branch=sort_by_branch,
+                        min_length=agg_dict.get('min_length', 1),
+                        max_length=agg_dict.get('max_length', 100)
                     )
-                    
-                    # Create aggregator if we have required components
-                    if input_branches:
-                        feature_array_aggregators.append(PhysliteFeatureArrayAggregator(
-                            input_branches=input_branches,
-                            filter_branches=filter_branches,
-                            sort_by_branch=sort_by_branch,
-                            min_length=agg_dict.get('min_length', 1),
-                            max_length=agg_dict.get('max_length', 100)
-                        ))
-        
+                    feature_array_aggregators.append(aggregator)
+                except Exception as e:
+                    continue
+
         # Create the selection config
-        return PhysliteSelectionConfig(
-            name=config_dict.get('name', 'Selection'),
-            feature_selectors=feature_selectors,
-            feature_array_aggregators=feature_array_aggregators
-        )
-    
+        try:
+            return PhysliteSelectionConfig(
+                name=config_dict.get('name', 'Selection'),
+                feature_selectors=feature_selectors,
+                feature_array_aggregators=feature_array_aggregators
+            )
+        except ValueError:
+            # If there are no selectors or aggregators, return a minimal configuration
+            if not feature_selectors and not feature_array_aggregators:
+                # Try to create one feature selector as a fallback
+                for branch_name in config_dict.get('feature_selectors', []):
+                    try:
+                        branch = PhysliteBranch(branch_name)
+                        feature_selectors = [PhysliteFeatureSelector(branch=branch)]
+                        break
+                    except ValueError:
+                        continue
+            
+            # Create with whatever we have
+            return PhysliteSelectionConfig(
+                name=config_dict.get('name', 'Selection'),
+                feature_selectors=feature_selectors,
+                feature_array_aggregators=feature_array_aggregators
+            )
+
     @classmethod
     def create_from_branch_names(cls,
                                event_filter_dict: Dict[str, Dict[str, Optional[float]]],
@@ -342,50 +368,35 @@ class TaskConfig:
             aggregator_list: List[Dict[str, Any]],
             name: str) -> PhysliteSelectionConfig:
         """Helper method to create a PhysliteSelectionConfig from lists of names and aggregator dicts."""
-        print("Creating selection config")
-        print(f"Feature names: {feature_names}")
-        print(f"Aggregator list: {aggregator_list}")
-        
         # Create feature selectors
         feature_selectors = []
         for branch_name in feature_names:
-            print(f"Creating feature selector for: {branch_name}")
             try:
                 branch = PhysliteBranch(branch_name)
-                print(f"Branch created: {branch}, is_feature: {branch.is_feature}")
                 if branch.is_feature:
                     selector = PhysliteFeatureSelector(branch=branch)
                     feature_selectors.append(selector)
-                    print(f"Added feature selector: {selector}")
             except Exception as e:
-                print(f"Failed to create feature selector: {str(e)}")
                 continue
                 
         # Create feature array aggregators
         feature_array_aggregators = []
         for agg_dict in aggregator_list:
-            print(f"\nProcessing aggregator: {agg_dict}")
             try:
                 # Create input branch selectors
                 input_branches = []
                 for branch_name in agg_dict.get('input_branches', []):
-                    print(f"Creating input branch selector for: {branch_name}")
                     try:
                         branch = PhysliteBranch(branch_name)
-                        print(f"Branch created: {branch}, is_feature_array: {branch.is_feature_array}")
                         if branch.is_feature_array:
                             selector = PhysliteFeatureArraySelector(branch=branch)
                             input_branches.append(selector)
-                            print(f"Added selector: {selector}")
                     except Exception as e:
-                        print(f"Failed to create input branch: {str(e)}")
                         continue
-                print(f"Created {len(input_branches)} input branch selectors")
 
                 # Create filter branch filters
                 filter_branches = []
                 for filter_dict in agg_dict.get('filter_branches', []):
-                    print(f"Creating filter for: {filter_dict}")
                     try:
                         branch_name = filter_dict.get('branch')
                         branch = PhysliteBranch(branch_name)
@@ -395,50 +406,37 @@ class TaskConfig:
                                 min_value=filter_dict.get('min'),
                                 max_value=filter_dict.get('max')
                             ))
-                            print(f"Added filter for {branch_name}")
                     except Exception as e:
-                        print(f"Failed to create filter: {str(e)}")
                         continue
-                print(f"Created {len(filter_branches)} filters")
 
                 # Create sort by branch selector
                 sort_branch_dict = agg_dict.get('sort_by_branch')
-                print(f"Processing sort_by_branch: {sort_branch_dict}")
                 sort_by_branch = None
                 if sort_branch_dict:
                     try:
                         branch_name = sort_branch_dict.get('branch')
-                        print(f"Creating sort branch for: {branch_name}")
                         branch = PhysliteBranch(branch_name)
                         if branch.is_feature_array:
                             sort_by_branch = PhysliteFeatureArraySelector(branch=branch)
-                            print("Created sort_by_branch selector")
                     except Exception as e:
-                        print(f"Failed to create sort branch: {str(e)}")
+                        pass
 
-                # Create aggregator (moved outside the if block)
-                if input_branches:  # Only check if we have input branches
+                # Create aggregator if we have input branches
+                if input_branches:
                     try:
                         aggregator = PhysliteFeatureArrayAggregator(
                             input_branches=input_branches,
                             filter_branches=filter_branches,
-                            sort_by_branch=sort_by_branch,  # This can be None
+                            sort_by_branch=sort_by_branch,
                             min_length=agg_dict.get('min_length', 1),
                             max_length=agg_dict.get('max_length', 100)
                         )
                         feature_array_aggregators.append(aggregator)
-                        print("Added aggregator successfully")
                     except Exception as e:
-                        print(f"Failed to create aggregator: {str(e)}")
                         continue
 
             except Exception as e:
-                print(f"Failed to process aggregator: {str(e)}")
                 continue
-
-        print(f"\nFinal counts:")
-        print(f"Feature selectors: {len(feature_selectors)}")
-        print(f"Feature array aggregators: {len(feature_array_aggregators)}")
 
         # Create the selection config
         try:

@@ -1,132 +1,17 @@
 import json
-from datetime import datetime
 import numpy as np
 import tensorflow as tf
-import matplotlib.pyplot as plt
-from typing import Dict, Any, List, Optional
 from pathlib import Path
-from dataclasses import dataclass
+import logging
 
-from hep_foundation.utils import ATLAS_RUN_NUMBERS
 from hep_foundation.model_registry import ModelRegistry
 from hep_foundation.model_factory import ModelFactory
-from hep_foundation.model_trainer import ModelTrainer
+from hep_foundation.model_trainer import ModelTrainer, TrainingConfig
 from hep_foundation.variational_autoencoder import VariationalAutoEncoder, AnomalyDetectionEvaluator
-from hep_foundation.dataset_manager import DatasetManager
 from hep_foundation.task_config import TaskConfig
+from hep_foundation.dataset_manager import DatasetManager, DatasetConfig
+from hep_foundation.base_model import ModelConfig
 
-@dataclass
-class DatasetConfig:
-    """Configuration for dataset processing"""
-    run_numbers: List[str]
-    signal_keys: Optional[List[str]]
-    catalog_limit: int
-    validation_fraction: float
-    test_fraction: float
-    shuffle_buffer: int
-    plot_distributions: bool
-    include_labels: bool = False
-
-    def validate(self) -> None:
-        """Validate dataset configuration parameters"""
-        if not self.run_numbers:
-            raise ValueError("run_numbers cannot be empty")
-        if self.catalog_limit < 1:
-            raise ValueError("catalog_limit must be positive")
-        if not 0 <= self.validation_fraction + self.test_fraction < 1:
-            raise ValueError("Sum of validation and test fractions must be less than 1")
-
-@dataclass
-class ModelConfig:
-    """Configuration for model architecture"""
-    model_type: str
-    architecture: Dict[str, Any]  # Contains network architecture
-    hyperparameters: Dict[str, Any]  # Contains model hyperparameters
-
-    def __init__(
-        self,
-        model_type: str,
-        latent_dim: int,
-        encoder_layers: List[int],
-        decoder_layers: List[int],
-        quant_bits: Optional[int],
-        activation: str,
-        beta_schedule: Optional[Dict] = None
-    ):
-        self.model_type = model_type
-        # Group architecture-related parameters
-        self.architecture = {
-            'latent_dim': latent_dim,
-            'encoder_layers': encoder_layers,
-            'decoder_layers': decoder_layers,
-            'activation': activation
-        }
-        # Group hyperparameters
-        self.hyperparameters = {
-            'quant_bits': quant_bits
-        }
-        if beta_schedule:
-            self.hyperparameters['beta_schedule'] = beta_schedule
-
-    def validate(self) -> None:
-        """Validate model configuration parameters"""
-        valid_types = ["autoencoder", "variational_autoencoder"]
-        if self.model_type not in valid_types:
-            raise ValueError(f"model_type must be one of {valid_types}")
-        
-        # Validate architecture
-        if self.architecture['latent_dim'] < 1:
-            raise ValueError("latent_dim must be positive")
-            
-        if not self.architecture['encoder_layers'] or not self.architecture['decoder_layers']:
-            raise ValueError("encoder_layers and decoder_layers cannot be empty")
-            
-        # Validate VAE-specific parameters
-        if self.model_type == "variational_autoencoder":
-            if 'beta_schedule' not in self.hyperparameters:
-                raise ValueError("beta_schedule required for VAE")
-            required_beta_fields = ["start", "end", "warmup_epochs", "cycle_epochs"]
-            missing = [f for f in required_beta_fields if f not in self.hyperparameters['beta_schedule']]
-            if missing:
-                raise ValueError(f"beta_schedule missing required fields: {missing}")
-
-@dataclass
-class TrainingConfig:
-    """Configuration for model training"""
-    batch_size: int
-    epochs: int
-    learning_rate: float
-    early_stopping: Dict[str, Any]
-    plot_training: bool
-
-    def __init__(
-        self,
-        batch_size: int,
-        learning_rate: float,
-        epochs: int,
-        early_stopping_patience: int,
-        early_stopping_min_delta: float,
-        plot_training: bool
-    ):
-        self.batch_size = batch_size
-        self.epochs = epochs
-        self.learning_rate = learning_rate
-        self.early_stopping = {
-            "patience": early_stopping_patience,
-            "min_delta": early_stopping_min_delta
-        }
-        self.plot_training = plot_training
-
-    def validate(self) -> None:
-        """Validate training configuration parameters"""
-        if self.learning_rate <= 0:
-            raise ValueError("learning_rate must be positive")
-        if self.epochs < 1:
-            raise ValueError("epochs must be positive")
-        if self.early_stopping["patience"] < 0:
-            raise ValueError("early_stopping_patience must be non-negative")
-        if self.early_stopping["min_delta"] < 0:
-            raise ValueError("early_stopping_min_delta must be non-negative")
 
 def test_model_pipeline(
     dataset_config: DatasetConfig,
@@ -134,7 +19,8 @@ def test_model_pipeline(
     training_config: TrainingConfig,
     task_config: TaskConfig,
     experiment_name: str,
-    experiment_description: str
+    experiment_description: str,
+    delete_catalogs: bool = True
 ) -> bool:
     """
     Test the complete model pipeline with configuration objects
@@ -146,6 +32,7 @@ def test_model_pipeline(
         task_config: Configuration for task processing
         experiment_name: Name for the experiment
         experiment_description: Description of the experiment
+        delete_catalogs: Whether to delete catalogs after processing
     """
     # Validate configurations
     dataset_config.validate()
@@ -187,16 +74,17 @@ def test_model_pipeline(
         data_manager = DatasetManager()
         
         # 2. Load or create dataset
-        print("Setting up data pipeline...")
+        print("Loading datasets...")
         train_dataset, val_dataset, test_dataset = data_manager.load_datasets(
-            task_config=task_config,
+            dataset_config=dataset_config,
             validation_fraction=dataset_config.validation_fraction,
             test_fraction=dataset_config.test_fraction,
             batch_size=training_config.batch_size,
             shuffle_buffer=dataset_config.shuffle_buffer,
             include_labels=dataset_config.include_labels,
-            plot_distributions=dataset_config.plot_distributions
+            delete_catalogs=delete_catalogs
         )
+        logging.info("DEBUG: Loaded datasets")
         
         # Get the dataset ID from the data manager
         dataset_id = data_manager.get_current_dataset_id()
@@ -206,10 +94,9 @@ def test_model_pipeline(
         if dataset_config.signal_keys:
             print("\nSetting up signal data pipeline...")
             signal_datasets = data_manager.load_signal_datasets(
-                task_config=task_config,
+                dataset_config=dataset_config,
                 batch_size=training_config.batch_size,
                 include_labels=dataset_config.include_labels,
-                plot_distributions=dataset_config.plot_distributions
             )
 
         if signal_datasets:
@@ -222,7 +109,7 @@ def test_model_pipeline(
             'model_type': model_config.model_type,
             'architecture': {
                 **model_config.architecture,
-                'input_shape': (task_config.max_tracks, 6)
+                'input_shape': task_config.input.get_total_feature_size()
             },
             'hyperparameters': model_config.hyperparameters
         }
@@ -419,100 +306,3 @@ def test_model_pipeline(
         print(f"Pipeline test failed: {type(e).__name__}: {str(e)}")
         print(f"Error context:")
         raise
-
-
-
-
-
-
-
-
-
-
-def main():
-    """Main function serving as control panel for experiments"""
-    
-    # Choose experiment type
-    MODEL_TYPE = "vae"  # "vae" or "autoencoder"
-    
-    # Dataset configuration - common for both models
-    dataset_config = DatasetConfig(
-        run_numbers=ATLAS_RUN_NUMBERS[-2:],
-        signal_keys=["zprime", "wprime_qq", "zprime_bb"],
-        catalog_limit=3,
-        validation_fraction=0.15,
-        test_fraction=0.15,
-        shuffle_buffer=50000,
-        plot_distributions=True,
-        include_labels=False  # Don't include labels for VAE training
-    )
-    
-    # Model configurations
-    ae_model_config = ModelConfig(
-        model_type="autoencoder",
-        latent_dim=16,
-        encoder_layers=[128, 64, 32],
-        decoder_layers=[32, 64, 128],
-        quant_bits=8,
-        activation='relu',
-        beta_schedule=None
-    )
-    
-    vae_model_config = ModelConfig(
-        model_type="variational_autoencoder",
-        latent_dim=16,
-        encoder_layers=[128, 64, 32],
-        decoder_layers=[32, 64, 128],
-        quant_bits=8,
-        activation='relu',
-        beta_schedule={
-            'start': 0.0,
-            'end': 0.01,
-            'warmup_epochs': 5,
-            'cycle_epochs': 5
-        }
-    )
-
-    # Training configuration - common for both models
-    training_config = TrainingConfig(
-        batch_size=1024,  # Move from dataset_config to training_config
-        learning_rate=0.001,
-        epochs=2,
-        early_stopping_patience=3,
-        early_stopping_min_delta=1e-4,
-        plot_training=True
-    )
-    
-    # Select model configuration based on type
-    model_config = vae_model_config if MODEL_TYPE == "vae" else ae_model_config
-    
-    try:
-        success = test_model_pipeline(
-            dataset_config=dataset_config,
-            model_config=model_config,
-            training_config=training_config,
-            task_config=TaskConfig(
-                run_numbers=ATLAS_RUN_NUMBERS[-2:],
-                signal_keys=["zprime", "wprime_qq", "zprime_bb"],
-                catalog_limit=3,
-                max_tracks=30,
-                min_tracks=10
-            ),
-            experiment_name=f"{MODEL_TYPE}_test",
-            experiment_description=f"Testing {MODEL_TYPE} model with explicit parameters"
-        )
-        
-        if success:
-            print("\nAll tests passed successfully!")
-            return 0
-        else:
-            print("\nTests failed!")
-            return 1
-            
-    except Exception as e:
-        print("\nTest failed with error:")
-        print(str(e))
-        return 1
-
-if __name__ == "__main__":
-    exit(main())

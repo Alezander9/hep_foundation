@@ -429,3 +429,23 @@ class PhysliteSelectionConfig:
     
     def __repr__(self) -> str:
         return self.__str__()
+
+    def get_total_feature_size(self) -> int:
+        """
+        Calculate total feature size by combining scalar features and aggregated array features.
+        
+        Returns:
+            int: Total number of features, calculated as:
+                 (number of scalar features) + 
+                 sum(aggregator.max_length * len(aggregator.input_branches) for each aggregator)
+        """
+        # Count scalar features
+        total_size = len(self.feature_selectors)
+        
+        # Add size from each aggregator
+        for aggregator in self.feature_array_aggregators:
+            # For each aggregator, multiply its max_length by number of input features
+            aggregator_size = aggregator.max_length * len(aggregator.input_branches)
+            total_size += aggregator_size
+        
+        return total_size

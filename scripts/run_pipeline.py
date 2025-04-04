@@ -11,18 +11,6 @@ from hep_foundation.task_config import TaskConfig
 def create_configs(model_type: str = "vae") -> Dict[str, Any]:
     """Create configuration objects for the model pipeline"""
     
-    # Simplified DatasetConfig without track/event selections
-    dataset_config = DatasetConfig(
-        run_numbers=ATLAS_RUN_NUMBERS[-1:],
-        signal_keys=["zprime", "wprime_qq", "zprime_bb"],
-        catalog_limit=20,
-        validation_fraction=0.15,
-        test_fraction=0.15,
-        shuffle_buffer=50000,
-        plot_distributions=True,
-        include_labels=False
-    )
-
     # Create TaskConfig with the new structure
     task_config = TaskConfig.create_from_branch_names(
         # No event filters for now
@@ -72,6 +60,21 @@ def create_configs(model_type: str = "vae") -> Dict[str, Any]:
         }]]
     )
     
+    # Simplified DatasetConfig without track/event selections
+    dataset_config = DatasetConfig(
+        run_numbers=ATLAS_RUN_NUMBERS[-1:],
+        signal_keys=["zprime", "wprime_qq", "zprime_bb"],
+        catalog_limit=5,
+        validation_fraction=0.15,
+        test_fraction=0.15,
+        shuffle_buffer=50000,
+        plot_distributions=True,
+        include_labels=False,
+        task_config=task_config,
+    )
+
+    print("DEBUG: created dataset config")
+
     # Model configurations
     ae_model_config = ModelConfig(
         model_type="autoencoder",
@@ -173,7 +176,8 @@ success = test_model_pipeline(
     training_config=configs['training_config'],
     task_config=configs['task_config'],
     experiment_name="{experiment_name}",
-    experiment_description="{experiment_description}"
+    experiment_description="{experiment_description}",
+    delete_catalogs=False
 )
 sys.exit(0 if success else 1)
                 """],
@@ -183,73 +187,24 @@ sys.exit(0 if success else 1)
             )
         
         # Save the process ID to a file for later termination
-        pid_file = logs_dir / f"pipeline_{timestamp}.pid"
-        with open(pid_file, 'w') as pf:
-            pf.write(str(process.pid))
+        # pid_file = logs_dir / f"pipeline_{timestamp}.pid"
+        # with open(pid_file, 'w') as pf:
+        #     pf.write(str(process.pid))
         
         print("="*80)
         print(f"PIPELINE PROCESS ID: {process.pid}")
         print("="*80)
         print(f"Started pipeline process at {timestamp}")
         print(f"Logging output to: {log_file}")
-        print(f"PID saved to: {pid_file}")
+        # print(f"PID saved to: {pid_file}")
         print("Process is running in background. You can close VSCode safely.")
-        print(f"To stop the process, run: python -m scripts.stop_pipeline {process.pid}")
+        print(f"To stop the process, run: kill {process.pid}")
         print("="*80)
         
     except Exception as e:
         print(f"Failed to start pipeline: {str(e)}")
         raise
 
-# Add a new function to stop a running pipeline
-def stop_pipeline(pid: int) -> None:
-    """
-    Stop a running pipeline process by its PID
-    
-    Args:
-        pid: Process ID of the pipeline to stop
-    """
-    try:
-        import signal
-        import psutil
-        
-        # Check if the process exists
-        if not psutil.pid_exists(pid):
-            print(f"Process with PID {pid} not found.")
-            return
-            
-        # Get the process and all its children
-        parent = psutil.Process(pid)
-        children = parent.children(recursive=True)
-        
-        # Send SIGTERM to all child processes first
-        for child in children:
-            try:
-                child.send_signal(signal.SIGTERM)
-                print(f"Sent termination signal to child process {child.pid}")
-            except psutil.NoSuchProcess:
-                pass
-                
-        # Then terminate the parent
-        parent.send_signal(signal.SIGTERM)
-        print(f"Sent termination signal to main process {pid}")
-        
-        # Wait for processes to terminate (with timeout)
-        gone, alive = psutil.wait_procs(children + [parent], timeout=5)
-        
-        # If any processes are still alive, force kill them
-        if alive:
-            for p in alive:
-                print(f"Force killing process {p.pid}")
-                try:
-                    p.kill()
-                except psutil.NoSuchProcess:
-                    pass
-                    
-        print(f"Pipeline process {pid} and its children have been terminated.")
-        
-    except Exception as e:
-        print(f"Error stopping pipeline: {str(e)}")
 
 if __name__ == "__main__":
     run_pipeline() 

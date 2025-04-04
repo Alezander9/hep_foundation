@@ -2,7 +2,7 @@ from pathlib import Path
 import h5py
 import json
 import hashlib
-from typing import Dict, Optional, Tuple, List
+from typing import Dict, Optional, Tuple, List, Union
 import tensorflow as tf
 import numpy as np
 from datetime import datetime
@@ -19,6 +19,32 @@ import logging
 from hep_foundation.atlas_file_manager import ATLASFileManager
 from hep_foundation.task_config import PhysliteFeatureFilter, PhysliteFeatureArrayFilter, PhysliteFeatureArrayAggregator, PhysliteSelectionConfig, PhysliteFeatureSelector, TaskConfig
 from hep_foundation.utils import TypeConverter, ConfigSerializer
+from dataclasses import dataclass
+
+@dataclass
+class DatasetConfig:
+    """Configuration for dataset processing"""
+    run_numbers: List[str]
+    signal_keys: Optional[List[str]]
+    catalog_limit: int
+    validation_fraction: float
+    test_fraction: float
+    shuffle_buffer: int
+    plot_distributions: bool
+    include_labels: bool = True
+    task_config: Optional[TaskConfig] = None
+
+    def validate(self) -> None:
+        """Validate dataset configuration parameters"""
+        if not self.run_numbers:
+            raise ValueError("run_numbers cannot be empty")
+        if self.catalog_limit < 1:
+            raise ValueError("catalog_limit must be positive")
+        if not 0 <= self.validation_fraction + self.test_fraction < 1:
+            raise ValueError("Sum of validation and test fractions must be less than 1")
+        if self.task_config is None:
+            raise ValueError("task_config must be provided")
+
 
 class DatasetManager:
     """Manages pre-processed ATLAS datasets with integrated processing capabilities"""
@@ -63,38 +89,56 @@ class DatasetManager:
             raise ValueError("No dataset currently loaded")
         return self.current_dataset_path
         
-    def generate_dataset_id(self, config: Dict) -> str:
-        """Generate a human-readable dataset ID"""
+    def generate_dataset_id(self, config: DatasetConfig) -> str:
+        """Generate a human-readable dataset ID from a DatasetConfig object"""
+        logging.info(f"DEBUG: Inside generate_dataset_id with config type: {type(config)}")
+        if (type(config) != DatasetConfig):
+            raise ValueError("config must be a DatasetConfig object")
+        
+        config_dict = {
+            'run_numbers': config.run_numbers,
+            'signal_keys': config.signal_keys,
+            'catalog_limit': config.catalog_limit,
+            'task_config': config.task_config.to_dict() if config.task_config else None
+        }
+
         # Create a descriptive ID based on dataset type
-        if 'signal_types' in config:
-            # For signal datasets
-            signal_str = '_'.join(sorted(config['signal_types']))
-            id_components = [
-                'signal',
-                f'types{signal_str}',
-                f'tracks{config["max_tracks_per_event"]}'
-            ]
-        else:
-            # For regular datasets
-            run_str = '_'.join(str(run) for run in sorted(config['run_numbers']))
+        if config_dict.get('run_numbers'):
+            logging.info("DEBUG: Processing run numbers")
+            sorted_run_numbers = sorted(config_dict['run_numbers'])
+            run_str = f'{sorted_run_numbers[0]}-{len(sorted_run_numbers)}-{sorted_run_numbers[-1]}'
             id_components = [
                 'dataset',
-                f'runs{run_str}',
-                f'tracks{config["max_tracks_per_event"]}'
+                f'runs_{run_str}'
             ]
+        elif config_dict.get('signal_keys'):
+            logging.info("DEBUG: Processing signal keys")
+            signal_str = '_'.join(sorted(config_dict['signal_keys']))
+            id_components = [
+                'signal',
+                f'types{signal_str}'
+            ]
+        else:
+            raise ValueError("No run numbers or signal keys provided")
         
         # Add a short hash for uniqueness
         config_hash = hashlib.sha256(
-            json.dumps(config, sort_keys=True).encode()
+            json.dumps(config_dict, sort_keys=True).encode()
         ).hexdigest()[:8]
         
         id_components.append(config_hash)
         
-        return "_".join(id_components)
+        result = "_".join(id_components)
+        logging.info(f"DEBUG: Generated dataset ID: {result}")
+        return result
     
-    def save_dataset_config(self, dataset_id: str, config: Dict):
+    def save_dataset_config(self, dataset_id: str, config: Union[Dict, TaskConfig]):
         """Save full dataset configuration"""
         config_path = self.configs_dir / f"{dataset_id}_config.yaml"
+        
+        # Convert TaskConfig to dict if needed
+        if isinstance(config, TaskConfig):
+            config = config.to_dict()
         
         # Prepare configuration
         full_config = {
@@ -124,12 +168,12 @@ class DatasetManager:
             
         return ConfigSerializer.from_yaml(config_path)
     
-    def _create_dataset(self, task_config: TaskConfig, plot_distributions: bool = False, delete_catalogs: bool = True) -> Tuple[str, Path]:
+    def _create_atlas_dataset(self, dataset_config: DatasetConfig, plot_distributions: bool = False, delete_catalogs: bool = True) -> Tuple[str, Path]:
         """
         Create new processed dataset from ATLAS data.
         
         Args:
-            task_config: Configuration defining event filters, input features, and labels
+            dataset_config: Configuration defining event filters, input features, and labels
             plot_distributions: Whether to generate distribution plots
             delete_catalogs: Whether to delete catalogs after processing
             
@@ -141,13 +185,13 @@ class DatasetManager:
         logging.info("Creating new dataset")
         
         # Generate dataset ID and paths
-        dataset_id = self.generate_dataset_id(task_config)
+        dataset_id = self.generate_dataset_id(dataset_config)
         output_path = self.datasets_dir / f"{dataset_id}.h5"
         logging.info(f"\nGenerated dataset ID: {dataset_id}")
         
         try:
             # Save configuration first
-            config_path = self.save_dataset_config(dataset_id, task_config)
+            config_path = self.save_dataset_config(dataset_id, dataset_config)
             logging.info(f"Saved configuration to: {config_path}")
             
             # Process all runs
@@ -159,15 +203,29 @@ class DatasetManager:
                 'total_features': 0,
                 'processing_time': 0
             }
+
+            for run_number in dataset_config.run_numbers:
+                logging.info(f"DEBUG: Processing run {run_number}")
+                try:
+                    result = self._process_data(
+                        task_config=dataset_config.task_config,
+                        run_number=run_number,
+                        catalog_limit=dataset_config.catalog_limit,
+                        plot_distributions=plot_distributions,
+                        delete_catalogs=delete_catalogs
+                    )
+                    logging.info(f"DEBUG: Process data returned result of type: {type(result)}")
+                    inputs, labels, stats = result
+                    all_inputs.extend(inputs)
+                    all_labels.extend(labels)
+                    total_stats['total_events'] += stats['total_events']
+                    total_stats['processed_events'] += stats['processed_events']
+                    total_stats['total_features'] += stats['total_features']
+                except Exception as e:
+                    logging.error(f"DEBUG: Error unpacking process_data result: {str(e)}")
+                    raise
             
-            # Process data
-            inputs, labels, stats = self._process_data(
-                task_config=task_config,
-                plot_distributions=plot_distributions,
-                delete_catalogs=delete_catalogs
-            )
-            
-            if not inputs:
+            if not all_inputs:
                 raise ValueError("No events passed selection criteria")
             
             # Create HDF5 dataset
@@ -176,8 +234,8 @@ class DatasetManager:
                 features_group = f.create_group('features')
                 
                 # Save scalar features if any exist
-                scalar_features = {name: [] for name in inputs[0]['scalar_features'].keys()}
-                for input_data in inputs:
+                scalar_features = {name: [] for name in all_inputs[0]['scalar_features'].keys()}
+                for input_data in all_inputs:
                     for name, value in input_data['scalar_features'].items():
                         scalar_features[name].append(value)
                 
@@ -189,11 +247,11 @@ class DatasetManager:
                     )
                 
                 # Save aggregated features if any exist
-                for agg_name, agg_data in inputs[0]['aggregated_features'].items():
+                for agg_name, agg_data in all_inputs[0]['aggregated_features'].items():
                     # Stack all events for this aggregator
                     stacked_data = np.stack([
                         input_data['aggregated_features'][agg_name]
-                        for input_data in inputs
+                        for input_data in all_inputs
                     ])
                     
                     features_group.create_dataset(
@@ -203,15 +261,16 @@ class DatasetManager:
                     )
                 
                 # Create labels group if we have labels
-                if labels and task_config.labels:
+                if all_labels and dataset_config.task_config.labels:
                     labels_group = f.create_group('labels')
                     
+                    logging.info(f"DEBUG: generating labels datasets for {len(dataset_config.task_config.labels)} labels")
                     # Process each label configuration
-                    for label_idx, label_config in enumerate(task_config.labels):
+                    for label_idx, label_config in enumerate(dataset_config.task_config.labels):
                         label_subgroup = labels_group.create_group(f'config_{label_idx}')
                         
                         # Get all label data for this configuration
-                        label_data = [label_set[label_idx] for label_set in labels]
+                        label_data = [label_set[label_idx] for label_set in all_labels]
                         
                         # Save scalar features
                         scalar_features = {name: [] for name in label_data[0]['scalar_features'].keys()}
@@ -240,15 +299,15 @@ class DatasetManager:
                             )
                 
                 # Compute and store normalization parameters
-                norm_params = self._compute_dataset_normalization(inputs, labels if labels else None)
+                norm_params = self._compute_dataset_normalization(all_inputs, all_labels if all_labels else None)
                 
                 # Store attributes
                 f.attrs.update({
                     'dataset_id': dataset_id,
                     'creation_date': str(datetime.now()),
-                    'has_labels': bool(labels and task_config.labels),
+                    'has_labels': bool(all_labels and dataset_config.task_config.labels),
                     'normalization_params': json.dumps(norm_params),
-                    'processing_stats': json.dumps(stats)
+                    'processing_stats': json.dumps(total_stats)
                 })
             
             return dataset_id, output_path
@@ -371,17 +430,18 @@ class DatasetManager:
         return norm_params
 
     def load_datasets(self, 
-                     task_config: TaskConfig,
+                     dataset_config: DatasetConfig,
                      validation_fraction: float = 0.15,
                      test_fraction: float = 0.15,
                      batch_size: int = 1000,
                      shuffle_buffer: int = 10000,
-                     include_labels: bool = False) -> Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
+                     include_labels: bool = False,
+                     delete_catalogs: bool = True) -> Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
         """
         Load and split dataset into train/val/test.
         
         Args:
-            task_config: Task configuration defining data selection and processing
+            dataset_config: Dataset configuration defining data selection and processing
             validation_fraction: Fraction of data to use for validation
             test_fraction: Fraction of data to use for testing
             batch_size: Size of batches in returned dataset
@@ -394,19 +454,29 @@ class DatasetManager:
         logging.info("Attempting to load datasets")
         try:
             # Generate dataset ID and paths
-            dataset_id = self.generate_dataset_id(task_config)
+            logging.info("Generating dataset ID...")
+            dataset_id = self.generate_dataset_id(dataset_config)
+            logging.info(f"DEBUG: Generated dataset ID: {dataset_id}")
+            
             dataset_path = self.datasets_dir / f"{dataset_id}.h5"
-            logging.info(f"\nLooking for dataset: {dataset_id}")
+            logging.info(f"Looking for dataset: {dataset_id}")
             
             # Create dataset if it doesn't exist
             if not dataset_path.exists():
-                logging.info(f"\nDataset not found, creating new dataset: {dataset_id}")
-                dataset_id, dataset_path = self._create_dataset(task_config=task_config)
+                logging.info(f"Dataset not found, creating new dataset: {dataset_id}")
+                logging.info(f"DEBUG: Creating new dataset with TaskConfig type: {type(dataset_config)}")
+                dataset_id, dataset_path = self._create_atlas_dataset(dataset_config=dataset_config, delete_catalogs=delete_catalogs)
+                logging.info(f"DEBUG: Dataset creation completed")
+            else:
+                logging.info(f"DEBUG: Existing dataset found at: {dataset_path}")
             
             # Set current dataset tracking
+            logging.info(f"DEBUG: Setting current dataset tracking")
             self.current_dataset_id = dataset_id
             self.current_dataset_path = dataset_path
+            logging.info(f"DEBUG: About to get dataset info for {dataset_id}")
             self.current_dataset_info = self.get_dataset_info(dataset_id)
+            logging.info(f"DEBUG: Got dataset info successfully")
             
             # Load and process dataset
             with h5py.File(dataset_path, 'r') as f:
@@ -627,49 +697,60 @@ class DatasetManager:
                 - 'scalar_features': Dict of selected scalar features
                 - 'aggregated_features': Dict of aggregated array features
             Returns None if any required features are missing or aggregation fails
-        """
+        """        
         # Extract scalar features
-        scalar_features = self._extract_selected_features(
-            event_data,
-            selection_config.feature_selectors
-        )
+        if selection_config.feature_selectors:
+            scalar_features = self._extract_selected_features(
+                event_data,
+                selection_config.feature_selectors
+            )
+        else:
+            scalar_features = {}
         
         # Process aggregators
         aggregated_features = {}
-        for idx, aggregator in enumerate(selection_config.feature_array_aggregators):
-            # Get all needed arrays first
-            array_features = {}
-            
-            # Get input branch arrays
-            for selector in aggregator.input_branches:
-                value = event_data.get(selector.branch.name)
-                if value is None or len(value) == 0:
+        if selection_config.feature_array_aggregators:
+            for idx, aggregator in enumerate(selection_config.feature_array_aggregators):
+                # Get all needed arrays first
+                array_features = {}
+                
+                # Get input branch arrays
+                for selector in aggregator.input_branches:
+                    value = event_data.get(selector.branch.name)
+                    if value is None or len(value) == 0:
+                        return None
+                    array_features[selector.branch.name] = value
+                
+                # Apply filters to get valid mask
+                valid_mask = self._apply_feature_array_filters(
+                    array_features,
+                    aggregator.filter_branches
+                )
+                
+                # Get sort values and indices if sort_by_branch is specified
+                if aggregator.sort_by_branch:
+                    sort_value = event_data.get(aggregator.sort_by_branch.branch.name)
+                    if sort_value is None or len(sort_value) == 0:
+                        return None
+                    array_features[aggregator.sort_by_branch.branch.name] = sort_value
+                    # Create sort indices in descending order
+                    sort_indices = np.argsort(sort_value[valid_mask])[::-1]
+                else:
+                    # If no sorting specified, keep original order
+                    sort_indices = np.arange(np.sum(valid_mask))
+                
+                # Apply aggregator with optional sorting
+                result = self._apply_feature_array_aggregator(
+                    array_features,
+                    aggregator,
+                    valid_mask,
+                    sort_indices
+                )
+                
+                if result is None:
                     return None
-                array_features[selector.branch.name] = value
-            
-            # Get sort branch array
-            sort_value = event_data.get(aggregator.sort_by_branch.branch.name)
-            if sort_value is None or len(sort_value) == 0:
-                return None
-            array_features[aggregator.sort_by_branch.branch.name] = sort_value
-            
-            # Apply filters to get valid mask
-            valid_mask = self._apply_feature_array_filters(
-                array_features,
-                aggregator.filter_branches
-            )
-            
-            # Apply aggregator
-            result = self._apply_feature_array_aggregator(
-                array_features,
-                aggregator,
-                valid_mask
-            )
-            
-            if result is None:
-                return None
-            
-            aggregated_features[f'aggregator_{idx}'] = result
+                
+                aggregated_features[f'aggregator_{idx}'] = result
         
         # Return None if we have no features at all
         if not scalar_features and not aggregated_features:
@@ -682,13 +763,13 @@ class DatasetManager:
 
     def _process_event(self,
                       event_data: Dict[str, np.ndarray],
-                      task_config: PhysliteSelectionConfig) -> Optional[Dict[str, np.ndarray]]:
+                      task_config: TaskConfig) -> Optional[Dict[str, np.ndarray]]:
         """
         Process a single event using the task configuration.
         
         Args:
             event_data: Dictionary mapping branch names to their raw values
-            task_config: PhysliteSelectionConfig defining features and filters
+            task_config: TaskConfig object containing event filters, input features, and labels
             
         Returns:
             Dictionary of processed features (scalar, array, and labels) or None if event rejected
@@ -698,23 +779,22 @@ class DatasetManager:
             return None
         
         # Process input selection config
-        input_features = self._process_selection_config(event_data, task_config)
+        input_features = self._process_selection_config(event_data, task_config.input)
         if input_features is None:
             return None
         
         # Process each label config if present
-        label_features = {}
+        label_features = []  # Change to list since we can have multiple label configs
         for label_config in task_config.labels:
             label_result = self._process_selection_config(event_data, label_config)
             if label_result is None:
                 return None
-            label_features.update(label_result)
+            label_features.append(label_result)  # Append the whole result
         
         return {
             'scalar_features': input_features['scalar_features'],
-            'array_features': input_features['array_features'],
             'aggregated_features': input_features['aggregated_features'],
-            'label_features': label_features
+            'label_features': label_features  # Now a list of dicts, each with scalar_features and aggregated_features
         }
 
     def _get_catalog_paths(self, 
@@ -769,7 +849,13 @@ class DatasetManager:
             - List of processed label features (each a list of dicts for multiple label configs)
             - Processing statistics
         """
-        logging.info(f"\nProcessing {'signal' if signal_key else 'ATLAS'} data")
+
+        if signal_key:
+            logging.info(f"\nProcessing signal data for {signal_key}")
+        elif run_number:
+            logging.info(f"\nProcessing ATLAS data for run {run_number}")
+        else:
+            raise ValueError("Must provide either run_number or signal_key")
         
         # Initialize statistics
         stats = {
@@ -788,32 +874,24 @@ class DatasetManager:
         # Add event filter branches
         for filter in task_config.event_filters:
             required_branches.add(filter.branch.name)
-        
-        # Add input selection branches
-        for selector in task_config.input.feature_selectors:
-            required_branches.add(selector.branch.name)
-        
-        # Add input aggregator branches
-        for aggregator in task_config.input.feature_array_aggregators:
-            # Add input branches
-            for selector in aggregator.input_branches:
+
+        # Process all selection configs (input and labels) to collect branches
+        for selection_config in [task_config.input, *task_config.labels]:
+            # Add feature selector branches
+            for selector in selection_config.feature_selectors:
                 required_branches.add(selector.branch.name)
-            # Add filter branches
-            for filter in aggregator.filter_branches:
-                required_branches.add(filter.branch.name)
-            # Add sort branch
-            required_branches.add(aggregator.sort_by_branch.branch.name)
-        
-        # Add label selection branches
-        for label_config in task_config.labels:
-            for selector in label_config.feature_selectors:
-                required_branches.add(selector.branch.name)
-            for aggregator in label_config.feature_array_aggregators:
+            
+            # Add aggregator branches
+            for aggregator in selection_config.feature_array_aggregators:
+                # Add input branches
                 for selector in aggregator.input_branches:
                     required_branches.add(selector.branch.name)
+                # Add filter branches
                 for filter in aggregator.filter_branches:
                     required_branches.add(filter.branch.name)
-                required_branches.add(aggregator.sort_by_branch.branch.name)
+                # Add sort branch if present
+                if aggregator.sort_by_branch:
+                    required_branches.add(aggregator.sort_by_branch.branch.name)
         
         # Get catalog paths
         logging.info(f"Getting catalog paths for run {run_number} and signal {signal_key}")
@@ -829,37 +907,48 @@ class DatasetManager:
                 
                 with uproot.open(catalog_path) as file:
                     tree = file["CollectionTree;1"]
+                    logging.info(f"DEBUG: Starting to process tree with branches: {required_branches}")
                     
                     # Read all required branches
                     for arrays in tree.iterate(required_branches, library="np", step_size=1000):
-                        catalog_stats['events'] += len(next(iter(arrays.values())))
-                        
-                        for evt_idx in range(len(next(iter(arrays.values())))):
-                            # Extract all branches for this event
-                            event_data = {
-                                branch_name: arrays[branch_name][evt_idx]
-                                for branch_name in required_branches
-                                if branch_name in arrays
-                            }
+                        logging.info(f"DEBUG: Processing batch with {len(next(iter(arrays.values())))} events")
+                        try:
+                            catalog_stats['events'] += len(next(iter(arrays.values())))
                             
-                            # Skip empty events
-                            if not event_data or not any(len(v) > 0 if isinstance(v, np.ndarray) else True 
-                                                       for v in event_data.values()):
-                                continue
-                            
-                            # Process event
-                            result = self._process_event(event_data, task_config)
-                            if result is not None:
-                                input_features, label_features = result
-                                processed_inputs.append(input_features)
-                                processed_labels.append(label_features)
-                                catalog_stats['processed'] += 1
+                            for evt_idx in range(len(next(iter(arrays.values())))):
+                                # Extract all branches for this event
+                                event_data = {
+                                    branch_name: arrays[branch_name][evt_idx]
+                                    for branch_name in required_branches
+                                    if branch_name in arrays
+                                }
                                 
-                                # Update feature statistics using the first aggregator's result if available
-                                if input_features['aggregated_features']:
-                                    first_aggregator = next(iter(input_features['aggregated_features'].values()))
-                                    stats['total_features'] += np.sum(np.any(first_aggregator != 0, axis=1))
-            
+                                # Skip empty events
+                                if not event_data or not any(len(v) > 0 if isinstance(v, np.ndarray) else True 
+                                                           for v in event_data.values()):
+                                    continue
+                                
+                                # Process event
+                                result = self._process_event(event_data, task_config)
+                                if result is not None:
+                                    # Extract the components from the result dictionary
+                                    input_features = {
+                                        'scalar_features': result['scalar_features'],
+                                        'aggregated_features': result['aggregated_features']
+                                    }
+                                    processed_inputs.append(input_features)
+                                    processed_labels.append(result['label_features'])
+                                    
+                                    catalog_stats['processed'] += 1
+                                    
+                                    # Update feature statistics
+                                    if input_features['aggregated_features']:
+                                        first_aggregator = next(iter(input_features['aggregated_features'].values()))
+                                        stats['total_features'] += np.sum(np.any(first_aggregator != 0, axis=1))
+                        except Exception as e:
+                            logging.error(f"DEBUG: Error in batch processing: {str(e)}")
+                            raise
+                
                 # Update statistics
                 catalog_duration = (datetime.now() - catalog_start_time).total_seconds()
                 stats['processing_time'] += catalog_duration
@@ -1056,12 +1145,12 @@ class DatasetManager:
         
         logging.info("\nPlotting complete!") 
 
-    def _create_signal_dataset(self, task_config: TaskConfig, plot_distributions: bool = False) -> Tuple[str, Path]:
+    def _create_signal_dataset(self, dataset_config: DatasetConfig, plot_distributions: bool = False) -> Tuple[str, Path]:
         """
         Create new processed dataset from signal data.
         
         Args:
-            task_config: Configuration defining event filters, input features, and labels
+            dataset_config: Configuration defining event filters, input features, and labels
             plot_distributions: Whether to generate distribution plots
             
         Returns:
@@ -1072,7 +1161,7 @@ class DatasetManager:
         logging.info("Creating new signal dataset")
         
         # Generate dataset ID and paths
-        dataset_id = self.generate_dataset_id(task_config)
+        dataset_id = self.generate_dataset_id(dataset_config)
         output_path = self.datasets_dir / "signals" / f"{dataset_id}.h5"
         
         try:
@@ -1080,17 +1169,17 @@ class DatasetManager:
             output_path.parent.mkdir(parents=True, exist_ok=True)
             
             # Save configuration
-            config_path = self.save_dataset_config(dataset_id, task_config)
+            config_path = self.save_dataset_config(dataset_id, dataset_config)
             
             # Process each signal type separately
             with h5py.File(output_path, 'w') as f:
                 # Create group for each signal type
-                for signal_key in task_config.signal_types:
+                for signal_key in dataset_config.signal_keys:
                     logging.info(f"\nProcessing signal type: {signal_key}")
                     
                     # Process data for this signal type
                     inputs, labels, stats = self._process_data(
-                        task_config=task_config,
+                        task_config=dataset_config.task_config,
                         signal_key=signal_key,
                         plot_distributions=plot_distributions,
                         delete_catalogs=False
@@ -1133,11 +1222,11 @@ class DatasetManager:
                         )
                     
                     # Create labels group if we have labels
-                    if labels and task_config.labels:
+                    if labels and dataset_config.task_config.labels:
                         labels_group = signal_group.create_group('labels')
                         
                         # Process each label configuration
-                        for label_idx, label_config in enumerate(task_config.labels):
+                        for label_idx, label_config in enumerate(dataset_config.task_config.labels):
                             label_subgroup = labels_group.create_group(f'config_{label_idx}')
                             
                             # Get all label data for this configuration
@@ -1174,7 +1263,7 @@ class DatasetManager:
                     
                     # Store signal-specific attributes
                     signal_group.attrs.update({
-                        'has_labels': bool(labels and task_config.labels),
+                        'has_labels': bool(labels and dataset_config.task_config.labels),
                         'normalization_params': json.dumps(norm_params),
                         'processing_stats': json.dumps(stats)
                     })
@@ -1196,14 +1285,14 @@ class DatasetManager:
             raise Exception(f"Signal dataset creation failed: {str(e)}")
 
     def load_signal_datasets(self,
-                            task_config: TaskConfig,
+                            dataset_config: DatasetConfig,
                             batch_size: int = 1000,
                             include_labels: bool = False) -> Dict[str, tf.data.Dataset]:
         """
         Load signal datasets for evaluation.
         
         Args:
-            task_config: Task configuration defining data selection and processing
+            dataset_config: Dataset configuration defining data selection and processing
             batch_size: Size of batches in returned dataset
             include_labels: Whether to include labels in the dataset
             
@@ -1213,12 +1302,12 @@ class DatasetManager:
         logging.info("Loading signal datasets")
         try:
             # Generate dataset ID and paths
-            dataset_id = self.generate_dataset_id(task_config)
+            dataset_id = self.generate_dataset_id(dataset_config)
             dataset_path = self.datasets_dir / "signals" / f"{dataset_id}.h5"
             
             # Create if doesn't exist
             if not dataset_path.exists():
-                dataset_id, dataset_path = self._create_signal_dataset(task_config=task_config)
+                dataset_id, dataset_path = self._create_signal_dataset(dataset_config=dataset_config)
             
             # Load datasets
             signal_datasets = {}
@@ -1288,11 +1377,11 @@ class DatasetManager:
                                     if name in norm_params['features']['scalar']:
                                         params = norm_params['features']['scalar'][name]
                                         feature = (feature - params['mean']) / params['std']
-                                elif f'aggregated' in norm_params['features']:
-                                    name = sorted(features_dict.keys())[i]
-                                    if name in norm_params['features']['aggregated']:
-                                        params = norm_params['features']['aggregated'][name]
-                                        feature = (feature - params['means']) / params['stds']
+                                    elif f'aggregated' in norm_params['features']:
+                                        name = sorted(features_dict.keys())[i]
+                                        if name in norm_params['features']['aggregated']:
+                                            params = norm_params['features']['aggregated'][name]
+                                            feature = (feature - params['means']) / params['stds']
                                 normalized_features.append(feature)
                             return tuple(normalized_features), labels
                         
@@ -1311,11 +1400,11 @@ class DatasetManager:
                                     if name in norm_params['features']['scalar']:
                                         params = norm_params['features']['scalar'][name]
                                         feature = (feature - params['mean']) / params['std']
-                                elif f'aggregated' in norm_params['features']:
-                                    name = sorted(features_dict.keys())[i]
-                                    if name in norm_params['features']['aggregated']:
-                                        params = norm_params['features']['aggregated'][name]
-                                        feature = (feature - params['means']) / params['stds']
+                                    elif f'aggregated' in norm_params['features']:
+                                        name = sorted(features_dict.keys())[i]
+                                        if name in norm_params['features']['aggregated']:
+                                            params = norm_params['features']['aggregated'][name]
+                                            feature = (feature - params['means']) / params['stds']
                                 normalized_features.append(feature)
                             return tuple(normalized_features)
                         
@@ -1408,7 +1497,8 @@ class DatasetManager:
     def _apply_feature_array_aggregator(self,
                                       feature_arrays: Dict[str, np.ndarray],
                                       aggregator: PhysliteFeatureArrayAggregator,
-                                      valid_mask: np.ndarray) -> Optional[np.ndarray]:
+                                      valid_mask: np.ndarray,
+                                      sort_indices: np.ndarray) -> Optional[np.ndarray]:
         """
         Apply feature array aggregator to combine and sort multiple array features.
         
@@ -1416,6 +1506,7 @@ class DatasetManager:
             feature_arrays: Dictionary mapping feature names to their array values
             aggregator: PhysliteFeatureArrayAggregator configuration
             valid_mask: Boolean mask indicating which array elements passed filters
+            sort_indices: Indices to use for sorting the filtered arrays
             
         Returns:
             np.ndarray: Aggregated and sorted array of shape (max_length, n_features) 
@@ -1430,25 +1521,18 @@ class DatasetManager:
         
         # Extract arrays for each input branch
         feature_list = []
-        for filter in aggregator.input_branches:
-            values = feature_arrays.get(filter.branch.name)
+        for selector in aggregator.input_branches:
+            values = feature_arrays.get(selector.branch.name)
             if values is None:
                 return None
             # Apply mask and reshape to column
             filtered_values = values[valid_mask].reshape(-1, 1)
             feature_list.append(filtered_values)
         
-        # Get sorting values
-        sort_values = feature_arrays.get(aggregator.sort_by_branch.branch.name)
-        if sort_values is None:
-            return None
-        sort_values = sort_values[valid_mask]
-        
         # Stack features horizontally
         features = np.hstack(feature_list)  # Shape: (n_valid, n_features)
         
-        # Sort by specified branch
-        sort_indices = np.argsort(sort_values)[::-1]  # Descending order
+        # Apply sorting using provided indices
         sorted_features = features[sort_indices]
         
         # Handle length requirements
