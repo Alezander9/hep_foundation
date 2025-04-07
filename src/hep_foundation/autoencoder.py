@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Dict
 from tensorflow import keras
 from qkeras import QDense, QActivation, quantized_bits, quantized_relu
 import numpy as np
@@ -6,32 +6,86 @@ from pathlib import Path
 import tensorflow as tf
 import logging
 from hep_foundation.logging_config import setup_logging
-from hep_foundation.base_model import BaseModel
+from hep_foundation.base_model import BaseModel, ModelConfig
+
+class AutoEncoderConfig(ModelConfig):
+    """Configuration class for Autoencoder"""
+    
+    def validate(self) -> None:
+        """
+        Validate Autoencoder configuration parameters
+        
+        Raises:
+            ValueError: If configuration is invalid
+        """
+        # Check required architecture parameters
+        required_arch = ["input_shape", "latent_dim", "encoder_layers", "decoder_layers"]
+        for param in required_arch:
+            if param not in self.architecture:
+                raise ValueError(f"Missing required architecture parameter: {param}")
+        
+        # Validate architecture parameter values
+        if self.architecture["latent_dim"] < 1:
+            raise ValueError("latent_dim must be positive")
+        
+        if not isinstance(self.architecture["encoder_layers"], list) or not self.architecture["encoder_layers"]:
+            raise ValueError("encoder_layers must be a non-empty list")
+            
+        if not isinstance(self.architecture["decoder_layers"], list) or not self.architecture["decoder_layers"]:
+            raise ValueError("decoder_layers must be a non-empty list")
+        
+        if not isinstance(self.architecture["input_shape"], (tuple, list)):
+            raise ValueError("input_shape must be a tuple or list")
+        
+        # Validate layer sizes
+        for i, size in enumerate(self.architecture["encoder_layers"]):
+            if not isinstance(size, int) or size < 1:
+                raise ValueError(f"encoder_layers[{i}] must be a positive integer")
+                
+        for i, size in enumerate(self.architecture["decoder_layers"]):
+            if not isinstance(size, int) or size < 1:
+                raise ValueError(f"decoder_layers[{i}] must be a positive integer")
+        
+        # Validate activation function
+        if "activation" in self.architecture:
+            valid_activations = ["relu", "tanh", "sigmoid", "elu", "selu"]
+            if self.architecture["activation"] not in valid_activations:
+                raise ValueError(f"activation must be one of {valid_activations}")
+        
+        # Validate normalize_latent
+        if "normalize_latent" in self.architecture:
+            if not isinstance(self.architecture["normalize_latent"], bool):
+                raise ValueError("normalize_latent must be a boolean")
+        
+        # Validate hyperparameters
+        if "quant_bits" in self.hyperparameters:
+            if not isinstance(self.hyperparameters["quant_bits"], (int, type(None))):
+                raise ValueError("quant_bits must be an integer or None")
+            if isinstance(self.hyperparameters["quant_bits"], int) and self.hyperparameters["quant_bits"] < 1:
+                raise ValueError("quant_bits must be positive")
 
 class AutoEncoder(BaseModel):
-    def __init__(
-        self,
-        input_shape: tuple,
-        latent_dim: int,
-        encoder_layers: List[int],
-        decoder_layers: List[int],
-        quant_bits: Optional[int] = None,
-        activation: str = 'relu',
-        normalize_latent: bool = False,
-        name: str = 'track_autoencoder'
-    ):
+    def __init__(self, config: AutoEncoderConfig = None, **kwargs):
+        """
+        Initialize AutoEncoder
+        
+        Args:
+            config: AutoEncoderConfig object containing model configuration
+            **kwargs: Alternative way to pass configuration parameters directly
+        """
         super().__init__()
-        # Setup logging
         setup_logging()
         
-        self.input_shape = input_shape
-        self.latent_dim = latent_dim
-        self.encoder_layers = encoder_layers
-        self.decoder_layers = decoder_layers
-        self.quant_bits = quant_bits
-        self.activation = activation
-        self.normalize_latent = normalize_latent
-        self.name = name
+
+        self.input_shape = config.architecture["input_shape"]
+        self.latent_dim = config.architecture["latent_dim"]
+        self.encoder_layers = config.architecture["encoder_layers"]
+        self.decoder_layers = config.architecture["decoder_layers"]
+        self.activation = config.architecture.get("activation", "relu")
+        self.normalize_latent = config.architecture.get("normalize_latent", False)
+        self.quant_bits = config.hyperparameters.get("quant_bits")
+        self.name = config.architecture.get("name", "track_autoencoder")
+
         
     def build(self, input_shape: tuple = None) -> None:
         """Build encoder and decoder networks"""

@@ -76,30 +76,42 @@ def create_configs(model_type: str = "vae") -> Dict[str, Any]:
     print("DEBUG: created dataset config")
 
     # Model configurations
-    ae_model_config = ModelConfig(
-        model_type="autoencoder",
-        latent_dim=16,
-        encoder_layers=[128, 64, 32],
-        decoder_layers=[32, 64, 128],
-        quant_bits=8,
-        activation='relu',
-        beta_schedule=None
-    )
-    
-    vae_model_config = ModelConfig(
-        model_type="variational_autoencoder",
-        latent_dim=16,
-        encoder_layers=[128, 64, 32],
-        decoder_layers=[32, 64, 128],
-        quant_bits=8,
-        activation='relu',
-        beta_schedule={
-            'start': 0.01,
-            'end': 0.1,
-            'warmup_epochs': 5,
-            'cycle_epochs': 5
+    ae_model_config = {
+        "model_type": "autoencoder",  # Explicit model type at top level
+        "architecture": {
+            "input_shape": (30, 7),
+            "latent_dim": 16,
+            "encoder_layers": [128, 64, 32],
+            "decoder_layers": [32, 64, 128],
+            "activation": "relu",
+            "normalize_latent": False,
+            "name": "track_autoencoder"  # Name can still be used for logging/saving
+        },
+        "hyperparameters": {
+            "quant_bits": 8
         }
-    )
+    }
+    
+    vae_model_config = {
+        "model_type": "variational_autoencoder",  # Explicit model type at top level
+        "architecture": {
+            "input_shape": (30, 7),
+            "latent_dim": 16,
+            "encoder_layers": [128, 64, 32],
+            "decoder_layers": [32, 64, 128],
+            "activation": "relu",
+            "name": "variational_autoencoder"  # Name can still be used for logging/saving
+        },
+        "hyperparameters": {
+            "quant_bits": 8,
+            "beta_schedule": {
+                "start": 0.01,
+                "end": 0.1,
+                "warmup_epochs": 5,
+                "cycle_epochs": 5
+            }
+        }
+    }
 
     # Training configuration - common for both models
     training_config = TrainingConfig(
@@ -111,7 +123,7 @@ def create_configs(model_type: str = "vae") -> Dict[str, Any]:
         plot_training=True
     )
     
-    # Select model configuration based on type
+    # Select model configuration based on type parameter
     model_config = vae_model_config if model_type == "vae" else ae_model_config
     
     return {

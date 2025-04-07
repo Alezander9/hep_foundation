@@ -12,11 +12,76 @@ from tensorflow import keras
 from qkeras import QDense, QActivation, quantized_bits, quantized_relu
 from sklearn.metrics import roc_curve, auc
 
-from hep_foundation.base_model import BaseModel
+from hep_foundation.base_model import BaseModel, ModelConfig
 from hep_foundation.plot_utils import (
     MARKER_SIZES, FONT_SIZES, LINE_WIDTHS,
     set_science_style, get_figure_size, get_color_cycle
 )
+from hep_foundation.logging_config import setup_logging
+class VAEConfig(ModelConfig):
+    """Configuration class for Variational Autoencoder"""
+    
+    def validate(self) -> None:
+        """
+        Validate VAE configuration parameters
+        
+        Raises:
+            ValueError: If configuration is invalid
+        """
+        # Check required architecture parameters
+        required_arch = ["input_shape", "latent_dim", "encoder_layers", "decoder_layers"]
+        for param in required_arch:
+            if param not in self.architecture:
+                raise ValueError(f"Missing required architecture parameter: {param}")
+        
+        # Validate architecture parameter values
+        if self.architecture["latent_dim"] < 1:
+            raise ValueError("latent_dim must be positive")
+        
+        if not isinstance(self.architecture["encoder_layers"], list) or not self.architecture["encoder_layers"]:
+            raise ValueError("encoder_layers must be a non-empty list")
+            
+        if not isinstance(self.architecture["decoder_layers"], list) or not self.architecture["decoder_layers"]:
+            raise ValueError("decoder_layers must be a non-empty list")
+        
+        if not isinstance(self.architecture["input_shape"], (tuple, list)):
+            raise ValueError("input_shape must be a tuple or list")
+        
+        # Validate activation function
+        if "activation" in self.architecture:
+            valid_activations = ["relu", "tanh", "sigmoid", "elu", "selu"]
+            if self.architecture["activation"] not in valid_activations:
+                raise ValueError(f"activation must be one of {valid_activations}")
+        
+        # Validate hyperparameters
+        if "quant_bits" in self.hyperparameters:
+            if not isinstance(self.hyperparameters["quant_bits"], (int, type(None))):
+                raise ValueError("quant_bits must be an integer or None")
+            if isinstance(self.hyperparameters["quant_bits"], int) and self.hyperparameters["quant_bits"] < 1:
+                raise ValueError("quant_bits must be positive")
+        
+        # Validate beta schedule
+        if "beta_schedule" not in self.hyperparameters:
+            raise ValueError("beta_schedule is required for VAE")
+        
+        beta_schedule = self.hyperparameters["beta_schedule"]
+        required_beta = ["start", "end", "warmup_epochs", "cycle_epochs"]
+        for param in required_beta:
+            if param not in beta_schedule:
+                raise ValueError(f"Missing required beta_schedule parameter: {param}")
+        
+        # Validate beta schedule values
+        if not isinstance(beta_schedule["start"], (int, float)) or beta_schedule["start"] < 0:
+            raise ValueError("beta_schedule.start must be a non-negative number")
+            
+        if not isinstance(beta_schedule["end"], (int, float)) or beta_schedule["end"] < beta_schedule["start"]:
+            raise ValueError("beta_schedule.end must be greater than or equal to start")
+            
+        if not isinstance(beta_schedule["warmup_epochs"], int) or beta_schedule["warmup_epochs"] < 0:
+            raise ValueError("beta_schedule.warmup_epochs must be a non-negative integer")
+            
+        if not isinstance(beta_schedule["cycle_epochs"], int) or beta_schedule["cycle_epochs"] < 0:
+            raise ValueError("beta_schedule.cycle_epochs must be a non-negative integer")
 
 class Sampling(keras.layers.Layer):
     """Reparameterization trick by sampling from a unit Gaussian"""
@@ -104,43 +169,35 @@ class BetaSchedule(keras.callbacks.Callback):
 
 class VariationalAutoEncoder(BaseModel):
     """Variational Autoencoder implementation"""
-    def __init__(
-        self,
-        input_shape: tuple,
-        latent_dim: int,
-        encoder_layers: List[int],
-        decoder_layers: List[int],
-        quant_bits: Optional[int] = None,
-        activation: str = 'relu',
-        beta_schedule: Optional[dict] = None,
-        name: str = 'vae'
-    ):
-        super().__init__()
-        # Setup logging
-        logging.basicConfig(
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            level=logging.INFO,
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
+    def __init__(self, config: VAEConfig):
+        """
+        Initialize VariationalAutoEncoder
         
-        self.input_shape = input_shape
-        self.latent_dim = latent_dim
-        self.encoder_layers = encoder_layers
-        self.decoder_layers = decoder_layers
-        self.quant_bits = quant_bits
-        self.activation = activation
-        self.beta_schedule = beta_schedule or {
+        Args:
+            config: VAEConfig object containing model configuration
+        """
+        super().__init__()
+        setup_logging()
+        
+        # Extract configuration parameters
+        self.input_shape = config.architecture["input_shape"]
+        self.latent_dim = config.architecture["latent_dim"]
+        self.encoder_layers = config.architecture["encoder_layers"]
+        self.decoder_layers = config.architecture["decoder_layers"]
+        self.activation = config.architecture.get("activation", "relu")
+        self.quant_bits = config.hyperparameters.get("quant_bits")
+        self.beta_schedule = config.hyperparameters.get("beta_schedule", {
             'start': 0.0,
             'end': 1.0,
             'warmup_epochs': 50,
             'cycle_epochs': 20
-        }
-        self.name = name
+        })
+        self.name = config.architecture.get("name", "vae")
         
         # Will be set during build
         self.encoder = None
         self.decoder = None
-        self.beta = None 
+        self.beta = None
 
     def build(self, input_shape: tuple = None) -> None:
         """Build encoder and decoder networks with VAE architecture"""

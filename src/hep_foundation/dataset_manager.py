@@ -209,12 +209,12 @@ class DatasetManager:
                 logging.info(f"DEBUG: Processing run {run_number}")
                 try:
                     result = self.feature_processor._process_data(
-                        task_config=dataset_config.task_config,
-                        run_number=run_number,
-                        catalog_limit=dataset_config.catalog_limit,
-                        plot_distributions=plot_distributions,
-                        delete_catalogs=delete_catalogs
-                    )
+                    task_config=dataset_config.task_config,
+                    run_number=run_number,
+                    catalog_limit=dataset_config.catalog_limit,
+                    plot_distributions=plot_distributions,
+                    delete_catalogs=delete_catalogs
+                )
                     logging.info(f"DEBUG: Process data returned result of type: {type(result)}")
                     inputs, labels, stats = result
                     all_inputs.extend(inputs)
@@ -587,14 +587,12 @@ class DatasetManager:
                     # Batch and prefetch
                     dataset = dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
                     signal_datasets[signal_key] = dataset
+            
+            logging.info(f"\nSuccessfully loaded {len(signal_datasets)} signal datasets")
+            return signal_datasets
                     
-                    logging.info(f"\nSuccessfully loaded {len(signal_datasets)} signal datasets")
-                    return signal_datasets
-                
         except Exception as e:
             raise Exception(f"Failed to load signal datasets: {str(e)}")
-        
-            
 
     def _plot_distributions(self, 
                            pre_selection_stats: Dict[str, List],

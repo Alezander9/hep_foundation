@@ -15,7 +15,7 @@ from hep_foundation.logging_config import setup_logging
 
 def model_pipeline(
     dataset_config: DatasetConfig,
-    model_config: ModelConfig,
+    model_config: dict,
     training_config: TrainingConfig,
     task_config: TaskConfig,
     experiment_name: str,
@@ -27,7 +27,7 @@ def model_pipeline(
     
     Args:
         dataset_config: Configuration for dataset processing
-        model_config: Configuration for model architecture
+        model_config: Dictionary containing model configuration
         training_config: Configuration for model training
         task_config: Configuration for task processing
         experiment_name: Name for the experiment
@@ -40,7 +40,6 @@ def model_pipeline(
 
     # Validate configurations
     dataset_config.validate()
-    model_config.validate()
     training_config.validate()
 
     logging.info("\n" + "="*50)
@@ -110,12 +109,12 @@ def model_pipeline(
         
         # 3. Prepare configs for registry - now just add input shape to architecture
         model_config_dict = {
-            'model_type': model_config.model_type,
+            'model_type': model_config['model_type'],
             'architecture': {
-                **model_config.architecture,
+                **model_config['architecture'],
                 'input_shape': (task_config.input.get_total_feature_size(),) # Must be a tuple
             },
-            'hyperparameters': model_config.hyperparameters
+            'hyperparameters': model_config['hyperparameters']
         }
         
         # Training config is already in the right format
@@ -141,7 +140,7 @@ def model_pipeline(
         logging.info("Creating model...")
         try:
             model = ModelFactory.create_model(
-                model_type=model_config.model_type,
+                model_type=model_config['model_type'],
                 config=model_config_dict  # Pass the nested config directly
             )
             model.build()
