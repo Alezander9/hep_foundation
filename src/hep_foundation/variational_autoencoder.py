@@ -497,6 +497,9 @@ class AnomalyDetectionEvaluator:
             total_batches += 1
             total_events += batch.shape[0]
             
+            # Ensure input batch is float32
+            batch = tf.cast(batch, tf.float32)
+            
             # Get encoder outputs
             z_mean, z_log_var, z = self.model.encoder(batch)
             
@@ -506,6 +509,10 @@ class AnomalyDetectionEvaluator:
             # Flatten input and reconstruction for loss calculation
             flat_inputs = tf.reshape(batch, [-1, tf.reduce_prod(batch.shape[1:])])
             flat_reconstructions = tf.reshape(reconstructions, [-1, tf.reduce_prod(reconstructions.shape[1:])])
+            
+            # Ensure both tensors are the same type before subtraction
+            flat_inputs = tf.cast(flat_inputs, tf.float32)
+            flat_reconstructions = tf.cast(flat_reconstructions, tf.float32)
             
             # Calculate losses per event (not taking the mean)
             recon_losses_batch = tf.reduce_sum(

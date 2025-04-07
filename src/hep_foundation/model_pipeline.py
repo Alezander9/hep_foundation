@@ -268,7 +268,7 @@ def model_pipeline(
             logging.info("\nDataset inspection:")
             for i, batch in enumerate(train_dataset.take(1)):
                 logging.info(f"Training batch {i} shape: {batch.shape}")
-                logging.info(f"Sample of data: \n{batch[0, :5, :]}")  # Show first 5 tracks of first event
+                logging.info(f"Sample of data: \n{batch[0, :10]}")  # Show first 10 features of first event
             raise
         
         # Display Results
