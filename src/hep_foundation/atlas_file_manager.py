@@ -6,7 +6,7 @@ import json
 import logging
 import sys
 from hep_foundation.utils import ATLAS_CATALOG_COUNTS, SIGNAL_CATALOGS
-
+from hep_foundation.logging_config import setup_logging
 class ATLASFileManager:
     """Manages ATLAS PHYSLITE data access"""
     
@@ -15,11 +15,7 @@ class ATLASFileManager:
     
     def __init__(self, base_dir: str = "atlas_data"):
         # Setup logging
-        logging.basicConfig(
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            level=logging.INFO,
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
+        setup_logging()
         
         self.base_dir = Path(base_dir)
         self.base_url = "https://opendata.cern.ch/record/80001/files"

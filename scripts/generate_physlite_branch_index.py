@@ -16,7 +16,7 @@ def get_branch_info(file_path: Union[str, Path], max_entries: int = 100) -> Dict
     Returns:
         Dictionary of branch information organized by category
     """
-    logging.info(f"Reading branch information from {file_path}")
+    print(f"Reading branch information from {file_path}")
     branch_info = {}
     
     with uproot.open(file_path) as file:
@@ -43,7 +43,7 @@ def get_branch_info(file_path: Union[str, Path], max_entries: int = 100) -> Dict
         
         # Process branches in batches by category to handle errors gracefully
         for category, features in branch_info.items():
-            logging.info(f"Processing category: {category} with {len(features)} branches")
+            print(f"Processing category: {category} with {len(features)} branches")
             
             # For 'Other' category, we use branch names directly
             if category == 'Other':
@@ -91,11 +91,11 @@ def get_branch_info(file_path: Union[str, Path], max_entries: int = 100) -> Dict
                             branch_info[cat][feat]['status'] = 'success'
                         else:
                             branch_info[cat][feat]['status'] = 'empty'
-                            logging.warning(f"Branch {full_branch} has no entries")
+                            print(f"Branch {full_branch} has no entries")
                     
                 except Exception as e:
                     branch_info[cat][feat]['status'] = 'error'
-                    logging.warning(f"Error reading branch {full_branch}: {str(e)}")
+                    print(f"Error reading branch {full_branch}: {str(e)}")
                     continue
                 
         # Calculate success rate
@@ -105,7 +105,7 @@ def get_branch_info(file_path: Union[str, Path], max_entries: int = 100) -> Dict
             if branch_info[cat][feat]['status'] == 'success'
         )
         success_rate = successful_branches / total_branches if total_branches > 0 else 0
-        logging.info(f"Branch info extraction success rate: {success_rate:.1%} ({successful_branches}/{total_branches})")
+        print(f"Branch info extraction success rate: {success_rate:.1%} ({successful_branches}/{total_branches})")
         
         return branch_info
 
@@ -211,11 +211,6 @@ def save_branch_dictionary(run_number: str,
         Path to the saved file or None if failed
     """
     try:
-        # Configure logging
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s'
-        )
         
         # This is a simple way to get access to the atlas_manager
         from hep_foundation.atlas_file_manager import ATLASFileManager
@@ -227,14 +222,14 @@ def save_branch_dictionary(run_number: str,
             catalog_path = atlas_manager.download_run_catalog(run_number, catalog_index)
             
         if not catalog_path or not catalog_path.exists():
-            logging.error(f"Could not find or download catalog {catalog_index} for run {run_number}")
+            print(f"Could not find or download catalog {catalog_index} for run {run_number}")
             return None
         
-        logging.info(f"Extracting branch information from {catalog_path}...")
+        print(f"Extracting branch information from {catalog_path}...")
         
         # Get common verified branches first
         common_branches = get_common_branches(catalog_path)
-        logging.info(f"Found {sum(len(branches) for branches in common_branches.values())} common branches")
+        print(f"Found {sum(len(branches) for branches in common_branches.values())} common branches")
         
         # Then get detailed information for ALL branches
         branch_info = get_branch_info(catalog_path)
@@ -298,12 +293,12 @@ def save_branch_dictionary(run_number: str,
             f.write("}\n\n")
             
         
-        logging.info(f"Branch information dictionary saved to {output_path}")
-        logging.info(f"Success rate: {successful_branches}/{total_branches} branches ({successful_branches/total_branches:.1%})")
+        print(f"Branch information dictionary saved to {output_path}")
+        print(f"Success rate: {successful_branches}/{total_branches} branches ({successful_branches/total_branches:.1%})")
         return output_path
         
     except Exception as e:
-        logging.error(f"Error: {str(e)}")
+        print(f"Error: {str(e)}")
         return None
 
 if __name__ == "__main__":

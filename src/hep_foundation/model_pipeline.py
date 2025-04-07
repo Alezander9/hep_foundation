@@ -11,9 +11,9 @@ from hep_foundation.variational_autoencoder import VariationalAutoEncoder, Anoma
 from hep_foundation.task_config import TaskConfig
 from hep_foundation.dataset_manager import DatasetManager, DatasetConfig
 from hep_foundation.base_model import ModelConfig
+from hep_foundation.logging_config import setup_logging
 
-
-def test_model_pipeline(
+def model_pipeline(
     dataset_config: DatasetConfig,
     model_config: ModelConfig,
     training_config: TrainingConfig,
@@ -34,15 +34,19 @@ def test_model_pipeline(
         experiment_description: Description of the experiment
         delete_catalogs: Whether to delete catalogs after processing
     """
+
+    # Setup logging
+    setup_logging()
+
     # Validate configurations
     dataset_config.validate()
     model_config.validate()
     training_config.validate()
 
-    print("\n" + "="*50)
-    print("Starting Model Pipeline Test")
-    print("="*50)
-    print(f"TensorFlow: {tf.__version__} (Eager: {tf.executing_eagerly()})")
+    logging.info("\n" + "="*50)
+    logging.info("Starting Model Pipeline Test")
+    logging.info("="*50)
+    logging.info(f"TensorFlow: {tf.__version__} (Eager: {tf.executing_eagerly()})")
     
     try:
         # Helper function for JSON serialization
@@ -62,20 +66,20 @@ def test_model_pipeline(
 
         # Create experiment directory
         experiment_dir = Path("experiments")
-        print(f"\nCreating experiment directory at: {experiment_dir.absolute()}")
+        logging.info(f"\nCreating experiment directory at: {experiment_dir.absolute()}")
         experiment_dir.mkdir(parents=True, exist_ok=True)
         
         # Initialize registry
         registry = ModelRegistry(str(experiment_dir))
-        print(f"Registry initialized at: {registry.db_path}")
+        logging.info(f"Registry initialized at: {registry.db_path}")
         
         # 1. Initialize managers
-        print("Initializing managers...")
+        logging.info("Initializing managers...")
         data_manager = DatasetManager()
         
         # 2. Load or create dataset
-        print("Loading datasets...")
-        train_dataset, val_dataset, test_dataset = data_manager.load_datasets(
+        logging.info("Loading datasets...")
+        train_dataset, val_dataset, test_dataset = data_manager.load_atlas_datasets(
             dataset_config=dataset_config,
             validation_fraction=dataset_config.validation_fraction,
             test_fraction=dataset_config.test_fraction,
@@ -92,7 +96,7 @@ def test_model_pipeline(
         # Load signal datasets if specified
         signal_datasets = {}
         if dataset_config.signal_keys:
-            print("\nSetting up signal data pipeline...")
+            logging.info("\nSetting up signal data pipeline...")
             signal_datasets = data_manager.load_signal_datasets(
                 dataset_config=dataset_config,
                 batch_size=training_config.batch_size,
@@ -100,16 +104,16 @@ def test_model_pipeline(
             )
 
         if signal_datasets:
-            print(f"Loaded {len(signal_datasets)} signal datasets")
+            logging.info(f"Loaded {len(signal_datasets)} signal datasets")
         else:
-            print("No signal datasets loaded")
+            logging.info("No signal datasets loaded")
         
         # 3. Prepare configs for registry - now just add input shape to architecture
         model_config_dict = {
             'model_type': model_config.model_type,
             'architecture': {
                 **model_config.architecture,
-                'input_shape': task_config.input.get_total_feature_size()
+                'input_shape': (task_config.input.get_total_feature_size(),) # Must be a tuple
             },
             'hyperparameters': model_config.hyperparameters
         }
@@ -123,7 +127,7 @@ def test_model_pipeline(
         }
         
         # 4. Register experiment with existing dataset
-        print("Registering experiment...")
+        logging.info("Registering experiment...")
         experiment_id = registry.register_experiment(
             name=experiment_name,
             dataset_id=dataset_id,
@@ -131,10 +135,10 @@ def test_model_pipeline(
             training_config=training_config_dict,
             description=experiment_description
         )
-        print(f"Created experiment: {experiment_id}")
+        logging.info(f"Created experiment: {experiment_id}")
         
         # 5. Create and Build Model
-        print("Creating model...")
+        logging.info("Creating model...")
         try:
             model = ModelFactory.create_model(
                 model_type=model_config.model_type,
@@ -142,12 +146,12 @@ def test_model_pipeline(
             )
             model.build()
         except Exception as e:
-            print(f"Model creation failed: {str(e)}")
-            print(f"Model config used: {json.dumps(model_config_dict, indent=2)}")
+            logging.error(f"Model creation failed: {str(e)}")
+            logging.error(f"Model config used: {json.dumps(model_config_dict, indent=2)}")
             raise
         
         # 6. Train Model
-        print("Setting up training...")
+        logging.info("Setting up training...")
         trainer = ModelTrainer(
             model=model,
             training_config=training_config_dict
@@ -163,7 +167,7 @@ def test_model_pipeline(
         ]
         
         # Add debug mode for training
-        print("\nSetting up model compilation...")
+        logging.info("\nSetting up model compilation...")
         model.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=training_config.learning_rate),
             loss='mse',
@@ -171,17 +175,17 @@ def test_model_pipeline(
         )
 
         # Verify dataset shapes before training
-        print("\nVerifying dataset shapes:")
+        logging.info("\nVerifying dataset shapes:")
         for name, dataset in [("Training", train_dataset), 
                              ("Validation", val_dataset), 
                              ("Test", test_dataset)]:
             for batch in dataset.take(1):
-                print(f"{name} dataset shape: {batch.shape}")
+                logging.info(f"{name} dataset shape: {batch.shape}")
                 if any(dim == 0 for dim in batch.shape):
                     raise ValueError(f"Found zero dimension in {name.lower()} batch: {batch.shape}")
 
         # Start training with additional debugging
-        print("\nStarting training...")
+        logging.info("\nStarting training...")
         try:
             training_results = trainer.train(
                 dataset=train_dataset,
@@ -192,7 +196,7 @@ def test_model_pipeline(
             )
             
             # Evaluate Model
-            print("Evaluating model...")
+            logging.info("Evaluating model...")
             test_results = trainer.evaluate(test_dataset)
             
             # Combine all results
@@ -212,7 +216,7 @@ def test_model_pipeline(
 
             # After training the model, add testing section
             if isinstance(model, VariationalAutoEncoder):
-                print("\nRunning model tests...")
+                logging.info("\nRunning model tests...")
                 
                 # Initialize model tester
                 tester = AnomalyDetectionEvaluator(
@@ -226,10 +230,10 @@ def test_model_pipeline(
                 # Run anomaly detection test
                 additional_test_results = tester.run_anomaly_detection_test()
                 
-                print(f"\nTest results: {additional_test_results}")
+                logging.info(f"\nTest results: {additional_test_results}")
             
             # Save the trained model
-            print("Saving trained model...")
+            logging.info("Saving trained model...")
             model_metadata = {
                 "test_loss": test_results.get('test_loss', 0.0),
                 "test_mse": test_results.get('test_mse', 0.0),
@@ -260,49 +264,49 @@ def test_model_pipeline(
                 )
 
         except Exception as e:
-            print(f"\nTraining failed with error: {str(e)}")
-            print("\nDataset inspection:")
+            logging.error(f"\nTraining failed with error: {str(e)}")
+            logging.info("\nDataset inspection:")
             for i, batch in enumerate(train_dataset.take(1)):
-                print(f"Training batch {i} shape: {batch.shape}")
-                print(f"Sample of data: \n{batch[0, :5, :]}")  # Show first 5 tracks of first event
+                logging.info(f"Training batch {i} shape: {batch.shape}")
+                logging.info(f"Sample of data: \n{batch[0, :5, :]}")  # Show first 5 tracks of first event
             raise
         
         # Display Results
-        print("\n" + "="*50)
-        print("Experiment Results")
-        print("="*50)
+        logging.info("\n" + "="*50)
+        logging.info("Experiment Results")
+        logging.info("="*50)
 
         experiment_data = registry.get_experiment_data(experiment_id)
         
-        print(f"\nExperiment ID: {experiment_id}")
-        print(f"Status: {experiment_data['experiment_info']['status']}")
+        logging.info(f"\nExperiment ID: {experiment_id}")
+        logging.info(f"Status: {experiment_data['experiment_info']['status']}")
 
         if 'training_results' in experiment_data:
             training_results = experiment_data['training_results']
-            print(f"Training Duration: {training_results['training_duration']:.2f}s")
-            print(f"Epochs Completed: {training_results['epochs_completed']}")
+            logging.info(f"Training Duration: {training_results['training_duration']:.2f}s")
+            logging.info(f"Epochs Completed: {training_results['epochs_completed']}")
             
-            print("\nMetrics:")
+            logging.info("\nMetrics:")
             def print_metrics(metrics, indent=2):
                 """Helper function to print metrics with proper formatting"""
                 for key, value in metrics.items():
                     indent_str = " " * indent
                     if isinstance(value, dict):
-                        print(f"{indent_str}{key}:")
+                        logging.info(f"{indent_str}{key}:")
                         print_metrics(value, indent + 2)
                     elif isinstance(value, (float, int)):
-                        print(f"{indent_str}{key}: {value:.6f}")
+                        logging.info(f"{indent_str}{key}: {value:.6f}")
                     else:
-                        print(f"{indent_str}{key}: {value}")
+                        logging.info(f"{indent_str}{key}: {value}")
 
             print_metrics(training_results['final_metrics'])
         
         
-        print("Pipeline test completed successfully")
+        logging.info("Pipeline test completed successfully")
         
         return True
         
     except Exception as e:
-        print(f"Pipeline test failed: {type(e).__name__}: {str(e)}")
-        print(f"Error context:")
+        logging.error(f"Pipeline test failed: {type(e).__name__}: {str(e)}")
+        logging.error(f"Error context:")
         raise

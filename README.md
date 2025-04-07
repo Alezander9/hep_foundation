@@ -23,7 +23,7 @@ from hep_foundation.dataset_manager import DatasetManager
 
 # Setup data pipeline
 data_manager = DatasetManager()
-train_dataset, val_dataset, test_dataset = data_manager.load_datasets(
+train_dataset, val_dataset, test_dataset = data_manager.load_atlas_datasets(
 config={
 'run_numbers': ["00296939", "00296942", "00297447"],
 'track_selections': {
@@ -47,10 +47,10 @@ config={
 }
 )
 ```
-For full training pipeline example, see scripts/test_model_pipeline.py
+For full training pipeline example, see scripts/model_pipeline.py
 ```bash
 Run full pipeline test
-python scripts/test_model_pipeline.py
+python scripts/model_pipeline.py
 ```
 
 ## Project Structure

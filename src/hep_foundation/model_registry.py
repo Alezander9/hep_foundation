@@ -11,6 +11,8 @@ import os
 import numpy as np
 import sys
 import psutil
+import logging
+from hep_foundation.logging_config import setup_logging
 
 class ModelRegistry:
     """
@@ -18,14 +20,17 @@ class ModelRegistry:
     Tracks detailed dataset configurations and training metrics
     """
     def __init__(self, base_path: str):
+        # Setup logging
+        setup_logging()
+        
         self.base_path = Path(base_path)
         self.db_path = self.base_path / "registry.db"
         self.model_store = self.base_path / "model_store"
         
-        print(f"\nModelRegistry paths:")
-        print(f"  Base path: {self.base_path.absolute()}")
-        print(f"  DB path: {self.db_path.absolute()}")
-        print(f"  Model store: {self.model_store.absolute()}")
+        logging.info(f"\nModelRegistry paths:")
+        logging.info(f"  Base path: {self.base_path.absolute()}")
+        logging.info(f"  DB path: {self.db_path.absolute()}")
+        logging.info(f"  Model store: {self.model_store.absolute()}")
         
         # Create directories if they don't exist
         self.base_path.mkdir(parents=True, exist_ok=True)
@@ -220,7 +225,7 @@ class ModelRegistry:
         with open(final_metrics_path, 'w') as f:
             json.dump(final_metrics_data, f, indent=2)
 
-        print(f"\nTraining results saved to {history_dir}")
+        logging.info(f"\nTraining results saved to {history_dir}")
 
 
     def save_model(self, 
@@ -260,7 +265,7 @@ class ModelRegistry:
         with open(model_dir / "model_info.json", 'w') as f:
             json.dump(metadata, f, indent=2, default=self.ensure_serializable)
 
-        print(f"\nModel saved to {model_dir}")
+        logging.info(f"\nModel saved to {model_dir}")
 
     def load_model(self, 
                    experiment_id: str,
@@ -293,7 +298,7 @@ class ModelRegistry:
         for component_name in metadata["saved_components"]:
             component_path = model_dir / component_name
             if not component_path.exists():
-                print(f"Warning: Model component '{component_name}' not found at {component_path}")
+                logging.warning(f"Warning: Model component '{component_name}' not found at {component_path}")
                 continue
             model_paths[component_name] = str(component_path)
         

@@ -5,7 +5,7 @@ import numpy as np
 from pathlib import Path
 import tensorflow as tf
 import logging
-
+from hep_foundation.logging_config import setup_logging
 from hep_foundation.base_model import BaseModel
 
 class AutoEncoder(BaseModel):
@@ -22,11 +22,7 @@ class AutoEncoder(BaseModel):
     ):
         super().__init__()
         # Setup logging
-        logging.basicConfig(
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            level=logging.INFO,
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
+        setup_logging()
         
         self.input_shape = input_shape
         self.latent_dim = latent_dim

@@ -166,11 +166,11 @@ def run_pipeline(
             process = subprocess.Popen(
                 ["python", "-c", f"""
 import sys
-from hep_foundation.model_pipeline import test_model_pipeline
+from hep_foundation.model_pipeline import model_pipeline
 from scripts.run_pipeline import create_configs
 
 configs = create_configs("{model_type}")
-success = test_model_pipeline(
+success = model_pipeline(
     dataset_config=configs['dataset_config'],
     model_config=configs['model_config'],
     training_config=configs['training_config'],

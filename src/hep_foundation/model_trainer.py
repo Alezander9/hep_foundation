@@ -11,6 +11,7 @@ from hep_foundation.plot_utils import (
     set_science_style, get_figure_size, get_color_cycle,
     FONT_SIZES, LINE_WIDTHS
 )
+from hep_foundation.logging_config import setup_logging
 
 @dataclass
 class TrainingConfig:
@@ -58,12 +59,8 @@ class TrainingProgressCallback(tf.keras.callbacks.Callback):
         self.epochs = epochs
         self.epoch_start_time = None
         
-        # Setup logging format
-        logging.basicConfig(
-            format='%(asctime)s - %(message)s',
-            level=logging.INFO,
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
+        # Setup logging 
+        setup_logging()
         
     def on_train_begin(self, logs=None):
         logging.info(f"Starting training for {self.epochs} epochs")

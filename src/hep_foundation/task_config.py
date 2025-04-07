@@ -12,7 +12,7 @@ from hep_foundation.physlite_utilities import (
     PhysliteFeatureArrayAggregator,
     PhysliteSelectionConfig
 )
-
+from hep_foundation.logging_config import setup_logging
 class TaskConfig:
     """
     High-level configuration for a specific HEP analysis task.
@@ -40,6 +40,9 @@ class TaskConfig:
             input_config: Configuration for input data selection
             label_configs: Optional list of configurations for output labels
         """
+        # Setup logging
+        setup_logging()
+        
         self.event_filters = event_filters
         self.input = input_config
         self.labels = label_configs or []
@@ -71,7 +74,6 @@ class TaskConfig:
         Returns:
             Dictionary representation of the task configuration
         """
-        print("DEBUG: Converting TaskConfig to dict")
         return {
             'event_filters': [
                 {
