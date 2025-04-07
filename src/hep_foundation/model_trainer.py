@@ -12,6 +12,7 @@ from hep_foundation.plot_utils import (
     FONT_SIZES, LINE_WIDTHS
 )
 from hep_foundation.logging_config import setup_logging
+import numpy as np
 
 @dataclass
 class TrainingConfig:
@@ -186,30 +187,22 @@ class ModelTrainer:
             raise ValueError("Model not built yet")
         
         logging.info("\nChecking datasets before training...")
-        # Check if datasets have any data
+        
+        # Modify datasets to use only features for both input and target
+        def prepare_ae_dataset(dataset):
+            return dataset.map(lambda x, y: (x, x) if isinstance(x, (tf.Tensor, np.ndarray)) else (x[0], x[0]))
+
         try:
             logging.info("Checking training dataset...")
-            for i, batch in enumerate(dataset):
-                logging.info(f"Training batch {i} shape: {batch.shape}")
-                if i == 0:  # Just check first batch
-                    break
-        except Exception as e:
-            logging.error(f"Error checking training dataset: {e}")
-        
-        if validation_data is not None:
-            try:
+            train_dataset = prepare_ae_dataset(dataset)
+            
+            if validation_data is not None:
                 logging.info("\nChecking validation dataset...")
-                for i, batch in enumerate(validation_data):
-                    logging.info(f"Validation batch {i} shape: {batch.shape}")
-                    if i == 0:  # Just check first batch
-                        break
-            except Exception as e:
-                logging.error(f"Error checking validation dataset: {e}")
-        
-        # For autoencoder, use input data as both input and target
-        train_dataset = dataset.map(lambda x: (x, x))
-        if validation_data is not None:
-            validation_data = validation_data.map(lambda x: (x, x))
+                validation_data = prepare_ae_dataset(validation_data)
+            
+        except Exception as e:
+            logging.error(f"Error preparing datasets: {str(e)}")
+            raise
         
         # Compile model
         self.compile_model()
@@ -312,25 +305,33 @@ class ModelTrainer:
             raise ValueError("Model not built yet")
         
         # For autoencoder, use input data as both input and target
-        test_dataset = dataset.map(lambda x: (x, x))
+        def prepare_ae_dataset(dataset):
+            return dataset.map(lambda x, y: (x, x) if isinstance(x, (tf.Tensor, np.ndarray)) else (x[0], x[0]))
         
-        # Evaluate and get results
-        results = self.model.model.evaluate(
-            test_dataset,
-            return_dict=True,
-            verbose=0  # Turn off progress bar
-        )
-        
-        # Add test_ prefix to metrics
-        test_metrics = {
-            'test_' + k: float(v) for k, v in results.items()
-        }
-        
-        logging.info("\nEvaluation metrics:")
-        for metric, value in test_metrics.items():
-            logging.info(f"  {metric}: {value:.6f}")
-        
-        # Store test metrics in history
-        self.metrics_history.update(test_metrics)
-        
-        return test_metrics
+        try:
+            test_dataset = prepare_ae_dataset(dataset)
+            
+            # Evaluate and get results
+            results = self.model.model.evaluate(
+                test_dataset,
+                return_dict=True,
+                verbose=0  # Turn off progress bar
+            )
+            
+            # Add test_ prefix to metrics
+            test_metrics = {
+                'test_' + k: float(v) for k, v in results.items()
+            }
+            
+            logging.info("\nEvaluation metrics:")
+            for metric, value in test_metrics.items():
+                logging.info(f"  {metric}: {value:.6f}")
+            
+            # Store test metrics in history
+            self.metrics_history.update(test_metrics)
+            
+            return test_metrics
+            
+        except Exception as e:
+            logging.error(f"Error during evaluation: {str(e)}")
+            raise

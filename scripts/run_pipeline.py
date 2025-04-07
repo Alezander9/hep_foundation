@@ -69,7 +69,7 @@ def create_configs(model_type: str = "vae") -> Dict[str, Any]:
         test_fraction=0.15,
         shuffle_buffer=50000,
         plot_distributions=True,
-        include_labels=False,
+        include_labels=True,
         task_config=task_config,
     )
 

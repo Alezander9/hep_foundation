@@ -40,13 +40,19 @@ class VAELayer(keras.layers.Layer):
         self.reconstruction_loss_tracker = keras.metrics.Mean(name="reconstruction_loss")
         self.kl_loss_tracker = keras.metrics.Mean(name="kl_loss")
 
-    def call(self, inputs: tf.Tensor) -> tf.Tensor:
+    def call(self, inputs):
+        # Handle both (features, _) and features-only cases
+        if isinstance(inputs, tuple):
+            features, _ = inputs
+        else:
+            features = inputs
+        
         # Get latent space parameters and sample
-        z_mean, z_log_var, z = self.encoder(inputs)
+        z_mean, z_log_var, z = self.encoder(features)
         reconstruction = self.decoder(z)
         
         # Flatten input and reconstruction for loss calculation
-        flat_inputs = tf.reshape(inputs, [-1, tf.reduce_prod(inputs.shape[1:])])
+        flat_inputs = tf.reshape(features, [-1, tf.reduce_prod(features.shape[1:])])
         flat_reconstruction = tf.reshape(reconstruction, [-1, tf.reduce_prod(reconstruction.shape[1:])])
         
         # Calculate losses (reduce to scalar values)
@@ -495,19 +501,27 @@ class AnomalyDetectionEvaluator:
         logging.info("\nCalculating losses for dataset...")
         for batch in dataset:
             total_batches += 1
-            total_events += batch.shape[0]
             
-            # Ensure input batch is float32
-            batch = tf.cast(batch, tf.float32)
+            # Handle both (features, labels) and features-only cases
+            if isinstance(batch, tuple):
+                features, _ = batch  # We only need features for reconstruction
+                total_events += features.shape[0]
+                # Ensure input batch is float32
+                features = tf.cast(features, tf.float32)
+            else:
+                features = batch
+                total_events += features.shape[0]
+                # Ensure input batch is float32
+                features = tf.cast(features, tf.float32)
             
             # Get encoder outputs
-            z_mean, z_log_var, z = self.model.encoder(batch)
+            z_mean, z_log_var, z = self.model.encoder(features)
             
             # Get reconstructions
             reconstructions = self.model.decoder(z)
             
             # Flatten input and reconstruction for loss calculation
-            flat_inputs = tf.reshape(batch, [-1, tf.reduce_prod(batch.shape[1:])])
+            flat_inputs = tf.reshape(features, [-1, tf.reduce_prod(features.shape[1:])])
             flat_reconstructions = tf.reshape(reconstructions, [-1, tf.reduce_prod(reconstructions.shape[1:])])
             
             # Ensure both tensors are the same type before subtraction
@@ -626,11 +640,24 @@ class AnomalyDetectionEvaluator:
         # Log dataset info before testing
         logging.info("\nDataset information before testing:")
         for batch in self.test_dataset:
-            logging.info(f"Background test dataset batch shape: {batch.shape}")
+            if isinstance(batch, tuple):
+                features, labels = batch
+                logging.info(f"Background test dataset batch shapes:")
+                logging.info(f"  Features: {features.shape}")
+                logging.info(f"  Labels: {labels.shape}")
+            else:
+                logging.info(f"Background test dataset batch shape: {batch.shape}")
             break
+        
         for signal_name, signal_dataset in self.signal_datasets.items():
             for batch in signal_dataset:
-                logging.info(f"{signal_name} signal dataset batch shape: {batch.shape}")
+                if isinstance(batch, tuple):
+                    features, labels = batch
+                    logging.info(f"{signal_name} signal dataset batch shapes:")
+                    logging.info(f"  Features: {features.shape}")
+                    logging.info(f"  Labels: {labels.shape}")
+                else:
+                    logging.info(f"{signal_name} signal dataset batch shape: {batch.shape}")
                 break
         
         # Calculate losses for background dataset

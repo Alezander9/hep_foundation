@@ -176,13 +176,20 @@ def model_pipeline(
 
         # Verify dataset shapes before training
         logging.info("\nVerifying dataset shapes:")
-        for name, dataset in [("Training", train_dataset), 
-                             ("Validation", val_dataset), 
-                             ("Test", test_dataset)]:
+        for name, dataset in [
+            ('Training', train_dataset),
+            ('Validation', val_dataset),
+            ('Test', test_dataset)
+        ]:
             for batch in dataset.take(1):
-                logging.info(f"{name} dataset shape: {batch.shape}")
-                if any(dim == 0 for dim in batch.shape):
-                    raise ValueError(f"Found zero dimension in {name.lower()} batch: {batch.shape}")
+                if isinstance(batch, tuple):  # Dataset returns (features, labels)
+                    features, labels = batch
+                    logging.info(f"{name} dataset shapes:")
+                    logging.info(f"  Features: {features.shape}")
+                    logging.info(f"  Labels: {labels.shape}")
+                else:  # Dataset returns just features
+                    logging.info(f"{name} dataset shape: {batch.shape}")
+                break
 
         # Start training with additional debugging
         logging.info("\nStarting training...")
@@ -267,8 +274,13 @@ def model_pipeline(
             logging.error(f"\nTraining failed with error: {str(e)}")
             logging.info("\nDataset inspection:")
             for i, batch in enumerate(train_dataset.take(1)):
-                logging.info(f"Training batch {i} shape: {batch.shape}")
-                logging.info(f"Sample of data: \n{batch[0, :10]}")  # Show first 10 features of first event
+                if isinstance(batch, tuple):
+                    features, _ = batch
+                    logging.info(f"Training batch {i} features shape: {features.shape}")
+                    logging.info(f"Sample of features: \n{features[0, :10]}")  # Show first 10 features of first event
+                else:
+                    logging.info(f"Training batch {i} shape: {batch.shape}")
+                    logging.info(f"Sample of data: \n{batch[0, :10]}")  # Show first 10 features of first event
             raise
         
         # Display Results
