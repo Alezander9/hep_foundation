@@ -12,7 +12,7 @@ from hep_foundation.task_config import TaskConfig
 from hep_foundation.dataset_manager import DatasetManager, DatasetConfig
 from hep_foundation.base_model import ModelConfig
 from hep_foundation.logging_config import setup_logging
-
+from hep_foundation.dnn_predictor import DNNPredictor
 def model_pipeline(
     dataset_config: DatasetConfig,
     model_config: dict,
@@ -141,7 +141,7 @@ def model_pipeline(
         try:
             model = ModelFactory.create_model(
                 model_type=model_config['model_type'],
-                config=model_config_dict  # Pass the nested config directly
+                config=model_config_dict
             )
             model.build()
         except Exception as e:
@@ -156,7 +156,7 @@ def model_pipeline(
             training_config=training_config_dict
         )
         
-        # Setup callbacks - only essential training callbacks
+        # Setup callbacks
         callbacks = [
             tf.keras.callbacks.EarlyStopping(
                 patience=training_config.early_stopping["patience"],
@@ -165,15 +165,7 @@ def model_pipeline(
             )
         ]
         
-        # Add debug mode for training
-        logging.info("\nSetting up model compilation...")
-        model.compile(
-            optimizer=tf.keras.optimizers.Adam(learning_rate=training_config.learning_rate),
-            loss='mse',
-            run_eagerly=True  # Add this for debugging
-        )
-
-        # Verify dataset shapes before training
+        # Remove direct model compilation as it's now handled in ModelTrainer
         logging.info("\nVerifying dataset shapes:")
         for name, dataset in [
             ('Training', train_dataset),
@@ -181,16 +173,33 @@ def model_pipeline(
             ('Test', test_dataset)
         ]:
             for batch in dataset.take(1):
-                if isinstance(batch, tuple):  # Dataset returns (features, labels)
+                if isinstance(batch, tuple):
                     features, labels = batch
                     logging.info(f"{name} dataset shapes:")
                     logging.info(f"  Features: {features.shape}")
-                    logging.info(f"  Labels: {labels.shape}")
-                else:  # Dataset returns just features
+                    if isinstance(labels, (list, tuple)):
+                        for i, label_set in enumerate(labels):
+                            logging.info(f"  Label set {i}: {label_set.shape}")
+                    else:
+                        logging.info(f"  Labels: {labels.shape}")
+                    
+                    # Additional verification for DNN predictor
+                    if isinstance(model, DNNPredictor):
+                        label_idx = model.label_index
+                        if isinstance(labels, (list, tuple)):
+                            if label_idx >= len(labels):
+                                raise ValueError(f"Label index {label_idx} out of range for {len(labels)} label sets")
+                            target_shape = labels[label_idx].shape[1:]  # Remove batch dimension
+                            if target_shape != tuple(model.output_shape):
+                                raise ValueError(
+                                    f"Model output shape {model.output_shape} does not match "
+                                    f"label shape {target_shape} at index {label_idx}"
+                                )
+                else:
                     logging.info(f"{name} dataset shape: {batch.shape}")
                 break
 
-        # Start training with additional debugging
+        # Start training
         logging.info("\nStarting training...")
         try:
             training_results = trainer.train(
@@ -205,39 +214,34 @@ def model_pipeline(
             logging.info("Evaluating model...")
             test_results = trainer.evaluate(test_dataset)
             
-            # Combine all results
+            # Combine results
             final_metrics = {
-                **training_results['final_metrics'],  # Final training metrics
-                **test_results,                       # Test metrics
+                **training_results['final_metrics'],
+                **test_results,
                 'training_duration': training_results['training_duration'],
                 'epochs_completed': training_results['epochs_completed'],
-                'history': training_results['history']  # Complete training history
+                'history': training_results['history']
             }
 
-            # Complete training in registry
+            # Update experiment data
             registry.complete_training(
                 experiment_id=experiment_id,
                 final_metrics=ensure_serializable(final_metrics)
             )
 
-            # After training the model, add testing section
+            # Skip anomaly detection test for DNN predictor
             if isinstance(model, VariationalAutoEncoder):
-                logging.info("\nRunning model tests...")
-                
-                # Initialize model tester
+                logging.info("\nRunning anomaly detection tests...")
                 tester = AnomalyDetectionEvaluator(
                     model=model,
                     test_dataset=test_dataset,
-                    signal_datasets=signal_datasets,  # From data_manager.load_signal_datasets()
+                    signal_datasets=signal_datasets,
                     experiment_id=experiment_id,
                     base_path=registry.base_path
                 )
-                
-                # Run anomaly detection test
                 additional_test_results = tester.run_anomaly_detection_test()
-                
                 logging.info(f"\nTest results: {additional_test_results}")
-            
+
             # Save the trained model
             logging.info("Saving trained model...")
             model_metadata = {
@@ -248,8 +252,8 @@ def model_pipeline(
                 "training_duration": training_results['training_duration']
             }
 
+            # Save model based on type
             if isinstance(model, VariationalAutoEncoder):
-                # Save encoder and decoder separately for VAE
                 registry.save_model(
                     experiment_id=experiment_id,
                     models={
@@ -261,7 +265,6 @@ def model_pipeline(
                     metadata=ensure_serializable(model_metadata)
                 )
             else:
-                # Save single model for standard autoencoder
                 registry.save_model(
                     experiment_id=experiment_id,
                     models={"full_model": model.model},

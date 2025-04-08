@@ -357,7 +357,7 @@ class DatasetManager:
                         task_config=dataset_config.task_config,
                         signal_key=signal_key,
                         plot_distributions=plot_distributions,
-                        delete_catalogs=False
+                        delete_catalogs=False # Always keep signal catalogs
                     )
                     
                     if not inputs:
@@ -560,7 +560,7 @@ class DatasetManager:
             
             # Create if doesn't exist
             if not dataset_path.exists():
-                dataset_id, dataset_path = self._create_signal_dataset(dataset_config=dataset_config, delete_catalogs=False) # Always keep signal catalogs
+                dataset_id, dataset_path = self._create_signal_dataset(dataset_config=dataset_config) 
             
             # Load datasets
             signal_datasets = {}

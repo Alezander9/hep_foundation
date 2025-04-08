@@ -13,7 +13,7 @@ from hep_foundation.plot_utils import (
 )
 from hep_foundation.logging_config import setup_logging
 import numpy as np
-
+from hep_foundation.dnn_predictor import DNNPredictor
 @dataclass
 class TrainingConfig:
     """Configuration for model training"""
@@ -110,13 +110,55 @@ class ModelTrainer:
         if self.model.model is None:
             raise ValueError("Model not built yet")
             
-        self.model.model.compile(
-            optimizer=self.optimizer,
-            loss=self.loss,
-            metrics=['mse'],
-            run_eagerly=True 
-        )
+        # Different compilation settings based on model type
+        if isinstance(self.model, DNNPredictor):
+            self.model.model.compile(
+                optimizer=self.optimizer,
+                loss='mse',
+                metrics=['mse', 'mae'],  # Add mean absolute error for regression
+                run_eagerly=True 
+            )
+        else:
+            # Original compilation for autoencoders
+            self.model.model.compile(
+                optimizer=self.optimizer,
+                loss=self.loss,
+                metrics=['mse'],
+                run_eagerly=True 
+            )
+
+    def prepare_dataset(self, dataset: tf.data.Dataset) -> tf.data.Dataset:
+        """
+        Prepare dataset based on model type
         
+        Args:
+            dataset: Input dataset that may contain features and labels
+            
+        Returns:
+            Prepared dataset with correct input/target structure
+        """
+        if isinstance(self.model, DNNPredictor):
+            # For predictor models, use features as input and select correct label as target
+            def prepare_predictor_data(features, labels):
+                # Handle both tuple and non-tuple inputs
+                if isinstance(features, (tf.Tensor, np.ndarray)):
+                    input_features = features
+                else:
+                    input_features = features[0]
+                
+                # Select the correct label set based on label_index
+                if isinstance(labels, (list, tuple)):
+                    target_labels = labels[self.model.label_index]
+                else:
+                    target_labels = labels
+                    
+                return input_features, target_labels
+                
+            return dataset.map(prepare_predictor_data)
+        else:
+            # For autoencoders, use input as both input and target
+            return dataset.map(lambda x, y: (x, x) if isinstance(x, (tf.Tensor, np.ndarray)) else (x[0], x[0]))
+
     def _update_metrics_history(self, epoch_metrics: Dict) -> None:
         """Update metrics history with new epoch results"""
         for metric_name, value in epoch_metrics.items():
@@ -186,19 +228,22 @@ class ModelTrainer:
         if self.model.model is None:
             raise ValueError("Model not built yet")
         
-        logging.info("\nChecking datasets before training...")
+        logging.info("\nPreparing datasets for training...")
         
-        # Modify datasets to use only features for both input and target
-        def prepare_ae_dataset(dataset):
-            return dataset.map(lambda x, y: (x, x) if isinstance(x, (tf.Tensor, np.ndarray)) else (x[0], x[0]))
-
         try:
-            logging.info("Checking training dataset...")
-            train_dataset = prepare_ae_dataset(dataset)
+            # Prepare training and validation datasets
+            train_dataset = self.prepare_dataset(dataset)
             
             if validation_data is not None:
-                logging.info("\nChecking validation dataset...")
-                validation_data = prepare_ae_dataset(validation_data)
+                validation_data = self.prepare_dataset(validation_data)
+            
+            # Log dataset shapes for debugging
+            for batch in train_dataset.take(1):
+                features, targets = batch
+                logging.info(f"\nTraining dataset shapes:")
+                logging.info(f"  Features: {features.shape}")
+                logging.info(f"  Targets: {targets.shape}")
+                break
             
         except Exception as e:
             logging.error(f"Error preparing datasets: {str(e)}")
@@ -304,18 +349,15 @@ class ModelTrainer:
         if self.model.model is None:
             raise ValueError("Model not built yet")
         
-        # For autoencoder, use input data as both input and target
-        def prepare_ae_dataset(dataset):
-            return dataset.map(lambda x, y: (x, x) if isinstance(x, (tf.Tensor, np.ndarray)) else (x[0], x[0]))
-        
         try:
-            test_dataset = prepare_ae_dataset(dataset)
+            # Prepare test dataset
+            test_dataset = self.prepare_dataset(dataset)
             
             # Evaluate and get results
             results = self.model.model.evaluate(
                 test_dataset,
                 return_dict=True,
-                verbose=0  # Turn off progress bar
+                verbose=0
             )
             
             # Add test_ prefix to metrics

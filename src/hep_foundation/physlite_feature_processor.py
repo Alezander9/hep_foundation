@@ -18,6 +18,7 @@ from hep_foundation.task_config import (
     TaskConfig
 )
 from hep_foundation.logging_config import setup_logging
+from hep_foundation.atlas_file_manager import ATLASFileManager
 
 class PhysliteFeatureProcessor:
     """
@@ -31,14 +32,19 @@ class PhysliteFeatureProcessor:
     - Loading features and labels from HDF5 files
     """
     
-    def __init__(self):
-        """Initialize the PhysliteFeatureProcessor."""
+    def __init__(self, atlas_manager=None):
+        """
+        Initialize the PhysliteFeatureProcessor.
+        
+        Args:
+            atlas_manager: Optional ATLASFileManager instance
+        """
         # Setup logging at INFO level
         setup_logging()
         
         # Could add configuration parameters here if needed in the future
         # For now, keeping it simple as the class is primarily stateless
-        pass
+        self.atlas_manager = atlas_manager or ATLASFileManager()
 
     def get_required_branches(self, task_config: TaskConfig) -> set:
         """
@@ -445,7 +451,6 @@ class PhysliteFeatureProcessor:
                     
                     # Read all required branches
                     for arrays in tree.iterate(required_branches, library="np", step_size=1000):
-                        logging.info(f"DEBUG: Processing batch with {len(next(iter(arrays.values())))} events")
                         try:
                             catalog_stats['events'] += len(next(iter(arrays.values())))
                             
@@ -716,5 +721,43 @@ class PhysliteFeatureProcessor:
             labels_dict[config_name] = config_dict
         
         return labels_dict
+
+    def _get_catalog_paths(self, 
+                          run_number: Optional[str] = None,
+                          signal_key: Optional[str] = None,
+                          catalog_limit: Optional[int] = None) -> List[Path]:
+        """
+        Get list of catalog paths for either ATLAS data or signal data
+        
+        Args:
+            run_number: Optional run number for ATLAS data
+            signal_key: Optional signal type for signal data
+            catalog_limit: Optional limit on number of catalogs to process
+            
+        Returns:
+            List of paths to catalog files
+        """
+        if run_number is not None:
+            # Get ATLAS data catalogs
+            paths = []
+            for catalog_idx in range(self.atlas_manager.get_catalog_count(run_number)):
+                if catalog_limit and catalog_idx >= catalog_limit:
+                    break
+                catalog_path = self.atlas_manager.get_run_catalog_path(run_number, catalog_idx)
+                if not catalog_path.exists():
+                    catalog_path = self.atlas_manager.download_run_catalog(run_number, catalog_idx)
+                if catalog_path:
+                    paths.append(catalog_path)
+            logging.info(f"Found {len(paths)} catalogs for run {run_number}")
+            return paths
+        elif signal_key is not None:
+            # Get signal data catalog
+            catalog_path = self.atlas_manager.get_signal_catalog_path(signal_key, 0)
+            if not catalog_path.exists():
+                catalog_path = self.atlas_manager.download_signal_catalog(signal_key, 0)
+            logging.info(f"Found signal catalog for {signal_key}")
+            return [catalog_path] if catalog_path else []
+        else:
+            raise ValueError("Must provide either run_number or signal_key")
 
 

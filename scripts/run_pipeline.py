@@ -62,22 +62,23 @@ def create_configs(model_type: str = "vae") -> Dict[str, Any]:
     
     # Simplified DatasetConfig without track/event selections
     dataset_config = DatasetConfig(
-        run_numbers=ATLAS_RUN_NUMBERS[-1:],
+        run_numbers=ATLAS_RUN_NUMBERS[-3:],
         signal_keys=["zprime", "wprime_qq", "zprime_bb"],
-        catalog_limit=5,
+        catalog_limit=20,
         validation_fraction=0.15,
         test_fraction=0.15,
         shuffle_buffer=50000,
         plot_distributions=True,
         include_labels=True,
         task_config=task_config,
+
     )
 
     print("DEBUG: created dataset config")
 
     # Model configurations
     ae_model_config = {
-        "model_type": "autoencoder",  # Explicit model type at top level
+        "model_type": "autoencoder",
         "architecture": {
             "input_shape": (30, 7),
             "latent_dim": 16,
@@ -85,7 +86,7 @@ def create_configs(model_type: str = "vae") -> Dict[str, Any]:
             "decoder_layers": [32, 64, 128],
             "activation": "relu",
             "normalize_latent": False,
-            "name": "track_autoencoder"  # Name can still be used for logging/saving
+            "name": "track_autoencoder"
         },
         "hyperparameters": {
             "quant_bits": 8
@@ -93,14 +94,14 @@ def create_configs(model_type: str = "vae") -> Dict[str, Any]:
     }
     
     vae_model_config = {
-        "model_type": "variational_autoencoder",  # Explicit model type at top level
+        "model_type": "variational_autoencoder",
         "architecture": {
             "input_shape": (30, 7),
             "latent_dim": 16,
             "encoder_layers": [128, 64, 32],
             "decoder_layers": [32, 64, 128],
             "activation": "relu",
-            "name": "variational_autoencoder"  # Name can still be used for logging/saving
+            "name": "variational_autoencoder"
         },
         "hyperparameters": {
             "quant_bits": 8,
@@ -113,18 +114,44 @@ def create_configs(model_type: str = "vae") -> Dict[str, Any]:
         }
     }
 
-    # Training configuration - common for both models
+    dnn_model_config = {
+        "model_type": "dnn_predictor",
+        "architecture": {
+            "input_shape": (30, 7),  # Same as other models for track data
+            "output_shape": (1, 3),   # For MET prediction (mpx, mpy, sumet)
+            "hidden_layers": [128, 64, 32],
+            "label_index": 0,  # Use first label set
+            "activation": "relu",
+            "output_activation": "linear",
+            "name": "met_predictor"
+        },
+        "hyperparameters": {
+            "quant_bits": 8,
+            "dropout_rate": 0.2,
+            "l2_regularization": 1e-4
+        }
+    }
+
+    # Select model configuration based on type parameter
+    model_configs = {
+        "vae": vae_model_config,
+        "autoencoder": ae_model_config,
+        "dnn_predictor": dnn_model_config
+    }
+    
+    model_config = model_configs.get(model_type)
+    if model_config is None:
+        raise ValueError(f"Unknown model type: {model_type}. Must be one of {list(model_configs.keys())}")
+    
+    # Training configuration - common for all models
     training_config = TrainingConfig(
         batch_size=1024,
         learning_rate=0.001,
-        epochs=5,
+        epochs=25,
         early_stopping_patience=3,
         early_stopping_min_delta=1e-4,
         plot_training=True
     )
-    
-    # Select model configuration based on type parameter
-    model_config = vae_model_config if model_type == "vae" else ae_model_config
     
     return {
         'dataset_config': dataset_config,
@@ -137,7 +164,8 @@ def run_pipeline(
     model_type: str = "vae",
     experiment_name: str = None,
     experiment_description: str = None,
-    custom_configs: Dict[str, Any] = None
+    custom_configs: Dict[str, Any] = None,
+    delete_catalogs: bool = True
 ) -> None:
     """
     Run the model pipeline with specified configurations
@@ -165,13 +193,6 @@ def run_pipeline(
             if key in configs:
                 configs[key] = value
     
-    # Set default experiment name if not provided
-    if experiment_name is None:
-        experiment_name = f"{model_type}_test_{timestamp}"
-    
-    if experiment_description is None:
-        experiment_description = f"Testing {model_type} model with standard parameters"
-    
     # Run the pipeline
     try:
         with open(log_file, 'w') as f:
@@ -189,7 +210,7 @@ success = model_pipeline(
     task_config=configs['task_config'],
     experiment_name="{experiment_name}",
     experiment_description="{experiment_description}",
-    delete_catalogs=False
+    delete_catalogs=True
 )
 sys.exit(0 if success else 1)
                 """],
@@ -219,4 +240,4 @@ sys.exit(0 if success else 1)
 
 
 if __name__ == "__main__":
-    run_pipeline() 
+    run_pipeline(model_type="dnn_predictor", delete_catalogs=True) 

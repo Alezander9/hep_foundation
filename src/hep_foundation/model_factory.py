@@ -2,7 +2,7 @@ from typing import Dict, Optional
 from .base_model import BaseModel
 from .autoencoder import AutoEncoder, AutoEncoderConfig
 from .variational_autoencoder import VariationalAutoEncoder, VAEConfig
-# from .dnn_predictor import DNNPredictor, DNNPredictorConfig
+from .dnn_predictor import DNNPredictor, DNNPredictorConfig
 
 class ModelFactory:
     """Factory class for creating different types of models"""
@@ -11,14 +11,14 @@ class ModelFactory:
     CONFIG_CLASSES = {
         "autoencoder": AutoEncoderConfig,
         "variational_autoencoder": VAEConfig,
-        # "dnn_predictor": DNNPredictorConfig
+        "dnn_predictor": DNNPredictorConfig
     }
     
     # Map model types to their respective model classes
     MODEL_CLASSES = {
         "autoencoder": AutoEncoder,
         "variational_autoencoder": VariationalAutoEncoder,
-        # "dnn_predictor": DNNPredictor
+        "dnn_predictor": DNNPredictor
     }
     
     @staticmethod
