@@ -447,7 +447,6 @@ class PhysliteFeatureProcessor:
                 
                 with uproot.open(catalog_path) as file:
                     tree = file["CollectionTree;1"]
-                    logging.info(f"DEBUG: Starting to process tree with branches: {required_branches}")
                     
                     # Read all required branches
                     for arrays in tree.iterate(required_branches, library="np", step_size=1000):
@@ -485,7 +484,7 @@ class PhysliteFeatureProcessor:
                                         first_aggregator = next(iter(input_features['aggregated_features'].values()))
                                         stats['total_features'] += np.sum(np.any(first_aggregator != 0, axis=1))
                         except Exception as e:
-                            logging.error(f"DEBUG: Error in batch processing: {str(e)}")
+                            logging.error(f"Error in batch processing: {str(e)}")
                             raise
                 
                 # Update statistics

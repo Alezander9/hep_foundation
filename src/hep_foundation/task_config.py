@@ -192,7 +192,6 @@ class TaskConfig:
     @staticmethod
     def _dict_to_selection_config(config_dict: Dict[str, Any]) -> PhysliteSelectionConfig:
         """Helper method to convert a dictionary to a PhysliteSelectionConfig."""
-        logging.info(f"DEBUG: Converting dict to selection config: {config_dict}")
         
         # Create feature selectors
         feature_selectors = []
@@ -204,7 +203,6 @@ class TaskConfig:
         # Create feature array aggregators
         feature_array_aggregators = []
         for agg_dict in config_dict.get('feature_array_aggregators', []):
-            logging.info(f"DEBUG: Processing aggregator dict: {agg_dict}")
             
             # Create input branch selectors
             input_branches = []
@@ -226,12 +224,10 @@ class TaskConfig:
             
             # Create sort by branch filter
             sort_dict = agg_dict.get('sort_by_branch', {})
-            logging.info(f"DEBUG: Sort dict: {sort_dict}")
             
             sort_by_branch = None
             if sort_dict and 'branch' in sort_dict:
                 branch_name = sort_dict.get('branch')
-                logging.info(f"DEBUG: Creating sort branch for: {branch_name}")
                 branch = PhysliteBranch(branch_name)
                 if branch.is_feature_array:
                     sort_by_branch = PhysliteFeatureArraySelector(branch=branch)

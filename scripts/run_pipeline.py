@@ -74,29 +74,12 @@ def create_configs(model_type: str = "vae") -> Dict[str, Any]:
 
     )
 
-    print("DEBUG: created dataset config")
-
     # Model configurations
-    ae_model_config = {
-        "model_type": "autoencoder",
-        "architecture": {
-            "input_shape": (30, 7),
-            "latent_dim": 16,
-            "encoder_layers": [128, 64, 32],
-            "decoder_layers": [32, 64, 128],
-            "activation": "relu",
-            "normalize_latent": False,
-            "name": "track_autoencoder"
-        },
-        "hyperparameters": {
-            "quant_bits": 8
-        }
-    }
     
     vae_model_config = {
         "model_type": "variational_autoencoder",
         "architecture": {
-            "input_shape": (30, 7),
+            # Input shape is automatically set in the model pipeline
             "latent_dim": 16,
             "encoder_layers": [128, 64, 32],
             "decoder_layers": [32, 64, 128],
@@ -117,8 +100,7 @@ def create_configs(model_type: str = "vae") -> Dict[str, Any]:
     dnn_model_config = {
         "model_type": "dnn_predictor",
         "architecture": {
-            "input_shape": (30, 7),  # Same as other models for track data
-            "output_shape": (1, 3),   # For MET prediction (mpx, mpy, sumet)
+            # Input and output shapes are automatically set in the model pipeline
             "hidden_layers": [128, 64, 32],
             "label_index": 0,  # Use first label set
             "activation": "relu",
@@ -135,7 +117,6 @@ def create_configs(model_type: str = "vae") -> Dict[str, Any]:
     # Select model configuration based on type parameter
     model_configs = {
         "vae": vae_model_config,
-        "autoencoder": ae_model_config,
         "dnn_predictor": dnn_model_config
     }
     

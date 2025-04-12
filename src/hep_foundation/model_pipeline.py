@@ -87,7 +87,7 @@ def model_pipeline(
             include_labels=dataset_config.include_labels,
             delete_catalogs=delete_catalogs
         )
-        logging.info("DEBUG: Loaded datasets")
+        logging.info("Loaded datasets")
         
         # Get the dataset ID from the data manager
         dataset_id = data_manager.get_current_dataset_id()
@@ -316,11 +316,11 @@ def model_pipeline(
             print_metrics(training_results['final_metrics'])
         
         
-        logging.info("Pipeline test completed successfully")
+        logging.info("Pipeline completed successfully")
         
         return True
         
     except Exception as e:
-        logging.error(f"Pipeline test failed: {type(e).__name__}: {str(e)}")
+        logging.error(f"Pipeline failed: {type(e).__name__}: {str(e)}")
         logging.error(f"Error context:")
         raise

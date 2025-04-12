@@ -139,7 +139,7 @@ class ModelTrainer:
         """
         if isinstance(self.model, DNNPredictor):
             # For predictor models, use features as input and select correct label as target
-            def prepare_predictor_data(features, labels):
+            def prepare_predictor_data(features, labels, *args): # *args is for compatibility with the dataset which also comes with an index argument
                 # Handle both tuple and non-tuple inputs
                 if isinstance(features, (tf.Tensor, np.ndarray)):
                     input_features = features
@@ -151,7 +151,8 @@ class ModelTrainer:
                     target_labels = labels[self.model.label_index]
                 else:
                     target_labels = labels
-                    
+                
+                logging.info(f"Preparing predictor data - Input features shape: {input_features.shape}, Target labels shape: {target_labels.shape}")
                 return input_features, target_labels
                 
             return dataset.map(prepare_predictor_data)

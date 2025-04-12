@@ -89,8 +89,6 @@ class AutoEncoder(BaseModel):
         
     def build(self, input_shape: tuple = None) -> None:
         """Build encoder and decoder networks"""
-        if input_shape is None:
-            input_shape = self.input_shape
             
         # Input layer - now accepts 3D input (batch_size, n_tracks, n_features)
         inputs = keras.Input(shape=input_shape, name='input_layer')

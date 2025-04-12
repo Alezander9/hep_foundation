@@ -1,0 +1,14 @@
+{
+  "test_loss": 1.5011181831359863,
+  "test_mse": 0.7505590915679932,
+  "final_train_loss": 1.498333215713501,
+  "final_val_loss": 1.5749738216400146,
+  "training_duration": 72.514585,
+  "saved_components": [
+    "encoder",
+    "decoder",
+    "full_model"
+  ],
+  "save_timestamp": "2025-04-11 12:03:41.372940",
+  "model_path": "foundation_experiments/004_Foundation VAE Model/models/foundation_model"
+}

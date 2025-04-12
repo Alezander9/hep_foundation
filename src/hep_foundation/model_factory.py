@@ -38,7 +38,6 @@ class ModelFactory:
 
         # 3. Get the model class
         model_class = ModelFactory.MODEL_CLASSES[model_type]
-        print(f"DEBUG: Model class type: {type(model_class)}")
 
         # 4. Create model with validated config object
         return model_class(config=model_config)

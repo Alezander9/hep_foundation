@@ -17,8 +17,8 @@ from tqdm import tqdm
 import os
 import logging
 from hep_foundation.atlas_file_manager import ATLASFileManager
-from hep_foundation.task_config import PhysliteFeatureFilter, PhysliteFeatureArrayFilter, PhysliteFeatureArrayAggregator, PhysliteSelectionConfig, PhysliteFeatureSelector, TaskConfig
-from hep_foundation.utils import TypeConverter, ConfigSerializer
+from hep_foundation.task_config import TaskConfig
+from hep_foundation.utils import ConfigSerializer
 from dataclasses import dataclass
 from hep_foundation.physlite_feature_processor import PhysliteFeatureProcessor
 from hep_foundation.logging_config import setup_logging
@@ -92,7 +92,6 @@ class DatasetManager:
         
     def generate_dataset_id(self, config: DatasetConfig) -> str:
         """Generate a human-readable dataset ID from a DatasetConfig object"""
-        logging.info(f"DEBUG: Inside generate_dataset_id with config type: {type(config)}")
         if (type(config) != DatasetConfig):
             raise ValueError("config must be a DatasetConfig object")
         
@@ -105,7 +104,6 @@ class DatasetManager:
             
         # Create a descriptive ID based on dataset type
         if config_dict.get('run_numbers'):
-            logging.info("DEBUG: Processing run numbers")
             sorted_run_numbers = sorted(config_dict['run_numbers'])
             run_str = f'{sorted_run_numbers[0]}-{len(sorted_run_numbers)}-{sorted_run_numbers[-1]}'
             id_components = [
@@ -113,7 +111,6 @@ class DatasetManager:
                 f'runs_{run_str}'
             ]
         elif config_dict.get('signal_keys'):
-            logging.info("DEBUG: Processing signal keys")
             signal_str = '_'.join(sorted(config_dict['signal_keys']))
             id_components = [
                 'signal',
@@ -130,7 +127,7 @@ class DatasetManager:
         id_components.append(config_hash)
         
         result = "_".join(id_components)
-        logging.info(f"DEBUG: Generated dataset ID: {result}")
+        logging.info(f"Generated dataset ID: {result}")
         return result
     
     def save_dataset_config(self, dataset_id: str, config: Union[Dict, TaskConfig]):
@@ -206,7 +203,7 @@ class DatasetManager:
             }
 
             for run_number in dataset_config.run_numbers:
-                logging.info(f"DEBUG: Processing run {run_number}")
+                logging.info(f"Processing run {run_number}")
                 try:
                     result = self.feature_processor._process_data(
                     task_config=dataset_config.task_config,
@@ -215,7 +212,6 @@ class DatasetManager:
                     plot_distributions=plot_distributions,
                     delete_catalogs=delete_catalogs
                 )
-                    logging.info(f"DEBUG: Process data returned result of type: {type(result)}")
                     inputs, labels, stats = result
                     all_inputs.extend(inputs)
                     all_labels.extend(labels)
@@ -223,7 +219,7 @@ class DatasetManager:
                     total_stats['processed_events'] += stats['processed_events']
                     total_stats['total_features'] += stats['total_features']
                 except Exception as e:
-                    logging.error(f"DEBUG: Error unpacking process_data result: {str(e)}")
+                    logging.error(f"Error unpacking process_data result: {str(e)}")
                     raise
             
             if not all_inputs:
@@ -264,7 +260,7 @@ class DatasetManager:
                 if all_labels and dataset_config.task_config.labels:
                     labels_group = f.create_group('labels')
                     
-                    logging.info(f"DEBUG: generating labels datasets for {len(dataset_config.task_config.labels)} labels")
+                    logging.info(f"Generating labels datasets for {len(dataset_config.task_config.labels)} labels")
                     # Process each label configuration
                     for label_idx, label_config in enumerate(dataset_config.task_config.labels):
                         label_subgroup = labels_group.create_group(f'config_{label_idx}')
@@ -593,6 +589,101 @@ class DatasetManager:
                     
         except Exception as e:
             raise Exception(f"Failed to load signal datasets: {str(e)}")
+        
+    def load_and_encode_atlas_datasets(self, 
+                     dataset_config: DatasetConfig,
+                     encoder: tf.keras.Model,
+                     validation_fraction: float = 0.15,
+                     test_fraction: float = 0.15,
+                     batch_size: int = 1000,
+                     shuffle_buffer: int = 10000,
+                     include_labels: bool = False,
+                     delete_catalogs: bool = True) -> Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
+        """
+        Load and split dataset into train/val/test and encode the input features using the given encoder model.
+        
+        Args:
+            dataset_config: Configuration for dataset processing
+            encoder: Keras model to use for encoding the input features
+            validation_fraction: Fraction of data to use for validation
+            test_fraction: Fraction of data to use for testing
+            batch_size: Size of batches in returned dataset
+            shuffle_buffer: Size of buffer for shuffling training data
+            include_labels: Whether to include labels in the dataset
+            delete_catalogs: Whether to delete catalogs after processing
+            
+        Returns:
+            Tuple containing:
+            - Training dataset with encoded features
+            - Validation dataset with encoded features
+            - Test dataset with encoded features
+        """
+        logging.info("Loading and encoding datasets")
+        try:
+            # Generate dataset ID and load dataset file
+            self.current_dataset_id = self.generate_dataset_id(dataset_config)
+            self.current_dataset_path = self.datasets_dir / f"{self.current_dataset_id}.h5"
+            
+            if not self.current_dataset_path.exists():
+                raise Exception(f"Dataset {self.current_dataset_id} does not exist")
+            
+            # Load and process dataset
+            with h5py.File(self.current_dataset_path, 'r') as f:
+                # Load features and labels
+                features_dict = self.feature_processor._load_features_from_group(f['features'])
+                labels_dict = self.feature_processor._load_labels_from_group(f['labels']) if include_labels and 'labels' in f else None
+                
+                # Get normalization parameters and number of events
+                norm_params = json.loads(f.attrs['normalization_params'])
+                n_events = next(iter(features_dict.values())).shape[0]
+                
+                # Create normalized dataset
+                dataset = self.feature_processor._create_normalized_dataset(features_dict, norm_params, labels_dict)
+                
+                # Create splits
+                train_size = n_events - int((validation_fraction + test_fraction) * n_events)
+                val_size = int(validation_fraction * n_events)
+                
+                # Apply splits and batching
+                train_dataset = dataset.take(train_size).shuffle(
+                    buffer_size=shuffle_buffer,
+                    reshuffle_each_iteration=True
+                ).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+                
+                remaining = dataset.skip(train_size)
+                val_dataset = remaining.take(val_size).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+                test_dataset = remaining.skip(val_size).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+                
+                # Apply encoder to each dataset
+                def encode_features(features, labels=None):
+                    # Encode the features using the encoder model
+                    encoded_features = encoder(features, training=False)
+                    
+                    # Return encoded features with original labels if they exist
+                    if labels is not None:
+                        return encoded_features, labels
+                    return encoded_features
+                
+                # Map the encoding function to each dataset
+                encoded_train_dataset = train_dataset.map(
+                    lambda x, y=None: encode_features(x, y),
+                    num_parallel_calls=tf.data.AUTOTUNE
+                )
+                
+                encoded_val_dataset = val_dataset.map(
+                    lambda x, y=None: encode_features(x, y),
+                    num_parallel_calls=tf.data.AUTOTUNE
+                )
+                
+                encoded_test_dataset = test_dataset.map(
+                    lambda x, y=None: encode_features(x, y),
+                    num_parallel_calls=tf.data.AUTOTUNE
+                )
+                
+                return encoded_train_dataset, encoded_val_dataset, encoded_test_dataset
+                
+        except Exception as e:
+            raise Exception(f"Failed to load and encode dataset: {str(e)}")
 
     def _plot_distributions(self, 
                            pre_selection_stats: Dict[str, List],
