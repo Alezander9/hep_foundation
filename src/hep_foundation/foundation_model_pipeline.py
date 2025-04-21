@@ -13,6 +13,7 @@ from hep_foundation.task_config import TaskConfig
 from hep_foundation.dataset_manager import DatasetManager, DatasetConfig
 from hep_foundation.base_model import ModelConfig
 from hep_foundation.utils import ATLAS_RUN_NUMBERS
+from hep_foundation.plot_utils import plot_combined_training_histories
 
 class FoundationModelPipeline:
     """
@@ -453,7 +454,7 @@ class FoundationModelPipeline:
                     )
                 ],
                 plot_training=True,
-                plots_dir=Path(f"{self.experiment_dir}/baseline_regression/plots")
+                plots_dir=Path(f"{foundation_model_path}/baseline_regression/plots")
             )
             
             # 3. Load foundation model encoder
@@ -543,11 +544,34 @@ class FoundationModelPipeline:
                     )
                 ],
                 plot_training=True,
-                plots_dir=Path(f"{self.experiment_dir}/encoded_regression/plots")
+                plots_dir=Path(f"{foundation_model_path}/encoded_regression/plots")
             )
             logging.info("Regression model on encoded data trained")
             # 6. Evaluate and compare models
             logging.info("Evaluating models...")
+
+            # 6a. Generate combined training plot
+            try:
+                baseline_history = baseline_results.get('history', {})
+                encoded_history = encoded_results.get('history', {})
+                
+                if baseline_history or encoded_history: # Only plot if there is history data
+                    comparison_plot_path = Path(foundation_model_path) / "testing" / "regression_training_comparison.pdf"
+                    plot_combined_training_histories(
+                        histories={
+                            "Baseline": baseline_history,
+                            "Encoded": encoded_history
+                        },
+                        output_path=comparison_plot_path,
+                        title="Baseline vs Encoded Regression Training", # More specific title
+                        # metrics_to_plot=['loss', 'val_loss', 'mse', 'val_mse'], # Example: Plot MSE too
+                        # metric_labels={'loss': 'Loss', 'val_loss': 'Val Loss', 'mse': 'MSE', 'val_mse': 'Val MSE'}
+                    )
+                else:
+                    logging.warning("Skipping combined plot generation: No history data found in results.")
+            except Exception as plot_error:
+                logging.error(f"Failed to generate combined training plot: {plot_error}")
+
             baseline_test_results = baseline_trainer.evaluate(test_dataset)
             encoded_test_results = encoded_trainer.evaluate(encoded_test_dataset)
             

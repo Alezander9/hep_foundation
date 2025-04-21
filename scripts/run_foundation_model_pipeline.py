@@ -5,7 +5,7 @@ from pathlib import Path
 import argparse
 from typing import Dict, Any
 from hep_foundation.utils import ATLAS_RUN_NUMBERS
-from hep_foundation.model_pipeline import DatasetConfig, ModelConfig, TrainingConfig
+from hep_foundation.model_pipeline import DatasetConfig, TrainingConfig
 from hep_foundation.task_config import TaskConfig
 
 def create_configs(model_type: str = "vae") -> Dict[str, Any]:
@@ -128,7 +128,7 @@ def create_configs(model_type: str = "vae") -> Dict[str, Any]:
         batch_size=1024,
         learning_rate=0.001,
         epochs=25,
-        early_stopping_patience=5,
+        early_stopping_patience=100,
         early_stopping_min_delta=1e-4,
         plot_training=True
     )
