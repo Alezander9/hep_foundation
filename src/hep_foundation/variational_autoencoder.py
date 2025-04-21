@@ -163,7 +163,7 @@ class BetaSchedule(keras.callbacks.Callback):
             beta = self.beta_start + (self.beta_end - self.beta_start) * \
                    (np.sin(cycle_ratio * np.pi) + 1) / 2
             
-        logging.info(f"\nEpoch {epoch+1}: beta = {beta:.4f}")
+        logging.info(f"Epoch {epoch+1}: beta = {beta:.4f}")
         self.model.beta.assign(beta)
         self.model.get_layer('vae_layer').beta.assign(beta)
 
@@ -203,9 +203,7 @@ class VariationalAutoEncoder(BaseModel):
         """Build encoder and decoder networks with VAE architecture"""
         if input_shape is None:
             input_shape = self.input_shape
-        
-        logging.info("\nBuilding VAE architecture...")
-        
+                
         # Build Encoder
         encoder_inputs = keras.Input(shape=input_shape, name='encoder_input')
         x = keras.layers.Reshape((-1,))(encoder_inputs)
@@ -323,7 +321,7 @@ class VariationalAutoEncoder(BaseModel):
 
     def create_plots(self, plots_dir: Path) -> None:
         """Create VAE-specific visualization plots"""
-        logging.info("\nCreating VAE-specific plots...")
+        logging.info("Creating VAE-specific plots...")
         plots_dir.mkdir(parents=True, exist_ok=True)
         
         try:
@@ -555,7 +553,7 @@ class AnomalyDetectionEvaluator:
         total_batches = 0
         total_events = 0
         
-        logging.info("\nCalculating losses for dataset...")
+        logging.info("Calculating losses for dataset...")
         for batch in dataset:
             total_batches += 1
             
@@ -683,7 +681,7 @@ class AnomalyDetectionEvaluator:
         Returns:
             Dictionary containing test metrics and results
         """
-        logging.info("\nRunning anomaly detection test...")
+        logging.info("Running anomaly detection test...")
         
         if not isinstance(self.model, VariationalAutoEncoder):
             raise ValueError("Anomaly detection test requires a VariationalAutoEncoder")
@@ -695,7 +693,7 @@ class AnomalyDetectionEvaluator:
         plots_dir.mkdir(parents=True, exist_ok=True)
         
         # Log dataset info before testing
-        logging.info("\nDataset information before testing:")
+        logging.info("Dataset information before testing:")
         for batch in self.test_dataset:
             if isinstance(batch, tuple):
                 features, labels = batch
@@ -718,13 +716,13 @@ class AnomalyDetectionEvaluator:
                 break
         
         # Calculate losses for background dataset
-        logging.info("\nCalculating losses for background dataset...")
+        logging.info("Calculating losses for background dataset...")
         bg_recon_losses, bg_kl_losses = self._calculate_losses(self.test_dataset)
         
         # Calculate losses for each signal dataset
         signal_results = {}
         for signal_name, signal_dataset in self.signal_datasets.items():
-            logging.info(f"\nCalculating losses for signal dataset: {signal_name}")
+            logging.info(f"Calculating losses for signal dataset: {signal_name}")
             sig_recon_losses, sig_kl_losses = self._calculate_losses(signal_dataset)
             
             # Calculate separation metrics

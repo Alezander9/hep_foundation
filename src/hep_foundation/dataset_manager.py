@@ -159,7 +159,7 @@ class DatasetManager:
     def get_dataset_info(self, dataset_id: str) -> Dict:
         """Get full dataset information including recreation parameters"""
         config_path = self.configs_dir / f"{dataset_id}_config.yaml"
-        logging.info(f"\nLooking for config at: {config_path}")  # Debug print
+        logging.info(f"Looking for config at: {config_path}")  # Debug print
         if not config_path.exists():
             logging.info(f"Available configs: {list(self.configs_dir.glob('*.yaml'))}")  # Debug print
             raise ValueError(f"No configuration found for dataset {dataset_id}")
@@ -185,7 +185,7 @@ class DatasetManager:
         # Generate dataset ID and paths
         dataset_id = self.generate_dataset_id(dataset_config)
         output_path = self.datasets_dir / f"{dataset_id}.h5"
-        logging.info(f"\nGenerated dataset ID: {dataset_id}")
+        logging.info(f"Generated dataset ID: {dataset_id}")
         
         try:
             # Save configuration first
@@ -346,7 +346,7 @@ class DatasetManager:
             with h5py.File(output_path, 'w') as f:
                 # Create group for each signal type
                 for signal_key in dataset_config.signal_keys:
-                    logging.info(f"\nProcessing signal type: {signal_key}")
+                    logging.info(f"Processing signal type: {signal_key}")
                     
                     # Process data for this signal type
                     inputs, labels, stats = self.feature_processor._process_data(
@@ -584,7 +584,7 @@ class DatasetManager:
                     dataset = dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
                     signal_datasets[signal_key] = dataset
             
-            logging.info(f"\nSuccessfully loaded {len(signal_datasets)} signal datasets")
+            logging.info(f"Successfully loaded {len(signal_datasets)} signal datasets")
             return signal_datasets
                     
         except Exception as e:
@@ -690,12 +690,12 @@ class DatasetManager:
                            post_selection_stats: Dict[str, List],
                            output_dir: Path):
         """Create distribution plots and print statistical summaries for track and event features"""
-        logging.info(f"\nGenerating plots in: {output_dir}")
+        logging.info(f"Generating plots in: {output_dir}")
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         
         # Print track multiplicity statistics
-        logging.info("\n=== Track Multiplicity Statistics ===")
+        logging.info("=== Track Multiplicity Statistics ===")
         logging.info("Before Selection:")
         logging.info(f"  Total events: {len(pre_selection_stats['tracks_per_event']):,}")
         logging.info(f"  Average tracks/event: {np.mean(pre_selection_stats['tracks_per_event']):.2f}")
@@ -703,7 +703,7 @@ class DatasetManager:
         logging.info(f"  Min tracks: {min(pre_selection_stats['tracks_per_event'])}")
         logging.info(f"  Max tracks: {max(pre_selection_stats['tracks_per_event'])}")
         
-        logging.info("\nAfter Selection:")
+        logging.info("After Selection:")
         logging.info(f"  Total events: {len(post_selection_stats['tracks_per_event']):,}")
         logging.info(f"  Average tracks/event: {np.mean(post_selection_stats['tracks_per_event']):.2f}")
         logging.info(f"  Median tracks/event: {np.median(post_selection_stats['tracks_per_event']):.2f}")
@@ -714,7 +714,7 @@ class DatasetManager:
         # Use matplotlib style
         plt.style.use('seaborn-v0_8')
         
-        logging.info("\nCreating track multiplicity plot...")
+        logging.info("Creating track multiplicity plot...")
         plt.figure(figsize=(12, 6))
         
         # Calculate integer bin edges with percentile limits
@@ -741,7 +741,7 @@ class DatasetManager:
         plt.savefig(output_dir / 'track_multiplicity.pdf')
         plt.close()
         
-        logging.info("\nCreating track features plot...")
+        logging.info("Creating track features plot...")
         # 2. Track features distributions (6x2 subplot grid)
         fig, axes = plt.subplots(3, 2, figsize=(15, 18))
         fig.suptitle('Track Feature Distributions (Before vs After Selection)')
@@ -792,7 +792,7 @@ class DatasetManager:
         plt.savefig(output_dir / 'track_features.pdf')
         plt.close()
         
-        logging.info("\n=== Track Feature Statistics ===")
+        logging.info("=== Track Feature Statistics ===")
         features = ['pt', 'eta', 'phi', 'd0', 'z0', 'chi2_per_ndof']
         labels = {
             'pt': 'pT [GeV]',
@@ -804,7 +804,7 @@ class DatasetManager:
         }
         
         for feature in features:
-            logging.info(f"\n{labels[feature]}:")
+            logging.info(f"{labels[feature]}:")
             logging.info("  Before Selection:")
             logging.info(f"    Mean: {np.mean(pre_selection_stats[feature]):.3f}")
             logging.info(f"    Std:  {np.std(pre_selection_stats[feature]):.3f}")
@@ -820,18 +820,18 @@ class DatasetManager:
             logging.info(f"    Tracks: {len(post_selection_stats[feature]):,}")
         
         # Print correlation information
-        logging.info("\n=== Feature Correlations ===")
+        logging.info("=== Feature Correlations ===")
         df = pd.DataFrame({
             feature: post_selection_stats[feature] 
             for feature in features
         })
         corr_matrix = df.corr()
         
-        logging.info("\nCorrelation Matrix (after selection):")
+        logging.info("Correlation Matrix (after selection):")
         pd.set_option('display.float_format', '{:.3f}'.format)
         logging.info(corr_matrix)
         
-        logging.info("\nCreating correlation plot...")
+        logging.info("Creating correlation plot...")
         # 3. 2D correlation plots
         plt.figure(figsize=(12, 10))
         feature_data = {
@@ -845,4 +845,4 @@ class DatasetManager:
         plt.savefig(output_dir / 'feature_correlations.pdf')
         plt.close()
         
-        logging.info("\nPlotting complete!") 
+        logging.info("Plotting complete!") 

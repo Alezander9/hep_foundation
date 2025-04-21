@@ -27,10 +27,10 @@ class ModelRegistry:
         self.db_path = self.base_path / "registry.db"
         self.model_store = self.base_path / "model_store"
         
-        logging.info(f"\nModelRegistry paths:")
-        logging.info(f"  Base path: {self.base_path.absolute()}")
-        logging.info(f"  DB path: {self.db_path.absolute()}")
-        logging.info(f"  Model store: {self.model_store.absolute()}")
+        logging.info(f"ModelRegistry paths:")
+        logging.info(f"Base path: {self.base_path.absolute()}")
+        logging.info(f"DB path: {self.db_path.absolute()}")
+        logging.info(f"Model store: {self.model_store.absolute()}")
         
         # Create directories if they don't exist
         self.base_path.mkdir(parents=True, exist_ok=True)
@@ -225,7 +225,7 @@ class ModelRegistry:
         with open(final_metrics_path, 'w') as f:
             json.dump(final_metrics_data, f, indent=2)
 
-        logging.info(f"\nTraining results saved to {history_dir}")
+        logging.info(f"Training results saved to {history_dir}")
 
 
     def save_model(self, 
@@ -265,7 +265,7 @@ class ModelRegistry:
         with open(model_dir / "model_info.json", 'w') as f:
             json.dump(metadata, f, indent=2, default=self.ensure_serializable)
 
-        logging.info(f"\nModel saved to {model_dir}")
+        logging.info(f"Model saved to {model_dir}")
 
     def load_model(self, 
                    experiment_id: str,

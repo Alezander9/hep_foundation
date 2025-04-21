@@ -151,8 +151,7 @@ class ModelTrainer:
                     target_labels = labels[self.model.label_index]
                 else:
                     target_labels = labels
-                
-                logging.info(f"Preparing predictor data - Input features shape: {input_features.shape}, Target labels shape: {target_labels.shape}")
+                    
                 return input_features, target_labels
                 
             return dataset.map(prepare_predictor_data)
@@ -214,7 +213,7 @@ class ModelTrainer:
         plots_dir: Optional[Path] = None
     ) -> Dict[str, Any]:
         """Train with enhanced metrics tracking and optional plotting"""
-        logging.info("\nStarting training with metrics tracking:")
+        logging.info("Starting training with metrics tracking:")
         
         # Record start time
         self.training_start_time = datetime.now()
@@ -224,12 +223,12 @@ class ModelTrainer:
         
         if plot_training:
             plots_dir.mkdir(parents=True, exist_ok=True)
-            logging.info(f"\nWill save training plots to: {plots_dir}")
+            logging.info(f"Will save training plots to: {plots_dir}")
         
         if self.model.model is None:
             raise ValueError("Model not built yet")
         
-        logging.info("\nPreparing datasets for training...")
+        logging.info("Preparing datasets for training...")
         
         try:
             # Prepare training and validation datasets
@@ -238,10 +237,11 @@ class ModelTrainer:
             if validation_data is not None:
                 validation_data = self.prepare_dataset(validation_data)
             
-            # Log dataset shapes for debugging
+            # Log dataset size and shapes for debugging
+            logging.info(f"Training dataset batches: {train_dataset.cardinality()}")
             for batch in train_dataset.take(1):
                 features, targets = batch
-                logging.info(f"\nTraining dataset shapes:")
+                logging.info(f"Training dataset batch shapes:")
                 logging.info(f"  Features: {features.shape}")
                 logging.info(f"  Targets: {targets.shape}")
                 break
@@ -261,7 +261,6 @@ class ModelTrainer:
         callbacks.append(TrainingProgressCallback(epochs=self.epochs))
         
         # Train the model
-        logging.info("\nStarting model.fit...")
         history = self.model.model.fit(
             train_dataset,
             epochs=self.epochs,
@@ -282,20 +281,20 @@ class ModelTrainer:
         for metric, values in history.history.items():
             self.metrics_history[metric] = [float(v) for v in values]
             
-        logging.info("\nTraining completed. Final metrics:")
+        logging.info("Training completed. Final metrics:")
         for metric, values in self.metrics_history.items():
             logging.info(f"  {metric}: {values[-1]:.6f}")
             
         # After training completes, create plots if requested
         if plot_training:
-            logging.info("\nGenerating training plots...")
+            logging.info("Generating training plots...")
             self._create_training_plots(plots_dir)
         
         return self.get_training_summary()
         
     def _create_training_plots(self, plots_dir: Path):
         """Create standard training plots with simple formatting"""
-        logging.info(f"\nCreating training plots in: {plots_dir.absolute()}")
+        logging.info(f"Creating training plots in: {plots_dir.absolute()}")
         plots_dir.mkdir(parents=True, exist_ok=True)
         
         try:
@@ -346,7 +345,6 @@ class ModelTrainer:
         
     def evaluate(self, dataset: tf.data.Dataset) -> Dict[str, float]:
         """Evaluate with enhanced metrics tracking"""
-        logging.info("\nEvaluating model...")
         if self.model.model is None:
             raise ValueError("Model not built yet")
         
@@ -366,7 +364,7 @@ class ModelTrainer:
                 'test_' + k: float(v) for k, v in results.items()
             }
             
-            logging.info("\nEvaluation metrics:")
+            logging.info("Evaluation metrics:")
             for metric, value in test_metrics.items():
                 logging.info(f"  {metric}: {value:.6f}")
             

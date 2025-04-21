@@ -4,5 +4,14 @@ foundation_experiments
 processed_datasets
 notebooks
 logs
+
+# Python cache files
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+**/__pycache__/
+
+# Distribution / packaging
+*.egg-info/
+dist/
+build/

@@ -42,9 +42,9 @@ def model_pipeline(
     dataset_config.validate()
     training_config.validate()
 
-    logging.info("\n" + "="*50)
+    logging.info("="*100)
     logging.info("Starting Model Pipeline Test")
-    logging.info("="*50)
+    logging.info("="*100)
     logging.info(f"TensorFlow: {tf.__version__} (Eager: {tf.executing_eagerly()})")
     
     try:
@@ -65,7 +65,7 @@ def model_pipeline(
 
         # Create experiment directory
         experiment_dir = Path("experiments")
-        logging.info(f"\nCreating experiment directory at: {experiment_dir.absolute()}")
+        logging.info(f"Creating experiment directory at: {experiment_dir.absolute()}")
         experiment_dir.mkdir(parents=True, exist_ok=True)
         
         # Initialize registry
@@ -95,7 +95,7 @@ def model_pipeline(
         # Load signal datasets if specified
         signal_datasets = {}
         if dataset_config.signal_keys:
-            logging.info("\nSetting up signal data pipeline...")
+            logging.info("Setting up signal data pipeline...")
             signal_datasets = data_manager.load_signal_datasets(
                 dataset_config=dataset_config,
                 batch_size=training_config.batch_size,
@@ -166,7 +166,7 @@ def model_pipeline(
         ]
         
         # Remove direct model compilation as it's now handled in ModelTrainer
-        logging.info("\nVerifying dataset shapes:")
+        logging.info("Verifying dataset shapes:")
         for name, dataset in [
             ('Training', train_dataset),
             ('Validation', val_dataset),
@@ -200,7 +200,7 @@ def model_pipeline(
                 break
 
         # Start training
-        logging.info("\nStarting training...")
+        logging.info("Starting training...")
         try:
             training_results = trainer.train(
                 dataset=train_dataset,
@@ -231,7 +231,7 @@ def model_pipeline(
 
             # Skip anomaly detection test for DNN predictor
             if isinstance(model, VariationalAutoEncoder):
-                logging.info("\nRunning anomaly detection tests...")
+                logging.info("Running anomaly detection tests...")
                 tester = AnomalyDetectionEvaluator(
                     model=model,
                     test_dataset=test_dataset,
@@ -240,7 +240,7 @@ def model_pipeline(
                     base_path=registry.base_path
                 )
                 additional_test_results = tester.run_anomaly_detection_test()
-                logging.info(f"\nTest results: {additional_test_results}")
+                logging.info(f"Test results: {additional_test_results}")
 
             # Save the trained model
             logging.info("Saving trained model...")
@@ -274,7 +274,7 @@ def model_pipeline(
 
         except Exception as e:
             logging.error(f"\nTraining failed with error: {str(e)}")
-            logging.info("\nDataset inspection:")
+            logging.info("Dataset inspection:")
             for i, batch in enumerate(train_dataset.take(1)):
                 if isinstance(batch, tuple):
                     features, _ = batch
@@ -286,13 +286,13 @@ def model_pipeline(
             raise
         
         # Display Results
-        logging.info("\n" + "="*50)
+        logging.info("="*100)
         logging.info("Experiment Results")
-        logging.info("="*50)
+        logging.info("="*100)
 
         experiment_data = registry.get_experiment_data(experiment_id)
         
-        logging.info(f"\nExperiment ID: {experiment_id}")
+        logging.info(f"Experiment ID: {experiment_id}")
         logging.info(f"Status: {experiment_data['experiment_info']['status']}")
 
         if 'training_results' in experiment_data:
@@ -300,7 +300,7 @@ def model_pipeline(
             logging.info(f"Training Duration: {training_results['training_duration']:.2f}s")
             logging.info(f"Epochs Completed: {training_results['epochs_completed']}")
             
-            logging.info("\nMetrics:")
+            logging.info("Metrics:")
             def print_metrics(metrics, indent=2):
                 """Helper function to print metrics with proper formatting"""
                 for key, value in metrics.items():

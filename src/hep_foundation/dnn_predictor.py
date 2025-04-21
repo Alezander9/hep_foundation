@@ -200,10 +200,7 @@ class DNNPredictor(BaseModel):
         
         # Create model
         self.model = keras.Model(inputs=inputs, outputs=outputs, name=self.name)
-        
-        logging.info("\nModel layer structure:")
-        for layer in self.model.layers:
-            logging.info(f"Layer: {layer.name}, Type: {type(layer)}")
+    
 
     def get_config(self) -> dict:
         return {

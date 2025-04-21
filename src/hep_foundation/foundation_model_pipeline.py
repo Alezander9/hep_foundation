@@ -116,9 +116,9 @@ class FoundationModelPipeline:
         """
         Train a foundation model using provided configurations.
         """
-        logging.info("\n" + "="*50)
+        logging.info("="*100)
         logging.info("Training Foundation Model")
-        logging.info("="*50)
+        logging.info("="*100)
         
         try:
             # Helper function for JSON serialization
@@ -206,9 +206,12 @@ class FoundationModelPipeline:
                 logging.error(f"Model creation failed: {str(e)}")
                 logging.error(f"Model config used: {json.dumps(model_config_dict, indent=2)}")
                 raise
+
+            logging.info("Model created")
+            logging.info(model.model.summary())
             
             # 6. Train Model
-            logging.info("Setting up training...")
+            logging.info("Setting up model and callbacks...")
             trainer = ModelTrainer(
                 model=model,
                 training_config=training_config_dict
@@ -224,7 +227,7 @@ class FoundationModelPipeline:
             ]
             
             # Start training
-            logging.info("\nStarting training...")
+            logging.info("Starting training...")
             try:
                 training_results = trainer.train(
                     dataset=train_dataset,
@@ -276,7 +279,7 @@ class FoundationModelPipeline:
 
             except Exception as e:
                 logging.error(f"\nTraining failed with error: {str(e)}")
-                logging.info("\nDataset inspection:")
+                logging.info("Dataset inspection:")
                 for i, batch in enumerate(train_dataset.take(1)):
                     if isinstance(batch, tuple):
                         features, _ = batch
@@ -288,13 +291,13 @@ class FoundationModelPipeline:
                 raise
             
             # Display Results
-            logging.info("\n" + "="*50)
+            logging.info("="*100)
             logging.info("Experiment Results")
-            logging.info("="*50)
+            logging.info("="*100)
 
             experiment_data = registry.get_experiment_data(experiment_id)
             
-            logging.info(f"\nExperiment ID: {experiment_id}")
+            logging.info(f"Experiment ID: {experiment_id}")
             logging.info(f"Status: {experiment_data['experiment_info']['status']}")
 
             if 'training_results' in experiment_data:
@@ -302,7 +305,7 @@ class FoundationModelPipeline:
                 logging.info(f"Training Duration: {training_results['training_duration']:.2f}s")
                 logging.info(f"Epochs Completed: {training_results['epochs_completed']}")
                 
-                logging.info("\nMetrics:")
+                logging.info("Metrics:")
                 def print_metrics(metrics, indent=2):
                     """Helper function to print metrics with proper formatting"""
                     for key, value in metrics.items():
@@ -335,9 +338,9 @@ class FoundationModelPipeline:
         3. Evaluate the model's anomaly detection performance
         4. Save the evaluation results
         """
-        logging.info("\n" + "="*50)
+        logging.info("="*100)
         logging.info("Evaluating Foundation Model for Anomaly Detection")
-        logging.info("="*50)
+        logging.info("="*100)
         
         # TODO: Implement anomaly detection evaluation
         logging.info("Hello World from evaluate_foundation_model_anomaly_detection!")
@@ -367,9 +370,9 @@ class FoundationModelPipeline:
         6. Evaluate the model's regression performance compared to the original regression model
         7. Save the evaluation results
         """
-        logging.info("\n" + "="*50)
+        logging.info("="*100)
         logging.info("Evaluating Foundation Model for Regression")
-        logging.info("="*50)
+        logging.info("="*100)
         
         try:
             # Initialize registry and data manager
@@ -413,6 +416,8 @@ class FoundationModelPipeline:
                 config=dnn_model_config_dict
             )
             baseline_model.build()
+            logging.info("Baseline model created")
+            logging.info(baseline_model.model.summary())
 
             dnn_training_config_dict = {
                 "batch_size": dnn_training_config.batch_size,
@@ -421,11 +426,13 @@ class FoundationModelPipeline:
                 "early_stopping": dnn_training_config.early_stopping
             }
 
+            logging.info("Setting up baseline model trainer...")
             baseline_trainer = ModelTrainer(
                 model=baseline_model,
                 training_config=dnn_training_config_dict
             )
-            # Log shapes of baseline datasets
+            # Log sizes and shapes of baseline datasets
+            logging.info(f"Baseline train dataset size: {train_dataset.cardinality()}")
             for batch in train_dataset.take(1):
                 if isinstance(batch, tuple):
                     features, labels = batch
@@ -434,6 +441,7 @@ class FoundationModelPipeline:
                     logging.info(f"  Labels: {labels.shape}")
                 else:
                     logging.info(f"Baseline training dataset shape: {batch.shape}")
+            logging.info("Training baseline regression model...")
             baseline_results = baseline_trainer.train(
                 dataset=train_dataset,
                 validation_data=val_dataset,
@@ -453,7 +461,7 @@ class FoundationModelPipeline:
             if foundation_model_path:
                 # Load from specified path
                 foundation_model_path = Path(foundation_model_path)
-                logging.info(f"Loading foundation model encoder from: {foundation_model_path}/models/foundation_model/encoder")
+                logging.info(f"Loaded foundation model encoder from: {foundation_model_path}/models/foundation_model/encoder")
                 foundation_model = tf.keras.models.load_model(f"{foundation_model_path}/models/foundation_model/encoder")
             else:
                 raise ValueError("No foundation model path provided")
@@ -478,14 +486,17 @@ class FoundationModelPipeline:
                 if labels is not None:
                     return encoded_features, labels
                 return encoded_features
+
+            logging.info("Encoded datasets")
             
             # Create encoded datasets
             logging.info("Creating encoded datasets...")
             encoded_train_dataset = train_dataset.map(encode_batch)
             encoded_val_dataset = val_dataset.map(encode_batch)
             encoded_test_dataset = test_dataset.map(encode_batch)
-            
-            # Log shapes of encoded datasets
+            logging.info("Encoded datasets created")
+            # Log sizes and shapes of encoded datasets
+            logging.info(f"Encoded train dataset size: {encoded_train_dataset.cardinality()}")
             for batch in encoded_train_dataset.take(1):
                 if isinstance(batch, tuple):
                     features, labels = batch
@@ -506,16 +517,21 @@ class FoundationModelPipeline:
                 }
             }
             
+            logging.info("Creating regression model on encoded data...")
             encoded_model = ModelFactory.create_model(
                 model_type='dnn_predictor',
                 config=encoded_model_config
             )
             encoded_model.build()
-            
+            logging.info("Regression model on encoded data created")
+            logging.info(encoded_model.model.summary())
+
+            logging.info("Setting up regression model training on encoded data...")
             encoded_trainer = ModelTrainer(
                 model=encoded_model,
                 training_config=dnn_training_config_dict
             )
+            logging.info("Training regression model on encoded data...")
             encoded_results = encoded_trainer.train(
                 dataset=encoded_train_dataset,
                 validation_data=encoded_val_dataset,
@@ -529,7 +545,7 @@ class FoundationModelPipeline:
                 plot_training=True,
                 plots_dir=Path(f"{self.experiment_dir}/encoded_regression/plots")
             )
-            
+            logging.info("Regression model on encoded data trained")
             # 6. Evaluate and compare models
             logging.info("Evaluating models...")
             baseline_test_results = baseline_trainer.evaluate(test_dataset)
@@ -573,15 +589,15 @@ class FoundationModelPipeline:
             # )
             
             # Display results
-            logging.info("\nRegression Evaluation Results:")
+            logging.info("Regression Evaluation Results:")
             logging.info("="*50)
             logging.info("Baseline Model:")
             logging.info(f"Test Loss: {baseline_test_results['test_loss']:.6f}")
             logging.info(f"Test MSE: {baseline_test_results['test_mse']:.6f}")
-            logging.info("\nEncoded Model:")
+            logging.info("Encoded Model:")
             logging.info(f"Test Loss: {encoded_test_results['test_loss']:.6f}")
             logging.info(f"Test MSE: {encoded_test_results['test_mse']:.6f}")
-            logging.info("\nComparison:")
+            logging.info("Comparison:")
             logging.info(f"Test Loss Ratio: {evaluation_results['comparison']['test_loss_ratio']:.3f}")
             logging.info(f"Test MSE Ratio: {evaluation_results['comparison']['test_mse_ratio']:.3f}")
             

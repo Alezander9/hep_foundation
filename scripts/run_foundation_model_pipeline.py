@@ -62,9 +62,9 @@ def create_configs(model_type: str = "vae") -> Dict[str, Any]:
     
     # Simplified DatasetConfig without track/event selections
     dataset_config = DatasetConfig(
-        run_numbers=ATLAS_RUN_NUMBERS[-1:],
+        run_numbers=ATLAS_RUN_NUMBERS[-3:],
         signal_keys=["zprime", "wprime_qq", "zprime_bb"],
-        catalog_limit=2,
+        catalog_limit=20,
         validation_fraction=0.15,
         test_fraction=0.15,
         shuffle_buffer=50000,
@@ -118,8 +118,8 @@ def create_configs(model_type: str = "vae") -> Dict[str, Any]:
     vae_training_config = TrainingConfig(
         batch_size=1024,
         learning_rate=0.001,
-        epochs=2,
-        early_stopping_patience=3,
+        epochs=25,
+        early_stopping_patience=5,
         early_stopping_min_delta=1e-4,
         plot_training=True
     )
@@ -127,8 +127,8 @@ def create_configs(model_type: str = "vae") -> Dict[str, Any]:
     dnn_training_config = TrainingConfig(
         batch_size=1024,
         learning_rate=0.001,
-        epochs=2,
-        early_stopping_patience=3,
+        epochs=25,
+        early_stopping_patience=5,
         early_stopping_min_delta=1e-4,
         plot_training=True
     )

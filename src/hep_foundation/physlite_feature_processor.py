@@ -413,9 +413,9 @@ class PhysliteFeatureProcessor:
         """
 
         if signal_key:
-            logging.info(f"\nProcessing signal data for {signal_key}")
+            logging.info(f"Processing signal data for {signal_key}")
         elif run_number:
-            logging.info(f"\nProcessing ATLAS data for run {run_number}")
+            logging.info(f"Processing ATLAS data for run {run_number}")
         else:
             raise ValueError("Must provide either run_number or signal_key")
         
@@ -439,7 +439,7 @@ class PhysliteFeatureProcessor:
         logging.info(f"Found {len(catalog_paths)} catalog paths")
         
         for catalog_idx, catalog_path in enumerate(catalog_paths):
-            logging.info(f"\nProcessing catalog {catalog_idx} with path: {catalog_path}")
+            logging.info(f"Processing catalog {catalog_idx} with path: {catalog_path}")
             
             try:
                 catalog_start_time = datetime.now()
@@ -747,14 +747,12 @@ class PhysliteFeatureProcessor:
                     catalog_path = self.atlas_manager.download_run_catalog(run_number, catalog_idx)
                 if catalog_path:
                     paths.append(catalog_path)
-            logging.info(f"Found {len(paths)} catalogs for run {run_number}")
             return paths
         elif signal_key is not None:
             # Get signal data catalog
             catalog_path = self.atlas_manager.get_signal_catalog_path(signal_key, 0)
             if not catalog_path.exists():
                 catalog_path = self.atlas_manager.download_signal_catalog(signal_key, 0)
-            logging.info(f"Found signal catalog for {signal_key}")
             return [catalog_path] if catalog_path else []
         else:
             raise ValueError("Must provide either run_number or signal_key")

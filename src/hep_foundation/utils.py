@@ -239,7 +239,7 @@ def get_system_usage():
 def print_system_usage(prefix=""):
     """Print current system usage with optional prefix"""
     usage = get_system_usage()
-    logging.info(f"\n{prefix}System Usage:")
+    logging.info(f"{prefix}System Usage:")
     logging.info(f"Memory: {usage['memory']['used_gb']:.1f}GB / {usage['memory']['total_gb']:.1f}GB ({usage['memory']['percent']}%)")
     logging.info(f"Available Memory: {usage['memory']['available_gb']:.1f}GB")
     logging.info(f"CPU Usage: {usage['cpu']['percent']}%")

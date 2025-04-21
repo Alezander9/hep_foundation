@@ -136,10 +136,7 @@ class AutoEncoder(BaseModel):
         
         # Create model
         self.model = keras.Model(inputs=inputs, outputs=outputs, name=self.name)
-        
-        logging.info("\nModel layer structure:")
-        for layer in self.model.layers:
-            logging.info(f"Layer: {layer.name}, Type: {type(layer)}")
+    
         
     def _add_dense_block(self, x, units: int, prefix: str):
         """Helper to add a dense block with activation and batch norm"""
@@ -180,7 +177,7 @@ class AutoEncoder(BaseModel):
         # 2. Reconstruction examples
         # 3. Loss components if using custom loss
         
-        logging.info("\nCreating autoencoder-specific plots...")
+        logging.info("Creating autoencoder-specific plots...")
         
         # Example: Plot model architecture
         tf.keras.utils.plot_model(
