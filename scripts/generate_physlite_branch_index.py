@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Any, Optional, Union
+import json
 
 import uproot
 
@@ -109,7 +110,7 @@ def get_branch_info(
                             print(f"Branch {full_branch} has no entries")
 
                 except Exception as e:
-                    branch_info[cat][feat]["status"] = "error"
+                    branch_info[cat][feat]["status"] = f"error: {str(e)}"
                     print(f"Error reading branch {full_branch}: {str(e)}")
                     continue
 
@@ -225,24 +226,36 @@ def analyze_branch_sample(
 def save_branch_dictionary(
     run_number: str,
     catalog_index: int = 0,
-    output_path: Optional[Union[str, Path]] = None,
+    output_dir: Optional[Union[str, Path]] = None,
     download_if_missing: bool = True,
-):
+) -> Optional[Path]:
     """
-    Save the branch dictionary with shape information for a specific ATLAS run and catalog to a Python file.
+    Save the branch dictionary with shape information for a specific ATLAS run
+    and catalog to a JSON file within the specified output directory.
 
     Args:
         run_number: ATLAS run number
         catalog_index: Catalog index to use
-        output_path: Path where to save the output file (default: physlite_branch_index.py)
+        output_dir: Path where to save the output JSON file
+                    (default: src/hep_foundation/)
         download_if_missing: Whether to download the catalog if it doesn't exist
 
     Returns:
-        Path to the saved file or None if failed
+        Path to the saved JSON file or None if failed
     """
     try:
         # This is a simple way to get access to the atlas_manager
-        from hep_foundation.atlas_file_manager import ATLASFileManager
+        # Ensure this import works relative to where the script is run
+        # Or adjust sys.path if needed when running the script
+        try:
+            from hep_foundation.atlas_file_manager import ATLASFileManager
+        except ImportError:
+            # Simple fallback if running script directly from scripts/
+            import sys
+            script_dir = Path(__file__).parent.parent
+            sys.path.append(str(script_dir))
+            from hep_foundation.atlas_file_manager import ATLASFileManager
+
 
         atlas_manager = ATLASFileManager()
         catalog_path = atlas_manager.get_run_catalog_path(run_number, catalog_index)
@@ -262,10 +275,17 @@ def save_branch_dictionary(
         branch_info = get_branch_info(catalog_path)
 
         # Prepare output file path
-        if output_path is None:
-            output_path = Path("physlite_branch_index.py")
+        if output_dir is None:
+            # Default to src/hep_foundation relative to project root
+            # Assumes script is run from project root or hep_foundation/scripts
+            project_root = Path(__file__).parent.parent
+            output_dir = project_root / "src" / "hep_foundation"
         else:
-            output_path = Path(output_path)
+            output_dir = Path(output_dir)
+
+        output_dir.mkdir(parents=True, exist_ok=True) # Ensure directory exists
+        output_path = output_dir / "physlite_branch_index.json"
+
 
         # Count success rate (based on successful shape/dtype extraction)
         total_branches = sum(len(features) for features in branch_info.values())
@@ -275,45 +295,57 @@ def save_branch_dictionary(
             for feat in branch_info[cat]
             if branch_info[cat][feat]["status"] == "success"
         )
+        success_rate = successful_branches / total_branches if total_branches > 0 else 0
 
-        # Save as a Python file
+        # Prepare data for JSON serialization (ensure basic types)
+        serializable_branch_info = {}
+        for category, features in branch_info.items():
+            serializable_branch_info[category] = {}
+            for feature, info in features.items():
+                serializable_branch_info[category][feature] = {
+                    # Convert shape tuple to list for JSON
+                    'shape': list(info.get("shape")) if info.get("shape") is not None else None,
+                    'dtype': info.get("dtype", "unknown"),
+                    'status': info.get("status", "unknown")
+                }
+
+
+        # Save as a JSON file
+        print(f"Saving branch information dictionary to {output_path}...")
+        metadata = {
+            "generation_info": {
+                "run_number": run_number,
+                "catalog_index": catalog_index,
+                "success_rate": f"{successful_branches}/{total_branches} ({success_rate:.1%})",
+            },
+            "physlite_branches": serializable_branch_info
+        }
+
         with open(output_path, "w") as f:
-            f.write("# PhysLite Branch Index\n")
-            f.write(f"# Generated from run {run_number}, catalog {catalog_index}\n")
-            f.write(
-                f"# Success rate: {successful_branches}/{total_branches} branches ({successful_branches / total_branches:.1%})\n\n"
-            )
-
-            # Save full branch info
-            f.write("# Full branch information dictionary\n")
-            f.write("PHYSLITE_BRANCHES = {\n")
-            for category, features in sorted(branch_info.items()):
-                f.write(f"    '{category}': {{\n")
-                for feature, info in sorted(features.items()):
-                    # Only include shape, dtype and status
-                    shape_str = str(info.get("shape", None))
-                    dtype_str = str(info.get("dtype", "unknown"))
-                    status = info.get("status", "unknown")
-
-                    f.write(f"        '{feature}': {{\n")
-                    f.write(f"            'shape': {shape_str},\n")
-                    f.write(f"            'dtype': {repr(dtype_str)},\n")
-                    f.write(f"            'status': {repr(status)}\n")
-                    f.write("        },\n")
-                f.write("    },\n")
-            f.write("}\n\n")
+            json.dump(metadata, f, indent=4) # Use indent for readability
 
         print(f"Branch information dictionary saved to {output_path}")
         print(
-            f"Success rate: {successful_branches}/{total_branches} branches ({successful_branches / total_branches:.1%})"
+            f"Success rate: {successful_branches}/{total_branches} branches ({success_rate:.1%})"
         )
         return output_path
 
     except Exception as e:
-        print(f"Error: {str(e)}")
+        print(f"Error in save_branch_dictionary: {str(e)}")
+        import traceback
+        traceback.print_exc() # Print full traceback for debugging
         return None
 
 
 if __name__ == "__main__":
-    # Example usage
-    save_branch_dictionary("00311481", 1)
+    # Example usage: Save to default location (src/hep_foundation/)
+    saved_path = save_branch_dictionary("00311481", 1)
+
+    # Example: Save to a specific directory
+    # script_dir = Path(__file__).parent
+    # saved_path = save_branch_dictionary("00311481", 1, output_dir=script_dir / "output_data")
+
+    if saved_path:
+        print(f"Successfully generated: {saved_path}")
+    else:
+        print("Failed to generate branch index.")
