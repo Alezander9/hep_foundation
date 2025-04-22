@@ -2,7 +2,7 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 import h5py
 import numpy as np
@@ -87,8 +87,8 @@ class PhysliteFeatureProcessor:
 
     def _apply_event_filters(
         self,
-        event_data: Dict[str, np.ndarray],
-        event_filters: List[PhysliteFeatureFilter],
+        event_data: dict[str, np.ndarray],
+        event_filters: list[PhysliteFeatureFilter],
     ) -> bool:
         """
         Apply event-level filters to determine if an event should be processed.
@@ -125,8 +125,8 @@ class PhysliteFeatureProcessor:
 
     def _apply_feature_filters(
         self,
-        feature_values: Dict[str, np.ndarray],
-        filters: List[PhysliteFeatureFilter],
+        feature_values: dict[str, np.ndarray],
+        filters: list[PhysliteFeatureFilter],
     ) -> bool:
         """
         Apply scalar feature filters to event-level features.
@@ -157,8 +157,8 @@ class PhysliteFeatureProcessor:
 
     def _apply_feature_array_filters(
         self,
-        feature_arrays: Dict[str, np.ndarray],
-        filters: List[PhysliteFeatureArrayFilter],
+        feature_arrays: dict[str, np.ndarray],
+        filters: list[PhysliteFeatureArrayFilter],
     ) -> np.ndarray:
         """
         Apply array feature filters to track-level features.
@@ -198,7 +198,7 @@ class PhysliteFeatureProcessor:
 
     def _apply_feature_array_aggregator(
         self,
-        feature_arrays: Dict[str, np.ndarray],
+        feature_arrays: dict[str, np.ndarray],
         aggregator: PhysliteFeatureArrayAggregator,
         valid_mask: np.ndarray,
         sort_indices: np.ndarray,
@@ -254,9 +254,9 @@ class PhysliteFeatureProcessor:
 
     def _extract_selected_features(
         self,
-        event_data: Dict[str, np.ndarray],
-        feature_selectors: List[PhysliteFeatureSelector],
-    ) -> Dict[str, np.ndarray]:
+        event_data: dict[str, np.ndarray],
+        feature_selectors: list[PhysliteFeatureSelector],
+    ) -> dict[str, np.ndarray]:
         """
         Extract selected features from event data.
 
@@ -287,9 +287,9 @@ class PhysliteFeatureProcessor:
 
     def _process_selection_config(
         self,
-        event_data: Dict[str, np.ndarray],
+        event_data: dict[str, np.ndarray],
         selection_config: PhysliteSelectionConfig,
-    ) -> Optional[Dict[str, np.ndarray]]:
+    ) -> Optional[dict[str, np.ndarray]]:
         """
         Process a single selection configuration to extract and aggregate features.
 
@@ -364,8 +364,8 @@ class PhysliteFeatureProcessor:
         }
 
     def _process_event(
-        self, event_data: Dict[str, np.ndarray], task_config: TaskConfig
-    ) -> Optional[Dict[str, np.ndarray]]:
+        self, event_data: dict[str, np.ndarray], task_config: TaskConfig
+    ) -> Optional[dict[str, np.ndarray]]:
         """
         Process a single event using the task configuration.
 
@@ -407,7 +407,7 @@ class PhysliteFeatureProcessor:
         catalog_limit: Optional[int] = None,
         plot_distributions: bool = False,
         delete_catalogs: bool = True,
-    ) -> Tuple[List[Dict[str, np.ndarray]], List[Dict[str, np.ndarray]], Dict]:
+    ) -> tuple[list[dict[str, np.ndarray]], list[dict[str, np.ndarray]], dict]:
         """
         Process either ATLAS or signal data using task configuration.
 
@@ -557,9 +557,9 @@ class PhysliteFeatureProcessor:
 
     def _compute_dataset_normalization(
         self,
-        inputs: List[Dict[str, Dict[str, np.ndarray]]],
-        labels: Optional[List[List[Dict[str, Dict[str, np.ndarray]]]]] = None,
-    ) -> Dict:
+        inputs: list[dict[str, dict[str, np.ndarray]]],
+        labels: Optional[list[list[dict[str, dict[str, np.ndarray]]]]] = None,
+    ) -> dict:
         """
         Compute normalization parameters for all features and labels.
 
@@ -676,9 +676,9 @@ class PhysliteFeatureProcessor:
 
     def _create_normalized_dataset(
         self,
-        features_dict: Dict[str, np.ndarray],
-        norm_params: Dict,
-        labels_dict: Optional[Dict[str, Dict[str, np.ndarray]]] = None,
+        features_dict: dict[str, np.ndarray],
+        norm_params: dict,
+        labels_dict: Optional[dict[str, dict[str, np.ndarray]]] = None,
     ) -> tf.data.Dataset:
         """
         Create a normalized TensorFlow dataset from features and optional labels.
@@ -740,7 +740,7 @@ class PhysliteFeatureProcessor:
 
     def _load_features_from_group(
         self, features_group: h5py.Group
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         """Load features from an HDF5 group."""
         features_dict = {}
 
@@ -758,7 +758,7 @@ class PhysliteFeatureProcessor:
 
     def _load_labels_from_group(
         self, labels_group: h5py.Group
-    ) -> Dict[str, Dict[str, np.ndarray]]:
+    ) -> dict[str, dict[str, np.ndarray]]:
         """Load labels from an HDF5 group."""
         labels_dict = {}
 
@@ -784,7 +784,7 @@ class PhysliteFeatureProcessor:
         run_number: Optional[str] = None,
         signal_key: Optional[str] = None,
         catalog_limit: Optional[int] = None,
-    ) -> List[Path]:
+    ) -> list[Path]:
         """
         Get list of catalog paths for either ATLAS data or signal data
 

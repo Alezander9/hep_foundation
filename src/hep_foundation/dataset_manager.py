@@ -5,7 +5,7 @@ import platform
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Optional, Union
 
 import h5py
 import matplotlib.pyplot as plt
@@ -25,8 +25,8 @@ from hep_foundation.utils import ConfigSerializer
 class DatasetConfig:
     """Configuration for dataset processing"""
 
-    run_numbers: List[str]
-    signal_keys: Optional[List[str]]
+    run_numbers: list[str]
+    signal_keys: Optional[list[str]]
     catalog_limit: int
     validation_fraction: float
     test_fraction: float
@@ -79,7 +79,7 @@ class DatasetManager:
             raise ValueError("No dataset currently loaded")
         return self.current_dataset_id
 
-    def get_current_dataset_info(self) -> Dict:
+    def get_current_dataset_info(self) -> dict:
         """Get information about the currently loaded dataset"""
         if self.current_dataset_info is None:
             raise ValueError("No dataset currently loaded")
@@ -93,7 +93,7 @@ class DatasetManager:
 
     def generate_dataset_id(self, config: DatasetConfig) -> str:
         """Generate a human-readable dataset ID from a DatasetConfig object"""
-        if type(config) != DatasetConfig:
+        if not isinstance(config, DatasetConfig):
             raise ValueError("config must be a DatasetConfig object")
 
         config_dict = {
@@ -125,7 +125,7 @@ class DatasetManager:
         logging.info(f"Generated dataset ID: {result}")
         return result
 
-    def save_dataset_config(self, dataset_id: str, config: Union[Dict, TaskConfig]):
+    def save_dataset_config(self, dataset_id: str, config: Union[dict, TaskConfig]):
         """Save full dataset configuration"""
         config_path = self.configs_dir / f"{dataset_id}_config.yaml"
 
@@ -151,7 +151,7 @@ class DatasetManager:
         ConfigSerializer.to_yaml(full_config, config_path)
         return config_path
 
-    def get_dataset_info(self, dataset_id: str) -> Dict:
+    def get_dataset_info(self, dataset_id: str) -> dict:
         """Get full dataset information including recreation parameters"""
         config_path = self.configs_dir / f"{dataset_id}_config.yaml"
         logging.info(f"Looking for config at: {config_path}")  # Debug print
@@ -168,7 +168,7 @@ class DatasetManager:
         dataset_config: DatasetConfig,
         plot_distributions: bool = False,
         delete_catalogs: bool = True,
-    ) -> Tuple[str, Path]:
+    ) -> tuple[str, Path]:
         """
         Create new processed dataset from ATLAS data.
 
@@ -338,7 +338,7 @@ class DatasetManager:
 
     def _create_signal_dataset(
         self, dataset_config: DatasetConfig, plot_distributions: bool = False
-    ) -> Tuple[str, Path]:
+    ) -> tuple[str, Path]:
         """
         Create new processed dataset from signal data.
 
@@ -501,7 +501,7 @@ class DatasetManager:
         run_number: Optional[str] = None,
         signal_key: Optional[str] = None,
         catalog_limit: Optional[int] = None,
-    ) -> List[Path]:
+    ) -> list[Path]:
         """Get list of catalog paths for either ATLAS data or signal data"""
         if run_number is not None:
             # Get ATLAS data catalogs
@@ -539,7 +539,7 @@ class DatasetManager:
         shuffle_buffer: int = 10000,
         include_labels: bool = False,
         delete_catalogs: bool = True,
-    ) -> Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
+    ) -> tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
         """Load and split dataset into train/val/test."""
         logging.info("Loading datasets")
         try:
@@ -613,7 +613,7 @@ class DatasetManager:
         dataset_config: DatasetConfig,
         batch_size: int = 1000,
         include_labels: bool = False,
-    ) -> Dict[str, tf.data.Dataset]:
+    ) -> dict[str, tf.data.Dataset]:
         """
         Load signal datasets for evaluation.
 
@@ -687,7 +687,7 @@ class DatasetManager:
         shuffle_buffer: int = 10000,
         include_labels: bool = False,
         delete_catalogs: bool = True,
-    ) -> Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
+    ) -> tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
         """
         Load and split dataset into train/val/test and encode the input features using the given encoder model.
 
@@ -798,8 +798,8 @@ class DatasetManager:
 
     def _plot_distributions(
         self,
-        pre_selection_stats: Dict[str, List],
-        post_selection_stats: Dict[str, List],
+        pre_selection_stats: dict[str, list],
+        post_selection_stats: dict[str, list],
         output_dir: Path,
     ):
         """Create distribution plots and print statistical summaries for track and event features"""

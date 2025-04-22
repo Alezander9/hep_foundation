@@ -398,7 +398,7 @@ class FoundationModelPipeline:
 
         try:
             # Initialize registry and data manager
-            registry = ModelRegistry(str(self.experiment_dir))
+            ModelRegistry(str(self.experiment_dir))
             data_manager = DatasetManager()
 
             # 1. Load dataset with regression labels

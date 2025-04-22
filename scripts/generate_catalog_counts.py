@@ -1,7 +1,7 @@
 import json
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import requests
 
@@ -145,8 +145,8 @@ def binary_search_catalog_count(run_number: str) -> int:
 
 
 def verify_catalog_counts(
-    catalog_data: Dict[str, Dict[str, Any]],
-) -> Dict[str, Dict[str, Any]]:
+    catalog_data: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
     """
     Verify all catalog counts and update verification statistics
 

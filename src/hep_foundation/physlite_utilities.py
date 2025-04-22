@@ -1,6 +1,6 @@
 import logging
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 # Attempt to import the branch index, with graceful fallback
 try:
@@ -26,7 +26,7 @@ class BranchType(Enum):
 
 def get_branch_info(
     branch_name: str,
-) -> Tuple[bool, BranchType, Optional[Dict[str, Any]]]:
+) -> tuple[bool, BranchType, Optional[dict[str, Any]]]:
     """
     Check if a branch name is valid and determine its type.
 
@@ -83,7 +83,7 @@ def get_branch_info(
     return True, branch_type, branch_info
 
 
-def _determine_branch_type(branch_info: Dict[str, Any]) -> BranchType:
+def _determine_branch_type(branch_info: dict[str, Any]) -> BranchType:
     """Helper function to determine branch type from its info."""
     if "shape" not in branch_info or branch_info["shape"] is None:
         return BranchType.UNKNOWN
@@ -159,7 +159,7 @@ class PhysliteBranch:
     def __repr__(self) -> str:
         return self.__str__()
 
-    def get_shape(self) -> Optional[Tuple[int, ...]]:
+    def get_shape(self) -> Optional[tuple[int, ...]]:
         """Get the shape of this branch if available."""
         if not self.info or "shape" not in self.info:
             return None
@@ -358,8 +358,8 @@ class PhysliteFeatureArrayAggregator:
 
     def __init__(
         self,
-        input_branches: List[PhysliteFeatureArraySelector],
-        filter_branches: List[PhysliteFeatureArrayFilter],
+        input_branches: list[PhysliteFeatureArraySelector],
+        filter_branches: list[PhysliteFeatureArrayFilter],
         sort_by_branch: Optional[PhysliteFeatureArraySelector] = None,
         min_length: int = 1,
         max_length: int = 100,
@@ -438,8 +438,8 @@ class PhysliteSelectionConfig:
 
     def __init__(
         self,
-        feature_selectors: List[PhysliteFeatureSelector] = None,
-        feature_array_aggregators: List[PhysliteFeatureArrayAggregator] = None,
+        feature_selectors: list[PhysliteFeatureSelector] = None,
+        feature_array_aggregators: list[PhysliteFeatureArrayAggregator] = None,
         name: str = "PhysliteSelection",
     ):
         """

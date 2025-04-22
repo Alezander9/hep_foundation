@@ -3,7 +3,7 @@ import logging
 import platform
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import numpy as np
 import psutil
@@ -78,7 +78,7 @@ class ModelRegistry:
 
         return exp_dir
 
-    def _get_environment_info(self) -> Dict:
+    def _get_environment_info(self) -> dict:
         """Collect information about the execution environment"""
         # Get memory info
         memory = psutil.virtual_memory()
@@ -167,7 +167,7 @@ class ModelRegistry:
             return "null"  # Convert None to string "null"
         return obj
 
-    def complete_training(self, experiment_id: str, final_metrics: Dict):
+    def complete_training(self, experiment_id: str, final_metrics: dict):
         """
         Record final training results and history
 
@@ -230,9 +230,9 @@ class ModelRegistry:
     def save_model(
         self,
         experiment_id: str,
-        models: Dict[str, Any],
+        models: dict[str, Any],
         model_name: str = "full_model",
-        metadata: Optional[Dict] = None,
+        metadata: Optional[dict] = None,
     ):
         """
         Save model(s) for an experiment
@@ -272,7 +272,7 @@ class ModelRegistry:
 
     def load_model(
         self, experiment_id: str, model_name: str = "full_model"
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         """
         Get paths to saved model components
 
@@ -314,7 +314,7 @@ class ModelRegistry:
 
         return model_paths
 
-    def get_experiment_data(self, experiment_id: str) -> Dict:
+    def get_experiment_data(self, experiment_id: str) -> dict:
         """
         Load experiment data from experiment_data.json
 

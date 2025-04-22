@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -121,7 +121,7 @@ class VAEConfig(ModelConfig):
 class Sampling(keras.layers.Layer):
     """Reparameterization trick by sampling from a unit Gaussian"""
 
-    def call(self, inputs: Tuple[tf.Tensor, tf.Tensor]) -> tf.Tensor:
+    def call(self, inputs: tuple[tf.Tensor, tf.Tensor]) -> tf.Tensor:
         z_mean, z_log_var = inputs
         batch = tf.shape(z_mean)[0]
         dim = tf.shape(z_mean)[1]
@@ -567,7 +567,7 @@ class AnomalyDetectionEvaluator:
         self,
         model: BaseModel,
         test_dataset: tf.data.Dataset,
-        signal_datasets: Optional[Dict[str, tf.data.Dataset]] = None,
+        signal_datasets: Optional[dict[str, tf.data.Dataset]] = None,
         experiment_id: str = None,
         base_path: Path = Path("experiments"),
     ):
@@ -613,7 +613,7 @@ class AnomalyDetectionEvaluator:
         # Initialize test results storage
         self.test_results = {}
 
-    def _update_experiment_data(self, test_results: Dict) -> None:
+    def _update_experiment_data(self, test_results: dict) -> None:
         """Update experiment data with new test results"""
         # Add or update test results in experiment data
         if "test_results" not in self.experiment_data:
@@ -627,7 +627,7 @@ class AnomalyDetectionEvaluator:
 
     def _calculate_losses(
         self, dataset: tf.data.Dataset
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Calculate reconstruction (MSE) and KL losses for a dataset
 
@@ -706,7 +706,7 @@ class AnomalyDetectionEvaluator:
 
     def _calculate_separation_metrics(
         self, background_losses: np.ndarray, signal_losses: np.ndarray, loss_type: str
-    ) -> Dict:
+    ) -> dict:
         """
         Calculate metrics for separation between background and signal
 
@@ -772,7 +772,7 @@ class AnomalyDetectionEvaluator:
 
         return metrics
 
-    def run_anomaly_detection_test(self) -> Dict:
+    def run_anomaly_detection_test(self) -> dict:
         """
         Evaluate model's anomaly detection capabilities
 

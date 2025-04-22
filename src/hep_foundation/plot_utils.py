@@ -5,7 +5,6 @@ Provides color palettes, sizing guidelines, and helper functions for scientific 
 
 import logging
 from pathlib import Path
-from typing import Dict, List, Tuple
 
 import matplotlib.pyplot as plt
 
@@ -18,7 +17,7 @@ plt.rcParams["text.usetex"] = False
 
 # High contrast colors for complex plots with multiple overlapping elements
 # Use when data series need to be clearly distinguished in the same plot space
-HIGH_CONTRAST_COLORS: List[str] = [
+HIGH_CONTRAST_COLORS: list[str] = [
     "dodgerblue",  # Strong blue
     "crimson",  # Deep red
     "forestgreen",  # Rich green
@@ -30,7 +29,7 @@ HIGH_CONTRAST_COLORS: List[str] = [
 
 # Aesthetic gradient for simple plots or subplots
 # Use when data is spatially separated or for sequential/progressive data
-AESTHETIC_COLORS: List[Tuple[float, float, float]] = [
+AESTHETIC_COLORS: list[tuple[float, float, float]] = [
     (4 / 256, 87 / 256, 172 / 256),  # Deep blue
     (48 / 256, 143 / 256, 172 / 256),  # Light blue
     (55 / 256, 189 / 256, 121 / 256),  # Bright green
@@ -99,7 +98,7 @@ def set_science_style(use_tex: bool = False) -> None:
     )
 
 
-def get_figure_size(width: str = "single", ratio: float = None) -> Tuple[float, float]:
+def get_figure_size(width: str = "single", ratio: float = None) -> tuple[float, float]:
     """
     Get recommended figure dimensions for publication
 
@@ -115,7 +114,7 @@ def get_figure_size(width: str = "single", ratio: float = None) -> Tuple[float, 
     return (w, w / r)
 
 
-def get_color_cycle(palette: str = "high_contrast", n: int = None) -> List:
+def get_color_cycle(palette: str = "high_contrast", n: int = None) -> list:
     """
     Get a color cycle for plotting multiple data series
 
@@ -139,8 +138,8 @@ def plot_combined_training_histories(
     # encoded_epoch_history: dict,
     histories: dict,  # Dict[str, Dict] -> {label: epoch_history_dict}
     output_path: Path,
-    metrics_to_plot: List[str] = ["loss", "val_loss"],
-    metric_labels: Dict[str, str] = {
+    metrics_to_plot: list[str] = ["loss", "val_loss"],
+    metric_labels: dict[str, str] = {
         "loss": "Train Loss",
         "val_loss": "Validation Loss",
     },

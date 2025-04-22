@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional, Union
 
 from hep_foundation.logging_config import setup_logging
 from hep_foundation.physlite_utilities import (
@@ -31,9 +31,9 @@ class TaskConfig:
 
     def __init__(
         self,
-        event_filters: List[PhysliteFeatureFilter],
+        event_filters: list[PhysliteFeatureFilter],
         input_config: PhysliteSelectionConfig,
-        label_configs: List[PhysliteSelectionConfig] = None,
+        label_configs: list[PhysliteSelectionConfig] = None,
     ):
         """
         Initialize a task configuration.
@@ -72,7 +72,7 @@ class TaskConfig:
         """
         return json.dumps(self.to_dict(), indent=indent)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """
         Convert task configuration to a dictionary.
 
@@ -94,7 +94,7 @@ class TaskConfig:
 
     def _selection_config_to_dict(
         self, config: PhysliteSelectionConfig
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Helper method to convert a PhysliteSelectionConfig to a dictionary."""
         # Convert feature selectors
         feature_selectors = [
@@ -206,7 +206,7 @@ class TaskConfig:
 
     @staticmethod
     def _dict_to_selection_config(
-        config_dict: Dict[str, Any],
+        config_dict: dict[str, Any],
     ) -> PhysliteSelectionConfig:
         """Helper method to convert a dictionary to a PhysliteSelectionConfig."""
 
@@ -293,11 +293,11 @@ class TaskConfig:
     @classmethod
     def create_from_branch_names(
         cls,
-        event_filter_dict: Dict[str, Dict[str, Optional[float]]],
-        input_features: List[str],
-        input_array_aggregators: List[Dict[str, Any]] = None,
-        label_features: List[List[str]] = None,
-        label_array_aggregators: List[List[Dict[str, Any]]] = None,
+        event_filter_dict: dict[str, dict[str, Optional[float]]],
+        input_features: list[str],
+        input_array_aggregators: list[dict[str, Any]] = None,
+        label_features: list[list[str]] = None,
+        label_array_aggregators: list[list[dict[str, Any]]] = None,
     ) -> "TaskConfig":
         """
         Create a TaskConfig from branch names directly.
@@ -385,7 +385,7 @@ class TaskConfig:
 
     @staticmethod
     def _create_selection_config_from_lists(
-        feature_names: List[str], aggregator_list: List[Dict[str, Any]], name: str
+        feature_names: list[str], aggregator_list: list[dict[str, Any]], name: str
     ) -> PhysliteSelectionConfig:
         """Helper method to create a PhysliteSelectionConfig from lists of names and aggregator dicts."""
         # Create feature selectors

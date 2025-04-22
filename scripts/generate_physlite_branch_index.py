@@ -1,12 +1,12 @@
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Optional, Union
 
 import uproot
 
 
 def get_branch_info(
     file_path: Union[str, Path], max_entries: int = 100
-) -> Dict[str, Dict[str, Dict[str, Any]]]:
+) -> dict[str, dict[str, dict[str, Any]]]:
     """
     Extract branch names, shapes, and types from a PhysLite ROOT file.
 
@@ -131,7 +131,7 @@ def get_branch_info(
 
 def analyze_branch_sample(
     file_path: Union[str, Path], category: str, feature: str, max_entries: int = 10
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Analyze a sample of values from a specific branch to get detailed information.
 
@@ -258,20 +258,8 @@ def save_branch_dictionary(
 
         print(f"Extracting branch information from {catalog_path}...")
 
-        # Get common verified branches first
-        common_branches = get_common_branches(catalog_path)
-        print(
-            f"Found {sum(len(branches) for branches in common_branches.values())} common branches"
-        )
-
-        # Then get detailed information for ALL branches
+        # Get detailed information for ALL branches
         branch_info = get_branch_info(catalog_path)
-
-        # Add verification status
-        for category, features in common_branches.items():
-            for feature in features:
-                if category in branch_info and feature in branch_info[category]:
-                    branch_info[category][feature]["verified"] = True
 
         # Prepare output file path
         if output_path is None:
@@ -279,19 +267,13 @@ def save_branch_dictionary(
         else:
             output_path = Path(output_path)
 
-        # Count success rate
+        # Count success rate (based on successful shape/dtype extraction)
         total_branches = sum(len(features) for features in branch_info.values())
         successful_branches = sum(
             1
             for cat in branch_info
             for feat in branch_info[cat]
-            if branch_info[cat][feat]["shape"] is not None
-        )
-        verified_branches = sum(
-            1
-            for cat in branch_info
-            for feat in branch_info[cat]
-            if branch_info[cat][feat].get("verified", False)
+            if branch_info[cat][feat]["status"] == "success"
         )
 
         # Save as a Python file
@@ -302,30 +284,20 @@ def save_branch_dictionary(
                 f"# Success rate: {successful_branches}/{total_branches} branches ({successful_branches / total_branches:.1%})\n\n"
             )
 
-            # First save verified common branches
-            f.write("# Commonly used branches that have been verified to work\n")
-            f.write("PHYSLITE_COMMON_BRANCHES = {\n")
-            for category, features in sorted(common_branches.items()):
-                if features:  # Only include categories with verified branches
-                    f.write(f"    '{category}': {features},\n")
-            f.write("}\n\n")
-
             # Save full branch info
             f.write("# Full branch information dictionary\n")
             f.write("PHYSLITE_BRANCHES = {\n")
             for category, features in sorted(branch_info.items()):
                 f.write(f"    '{category}': {{\n")
                 for feature, info in sorted(features.items()):
-                    # Only include shape and dtype to keep it compact
+                    # Only include shape, dtype and status
                     shape_str = str(info.get("shape", None))
                     dtype_str = str(info.get("dtype", "unknown"))
-                    verified = info.get("verified", False)
                     status = info.get("status", "unknown")
 
                     f.write(f"        '{feature}': {{\n")
                     f.write(f"            'shape': {shape_str},\n")
                     f.write(f"            'dtype': {repr(dtype_str)},\n")
-                    f.write(f"            'verified': {verified},\n")
                     f.write(f"            'status': {repr(status)}\n")
                     f.write("        },\n")
                 f.write("    },\n")

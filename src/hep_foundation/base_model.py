@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 
 @dataclass
@@ -9,14 +9,14 @@ class ModelConfig:
     """Base configuration for model architecture"""
 
     model_type: str
-    architecture: Dict[str, Any]  # Contains network architecture
-    hyperparameters: Dict[str, Any]  # Contains model hyperparameters
+    architecture: dict[str, Any]  # Contains network architecture
+    hyperparameters: dict[str, Any]  # Contains model hyperparameters
 
     def __init__(
         self,
         model_type: str,
-        architecture: Dict[str, Any],
-        hyperparameters: Dict[str, Any],
+        architecture: dict[str, Any],
+        hyperparameters: dict[str, Any],
     ):
         self.model_type = model_type
         self.architecture = architecture

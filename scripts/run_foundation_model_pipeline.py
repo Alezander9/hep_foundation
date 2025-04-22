@@ -3,14 +3,14 @@ import os
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from hep_foundation.model_pipeline import DatasetConfig, TrainingConfig
 from hep_foundation.task_config import TaskConfig
 from hep_foundation.utils import ATLAS_RUN_NUMBERS
 
 
-def create_configs(model_type: str = "vae") -> Dict[str, Any]:
+def create_configs(model_type: str = "vae") -> dict[str, Any]:
     """Create configuration objects for the model pipeline"""
 
     # Create TaskConfig with the new structure

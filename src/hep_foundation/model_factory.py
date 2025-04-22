@@ -1,5 +1,3 @@
-from typing import Dict
-
 from .autoencoder import AutoEncoder, AutoEncoderConfig
 from .base_model import BaseModel
 from .dnn_predictor import DNNPredictor, DNNPredictorConfig
@@ -45,7 +43,7 @@ class ModelFactory:
         return model_class(config=model_config)
 
     @staticmethod
-    def get_config_template(model_type: str) -> Dict:
+    def get_config_template(model_type: str) -> dict:
         """
         Get template configuration for a model type
 

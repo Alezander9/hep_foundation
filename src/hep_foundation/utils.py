@@ -1,7 +1,7 @@
 import gc
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Union
 
 import numpy as np
 import psutil
@@ -457,7 +457,7 @@ class TypeConverter:
         return tf.convert_to_tensor(data, dtype=dtype)
 
     @staticmethod
-    def to_python(data: Any) -> Union[int, float, List, Dict]:
+    def to_python(data: Any) -> Union[int, float, list, dict]:
         """Convert numpy/tensorflow types to Python native types"""
         if isinstance(data, (np.integer, np.floating)):
             return data.item()
@@ -493,7 +493,7 @@ class ConfigSerializer:
         return SafeConfigDumper
 
     @staticmethod
-    def to_yaml(data: Dict, file_path: Path):
+    def to_yaml(data: dict, file_path: Path):
         """Save configuration to YAML file"""
 
         # Convert Python types to simple types
@@ -521,7 +521,7 @@ class ConfigSerializer:
             )
 
     @staticmethod
-    def from_yaml(file_path: Path) -> Dict:
+    def from_yaml(file_path: Path) -> dict:
         """Load configuration from YAML file"""
         with open(file_path) as f:
             return yaml.safe_load(f)
@@ -531,7 +531,7 @@ class YamlHandler:
     """Class to handle YAML file operations for serializable objects"""
 
     @staticmethod
-    def to_yaml(data: Dict, file_path: Path):
+    def to_yaml(data: dict, file_path: Path):
         """Save configuration to YAML file"""
 
         # Convert Python types to simple types
@@ -559,7 +559,7 @@ class YamlHandler:
             )
 
     @staticmethod
-    def from_yaml(file_path: Path) -> Dict:
+    def from_yaml(file_path: Path) -> dict:
         """Load configuration from YAML file"""
         with open(file_path) as f:
             return yaml.safe_load(f)

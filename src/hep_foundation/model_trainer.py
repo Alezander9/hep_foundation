@@ -3,7 +3,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -21,7 +21,7 @@ class TrainingConfig:
     batch_size: int
     epochs: int
     learning_rate: float
-    early_stopping: Dict[str, Any]
+    early_stopping: dict[str, Any]
     plot_training: bool
 
     def __init__(
@@ -171,14 +171,14 @@ class ModelTrainer:
                 else (x[0], x[0])
             )
 
-    def _update_metrics_history(self, epoch_metrics: Dict) -> None:
+    def _update_metrics_history(self, epoch_metrics: dict) -> None:
         """Update metrics history with new epoch results"""
         for metric_name, value in epoch_metrics.items():
             if metric_name not in self.metrics_history:
                 self.metrics_history[metric_name] = []
             self.metrics_history[metric_name].append(float(value))
 
-    def get_training_summary(self) -> Dict[str, Any]:
+    def get_training_summary(self) -> dict[str, Any]:
         """Get comprehensive training summary with all metrics and history"""
         if not self.metrics_history:
             return {
@@ -220,10 +220,10 @@ class ModelTrainer:
         self,
         dataset: tf.data.Dataset,
         validation_data: Optional[tf.data.Dataset] = None,
-        callbacks: List[tf.keras.callbacks.Callback] = None,
+        callbacks: list[tf.keras.callbacks.Callback] = None,
         plot_training: bool = False,
         plots_dir: Optional[Path] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Train with enhanced metrics tracking and optional plotting"""
         logging.info("Starting training with metrics tracking:")
 
@@ -365,7 +365,7 @@ class ModelTrainer:
 
             traceback.print_exc()
 
-    def evaluate(self, dataset: tf.data.Dataset) -> Dict[str, float]:
+    def evaluate(self, dataset: tf.data.Dataset) -> dict[str, float]:
         """Evaluate with enhanced metrics tracking"""
         if self.model.model is None:
             raise ValueError("Model not built yet")
