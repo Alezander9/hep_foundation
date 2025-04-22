@@ -1,0 +1,52 @@
+[project]
+name = "hep-foundation"
+version = "0.1.0"
+description = "A python package for training foundation models on high energy physics data"
+readme = "README.md"
+requires-python = ">=3.9"
+
+authors = [
+    { name="Alexander Yue", email="alexyue@stanford.edu" },
+]
+
+
+dependencies = [
+    "numpy==1.24.3",
+    "psutil>=7.0.0",
+    "pyyaml>=6.0.2",
+    "qkeras>=0.9.0",
+    "requests>=2.32.3",
+    "seaborn>=0.13.2",
+    "tensorflow==2.13.1",
+    "tqdm>=4.67.1",
+    "uproot>=5.6.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/Alezander9/hep-foundation"
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.11.6,<0.12.0",
+]
+
+[tool.ruff]
+# Same as Black.
+line-length = 88
+
+[tool.ruff.lint]
+# Enable Pyflakes (F) and pycodestyle (E) and isort (I) and pyupgrade (UP) codes by default.
+# See https://docs.astral.sh/ruff/rules/
+select = ["E", "F", "I", "UP"]
+ignore = []
+
+# Allow unused variables when starting with underscores.
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.format]
+# Like Black, use double quotes for strings.
+quote-style = "double"
+# Like Black, indent with spaces, rather than tabs.
+indent-style = "space"
+# Like Black, automatically detect the appropriate line ending.
+line-ending = "auto"

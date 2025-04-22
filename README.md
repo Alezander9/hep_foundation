@@ -3,15 +3,19 @@
 ML tools for High Energy Physics analysis, focusing on ATLAS PHYSLITE data processing and autoencoder training.
 
 ## Quick Start
+
 ```bash
-Clone repository
+# Clone repository
 git clone https://github.com/Alezander9/hep_foundation
 cd hep_foundation
-Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate # On Windows: venv\Scripts\activate
-Install package
-pip install -e .
+
+# Create and activate virtual environment using uv
+# Requires uv to be installed (e.g., pip install uv or via package manager)
+uv venv --python 3.9  # Specify your desired Python version
+source .venv/bin/activate # On Windows: .venv\\Scripts\\activate
+
+# Install package in editable mode
+uv pip install -e .
 ```
 
 ## Usage
@@ -60,11 +64,38 @@ python scripts/model_pipeline.py
 - `processed_datasets/`: Storage for processed datasets
 
 ## Dependencies
-Core requirements are handled by setup.py. For development:
+Core requirements are automatically handled by `uv pip install -e .` using `pyproject.toml`.
+
+For development dependencies (like linters, testing tools), ensure they are listed under `[project.optional-dependencies]` in `pyproject.toml` (e.g., in a group named `dev`) and install them using:
 
 ```bash
-pip install -e ".[dev]"
+uv pip install -e ".[dev]"
 ```
+
+To add a new runtime dependency:
+```bash
+uv add <package_name>  # e.g., uv add numpy==1.24.3
+```
+
+To add a new development dependency:
+```bash
+uv add --dev <package_name> # e.g., uv add --dev pytest
+```
+
+## Code Quality
+
+This project uses [Ruff](https://docs.astral.sh/ruff/) for linting and formatting.
+
+- **Check Code**: To check for linting errors and style issues, run:
+  ```bash
+  uv run ruff check .
+  ```
+- **Format Code**: To automatically format the code according to the project's style guide, run:
+  ```bash
+  uv run ruff format .
+  ```
+
+It's recommended to run these commands after making significant changes and before committing code.
 
 ## Data Access
 The package automatically handles ATLAS PHYSLITE data download from CERN OpenData.

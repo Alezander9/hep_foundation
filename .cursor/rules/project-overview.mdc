@@ -1,0 +1,24 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# HEP Foundation Project Overview
+
+This project analyzes High Energy Physics data, specifically ATLAS PHYSLITE data.
+
+## Structure & Tooling
+
+- **Layout**: Uses the `src` layout. Core package code is in [`src/hep_foundation`](mdc:src/hep_foundation).
+- **Package Management**: Uses [`uv`](mdc:https:/github.com/astral-sh/uv) for virtual environments and package installation.
+  - Create environment: `uv venv`
+  - Activate environment: `source .venv/bin/activate`
+  - Install package for development: `uv pip install -e .`
+  - Add runtime dependency: `uv add <package>`
+  - Add development dependency: `uv add --dev <package>`
+  - IMPORTANT: avoid `uv pip install <package>` in favor of `uv add [--dev] <package>`
+- **Linting & Formatting**: Uses [`ruff`](mdc:https:/docs.astral.sh/ruff) for linting and formatting. Run `uv run ruff check .` to check for issues and `uv run ruff format .` to format code after making significant changes.
+- **Configuration**: Project metadata and dependencies are defined in [`pyproject.toml`](mdc:pyproject.toml).
+- **Scripts**: Example usage scripts are located in the [`scripts/`](mdc:scripts) directory.
+- **Requirements**: Core dependencies are listed in [`pyproject.toml`](mdc:pyproject.toml). Development dependencies should be under `[project.optional-dependencies.dev]`.
+- **README**: For setup and basic usage, refer to [`README.md`](mdc:README.md).

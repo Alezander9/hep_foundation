@@ -1,4 +1,4 @@
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 setup(
     name="hep_foundation",
@@ -11,43 +11,36 @@ setup(
         "tensorflow>=2.13.1",
         "qkeras>=0.9.0",  # For quantized neural networks
         "pandas>=2.2.3",  # Used in registry inspector and data management
-        
         # Data handling and processing
         "uproot>=5.5.1",  # For ROOT file handling
-        "h5py>=3.12.1",   # For HDF5 dataset storage
-        "awkward>=2.7.2", # Required for some uproot operations
-        
+        "h5py>=3.12.1",  # For HDF5 dataset storage
+        "awkward>=2.7.2",  # Required for some uproot operations
         # Visualization
         "matplotlib>=3.9.4",
         "seaborn>=0.13.0",  # Added seaborn
-        "pydot>=1.4.2",         # Added for network visualization
-        "graphviz>=0.20.1",     # Added for graph creation
-        
+        "pydot>=1.4.2",  # Added for network visualization
+        "graphviz>=0.20.1",  # Added for graph creation
         # Progress bars and utilities
         "tqdm>=4.67.1",
-        
         # System utilities
         "psutil>=6.1.0",  # For system resource monitoring
-        
         # Data formats and storage
         "pyyaml>=6.0.2",  # For YAML file handling
-        
         # HTTP requests
         "requests>=2.32.3",  # For downloading ATLAS data
     ],
     extras_require={
-        'dev': [
-            'pytest',          # For testing
-            'ipykernel',      # For notebook development
-            'jupyter',        # For notebook development
+        "dev": [
+            "pytest",  # For testing
+            "ipykernel",  # For notebook development
+            "jupyter",  # For notebook development
         ],
-        'docs': [
-            'sphinx',         # For documentation
-            'sphinx-rtd-theme'
-        ]
+        "docs": [
+            "sphinx",  # For documentation
+            "sphinx-rtd-theme",
+        ],
     },
     python_requires=">=3.7",
-    
     # Metadata
     author="Your Name",
     author_email="your.email@example.com",
