@@ -13,13 +13,9 @@ from hep_foundation.utils import ATLAS_RUN_NUMBERS
 def create_configs(model_type: str = "vae") -> dict[str, Any]:
     """Create configuration objects for the model pipeline"""
 
-    # Create TaskConfig with the new structure
     task_config = TaskConfig.create_from_branch_names(
-        # No event filters for now
         event_filter_dict={},
-        # Input features - empty list since we only have aggregators
         input_features=[],
-        # Input array aggregators with separated selectors and filters
         input_array_aggregators=[
             {
                 "input_branches": [
@@ -46,9 +42,7 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
                 "max_length": 30,
             }
         ],
-        # Empty label features list
         label_features=[[]],
-        # Modified label array aggregator
         label_array_aggregators=[
             [
                 {
@@ -57,8 +51,8 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
                         "MET_Core_AnalysisMETAuxDyn.mpy",
                         "MET_Core_AnalysisMETAuxDyn.sumet",
                     ],
-                    "filter_branches": [],  # Add empty filter list
-                    "sort_by_branch": None,  # Explicitly set to None
+                    "filter_branches": [],  
+                    "sort_by_branch": None,
                     "min_length": 1,
                     "max_length": 1,
                 }
@@ -66,7 +60,6 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
         ],
     )
 
-    # Simplified DatasetConfig without track/event selections
     dataset_config = DatasetConfig(
         run_numbers=ATLAS_RUN_NUMBERS[-3:],
         signal_keys=["zprime", "wprime_qq", "zprime_bb"],
@@ -84,7 +77,6 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
     vae_model_config = {
         "model_type": "variational_autoencoder",
         "architecture": {
-            # Input and output shapes are automatically set in the model pipeline
             "latent_dim": 32,
             "encoder_layers": [192, 128, 96],
             "decoder_layers": [96, 128, 192],

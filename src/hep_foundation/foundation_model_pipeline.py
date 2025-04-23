@@ -12,6 +12,11 @@ from hep_foundation.model_registry import ModelRegistry
 from hep_foundation.model_trainer import ModelTrainer, TrainingConfig
 from hep_foundation.plot_utils import plot_combined_training_histories
 from hep_foundation.task_config import TaskConfig
+from hep_foundation.variational_autoencoder import (
+    AnomalyDetectionEvaluator,
+    VariationalAutoEncoder,
+    VAEConfig,
+)
 
 
 class FoundationModelPipeline:
@@ -91,7 +96,15 @@ class FoundationModelPipeline:
                 delete_catalogs=delete_catalogs,
             )
         elif process_name == "anomaly":
-            return self.evaluate_foundation_model_anomaly_detection()
+            return self.evaluate_foundation_model_anomaly_detection(
+                dataset_config=dataset_config,
+                task_config=task_config,
+                experiment_name=experiment_name,
+                experiment_description=experiment_description,
+                delete_catalogs=delete_catalogs,
+                foundation_model_path=foundation_model_path,
+                vae_training_config=vae_training_config,
+            )
         elif process_name == "regression":
             return self.evaluate_foundation_model_regression(
                 dataset_config=dataset_config,
@@ -350,24 +363,237 @@ class FoundationModelPipeline:
             logging.error("Error context:")
             raise
 
-    def evaluate_foundation_model_anomaly_detection(self):
+    def evaluate_foundation_model_anomaly_detection(
+        self,
+        dataset_config: DatasetConfig,
+        task_config: TaskConfig,
+        experiment_name: str = None,
+        experiment_description: str = None,
+        delete_catalogs: bool = True,
+        foundation_model_path: str = None,
+        vae_training_config: TrainingConfig = None,
+        eval_batch_size: int = 1024
+    ):
         """
-        Evaluate a foundation model for anomaly detection.
+        Evaluate a trained foundation model (VAE) for anomaly detection.
 
-        This method will:
-        1. Load a trained foundation model
-        2. Load test and signal datasets
-        3. Evaluate the model's anomaly detection performance
-        4. Save the evaluation results
+        Loads a pre-trained VAE, test/signal datasets, performs evaluation,
+        and saves results directly in the foundation model's experiment directory.
         """
         logging.info("=" * 100)
         logging.info("Evaluating Foundation Model for Anomaly Detection")
         logging.info("=" * 100)
 
-        # TODO: Implement anomaly detection evaluation
-        logging.info("Hello World from evaluate_foundation_model_anomaly_detection!")
+        if not foundation_model_path:
+            logging.error("Foundation model path must be provided for anomaly evaluation.")
+            return False
 
-        return True
+        foundation_model_path = Path(foundation_model_path)
+        model_weights_path = foundation_model_path / "models" / "foundation_model" / "full_model"
+        config_path = foundation_model_path / "experiment_data.json"
+
+        if not model_weights_path.exists():
+            model_weights_path_h5 = model_weights_path.with_suffix(".weights.h5")
+            if model_weights_path_h5.exists():
+                model_weights_path = model_weights_path_h5
+                logging.info("Found model weights with .h5 extension.")
+            else:
+                logging.error(f"Foundation model weights not found at: {model_weights_path} or {model_weights_path_h5}")
+                return False
+
+        if not config_path.exists():
+            logging.error(f"Foundation model experiment data not found at: {config_path}")
+            return False
+
+        try:
+            # Initialize registry
+            registry = ModelRegistry(str(self.experiment_dir))
+            logging.info(f"Registry initialized at: {registry.db_path}")
+
+            # 1. Load original model configuration and experiment ID
+            logging.info(f"Loading original model config from: {config_path}")
+            with open(config_path, 'r') as f:
+                original_experiment_data = json.load(f)
+
+            # Get the experiment ID from the foundation model path
+            foundation_experiment_id = foundation_model_path.name
+
+            # Navigate potential nested structure if saved via registry's complete_training
+            if "experiment_info" in original_experiment_data and "model_config" in original_experiment_data["experiment_info"]:
+                original_model_config = original_experiment_data["experiment_info"]["model_config"]
+            elif "model_config" in original_experiment_data:
+                original_model_config = original_experiment_data["model_config"]
+            else:
+                logging.error(f"Could not find 'model_config' in experiment data: {config_path}")
+                return False
+
+            if not original_model_config or original_model_config.get("model_type") != "variational_autoencoder":
+                logging.error(f"Loaded config is not for a variational_autoencoder: {config_path}")
+                return False
+
+            # 2. Load Datasets
+            logging.info("Initializing Dataset Manager...")
+            data_manager = DatasetManager()
+
+            # Use eval_batch_size or derive from vae_training_config if provided
+            batch_size = eval_batch_size
+            if vae_training_config:
+                try:
+                    batch_size = vae_training_config.batch_size
+                    logging.info(f"Using batch size from provided VAE training config: {batch_size}")
+                except AttributeError:
+                    logging.warning("Provided vae_training_config lacks batch_size, using default.")
+            else:
+                logging.info(f"Using default evaluation batch size: {batch_size}")
+
+            # Load test dataset (background) and signal datasets
+            logging.info("Loading background (test) dataset...")
+            _, _, test_dataset = data_manager.load_atlas_datasets(
+                dataset_config=dataset_config,
+                validation_fraction=0.0,
+                test_fraction=1.0,
+                batch_size=batch_size,
+                shuffle_buffer=dataset_config.shuffle_buffer,
+                include_labels=False,
+                delete_catalogs=delete_catalogs,
+            )
+            logging.info("Loaded background (test) dataset.")
+            background_dataset_id = data_manager.get_current_dataset_id()
+
+            signal_datasets = {}
+            if dataset_config.signal_keys:
+                logging.info("Loading signal datasets...")
+                signal_datasets = data_manager.load_signal_datasets(
+                    dataset_config=dataset_config,
+                    batch_size=batch_size,
+                    include_labels=False,
+                )
+                logging.info(f"Loaded {len(signal_datasets)} signal datasets.")
+            else:
+                logging.warning("No signal keys provided in dataset_config. Anomaly detection evaluation will only use background.")
+
+            # 3. Create and Load Model
+            logging.info("Instantiating VAE model from loaded configuration...")
+
+            # Ensure input_shape is present in the loaded config
+            if "input_shape" not in original_model_config["architecture"]:
+                logging.warning("Input shape missing in loaded model config, deriving from task_config.")
+                input_shape = (task_config.input.get_total_feature_size(),)
+                if input_shape[0] is None or input_shape[0] <= 0:
+                    logging.error("Could not determine a valid input shape from task_config.")
+                    return False
+                original_model_config["architecture"]["input_shape"] = list(input_shape)
+
+            # Ensure hyperparameters like beta_schedule are present
+            if "hyperparameters" not in original_model_config:
+                original_model_config["hyperparameters"] = {}
+            if "beta_schedule" not in original_model_config["hyperparameters"]:
+                logging.warning("beta_schedule missing in loaded config, using default.")
+                original_model_config["hyperparameters"]["beta_schedule"] = {
+                    "start": 0.0, "end": 1.0, "warmup_epochs": 0, "cycle_epochs": 0
+                }
+
+            # Create VAE model
+            vae_config = VAEConfig(
+                model_type=original_model_config["model_type"],
+                architecture=original_model_config["architecture"],
+                hyperparameters=original_model_config["hyperparameters"]
+            )
+            model = VariationalAutoEncoder(config=vae_config)
+            model.build(input_shape=tuple(original_model_config["architecture"]["input_shape"]))
+            
+            # Load weights
+            logging.info(f"Loading model weights from: {model_weights_path}")
+            try:
+                model.model.load_weights(str(model_weights_path))
+                logging.info("VAE model loaded successfully.")
+                logging.info(model.model.summary())
+            except Exception as e:
+                logging.error(f"Failed to load model weights: {str(e)}")
+                return False
+
+            # 4. Run Anomaly Detection Evaluation directly on the foundation model's directory
+            logging.info("Running anomaly detection evaluation...")
+            
+            # Create testing/anomaly_detection directory in the foundation model directory
+            testing_path = foundation_model_path / "testing"
+            testing_path.mkdir(parents=True, exist_ok=True)
+            anomaly_dir = testing_path / "anomaly_detection"
+            anomaly_dir.mkdir(parents=True, exist_ok=True)
+            plots_dir = anomaly_dir / "plots"
+            plots_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Manual implementation similar to AnomalyDetectionEvaluator but using foundation model's directory
+            # First log dataset info
+            logging.info("Dataset information before testing:")
+            for batch in test_dataset:
+                if isinstance(batch, tuple):
+                    features, _ = batch
+                    logging.info(f"Background test dataset batch shape: {features.shape}")
+                else:
+                    logging.info(f"Background test dataset batch shape: {batch.shape}")
+                break
+
+            for signal_name, signal_dataset in signal_datasets.items():
+                for batch in signal_dataset:
+                    if isinstance(batch, tuple):
+                        features, _ = batch
+                        logging.info(f"{signal_name} signal dataset batch shape: {features.shape}")
+                    else:
+                        logging.info(f"{signal_name} signal dataset batch shape: {batch.shape}")
+                    break
+            
+            # Create custom evaluator that will use the foundation model's directory
+            evaluator = AnomalyDetectionEvaluator(
+                model=model,
+                test_dataset=test_dataset,
+                signal_datasets=signal_datasets,
+                experiment_id=foundation_experiment_id,
+                base_path=self.experiment_dir
+            )
+            
+            # Run the evaluation
+            evaluation_results = evaluator.run_anomaly_detection_test()
+            
+            # 5. Display Results
+            logging.info("=" * 100)
+            logging.info("Anomaly Detection Results")
+            logging.info("=" * 100)
+            
+            experiment_data = registry.get_experiment_data(foundation_experiment_id)
+            logging.info(f"Foundation Model ID: {foundation_experiment_id}")
+
+            # Display anomaly detection specific results
+            if "test_results" in experiment_data and "anomaly_detection" in experiment_data["test_results"]:
+                anomaly_results = experiment_data["test_results"]["anomaly_detection"]
+                logging.info(f"Timestamp: {anomaly_results.get('timestamp')}")
+                logging.info(f"Background Events: {anomaly_results.get('background_events')}")
+                logging.info(f"Plots Directory: {anomaly_results.get('plots_directory')}")
+                
+                if "signal_results" in anomaly_results:
+                    logging.info("Signal Results:")
+                    for signal_name, results in anomaly_results["signal_results"].items():
+                        logging.info(f"  Signal: {signal_name} (Events: {results.get('n_events')})")
+                        if "reconstruction_metrics" in results:
+                            recon_metrics = results["reconstruction_metrics"]
+                            logging.info(f"    Reconstruction Metrics:")
+                            logging.info(f"      AUC: {recon_metrics.get('roc_auc', 'N/A'):.4f}")
+                            logging.info(f"      Separation: {recon_metrics.get('separation', 'N/A'):.4f}")
+                        if "kl_divergence_metrics" in results:
+                            kl_metrics = results["kl_divergence_metrics"]
+                            logging.info(f"    KL Divergence Metrics:")
+                            logging.info(f"      AUC: {kl_metrics.get('roc_auc', 'N/A'):.4f}")
+                            logging.info(f"      Separation: {kl_metrics.get('separation', 'N/A'):.4f}")
+            else:
+                logging.warning("No anomaly detection results found in experiment data.")
+
+            logging.info("Anomaly detection evaluation completed successfully")
+            return True
+
+        except Exception as e:
+            logging.error(f"Anomaly detection evaluation failed: {type(e).__name__}: {str(e)}")
+            logging.exception("Detailed traceback:")
+            return False
 
     def evaluate_foundation_model_regression(
         self,
