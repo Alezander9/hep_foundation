@@ -7,7 +7,11 @@ import requests
 from tqdm import tqdm
 
 from hep_foundation.config.logging_config import setup_logging
-from hep_foundation.utils.utils import ATLAS_CATALOG_COUNTS, SIGNAL_CATALOGS
+from hep_foundation.data.atlas_data import (
+    get_catalog_count,
+    get_signal_catalog,
+    get_signal_catalog_keys,
+)
 
 
 class ATLASFileManager:
@@ -29,8 +33,8 @@ class ATLASFileManager:
         self.catalog_counts = {}  # For ATLAS data
         self.signal_catalog_counts = {}  # For signal data
 
-        # Signal types mapping
-        self.signal_types = SIGNAL_CATALOGS
+        # Signal types mapping - get from atlas_data module
+        self.signal_types = {key: get_signal_catalog(key) for key in get_signal_catalog_keys()}
 
     def get_version(self) -> str:
         """Return the version of the ATLASFileManager"""
@@ -46,7 +50,7 @@ class ATLASFileManager:
         Returns:
             Number of available catalog files
         """
-        return ATLAS_CATALOG_COUNTS[run_number]
+        return get_catalog_count(run_number)
 
     def download_run_catalog(self, run_number: str, index: int = 0) -> Optional[Path]:
         """

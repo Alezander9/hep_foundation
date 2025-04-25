@@ -9,8 +9,8 @@ import numpy as np
 import tensorflow as tf
 import uproot
 
-from hep_foundation.data.atlas_file_manager import ATLASFileManager
 from hep_foundation.config.logging_config import setup_logging
+from hep_foundation.data.atlas_file_manager import ATLASFileManager
 from hep_foundation.data.task_config import (
     PhysliteFeatureArrayAggregator,
     PhysliteFeatureArrayFilter,

@@ -5,18 +5,18 @@ from pathlib import Path
 import numpy as np
 import tensorflow as tf
 
-from hep_foundation.data.dataset_manager import DatasetConfig, DatasetManager
 from hep_foundation.config.logging_config import setup_logging
+from hep_foundation.data.dataset_manager import DatasetConfig, DatasetManager
+from hep_foundation.data.task_config import TaskConfig
 from hep_foundation.models.model_factory import ModelFactory
 from hep_foundation.models.model_registry import ModelRegistry
-from hep_foundation.training.model_trainer import ModelTrainer, TrainingConfig
-from hep_foundation.utils.plot_utils import plot_combined_training_histories
-from hep_foundation.data.task_config import TaskConfig
 from hep_foundation.models.variational_autoencoder import (
     AnomalyDetectionEvaluator,
-    VariationalAutoEncoder,
     VAEConfig,
+    VariationalAutoEncoder,
 )
+from hep_foundation.training.model_trainer import ModelTrainer, TrainingConfig
+from hep_foundation.utils.plot_utils import plot_combined_training_histories
 
 
 class FoundationModelPipeline:
@@ -412,7 +412,7 @@ class FoundationModelPipeline:
 
             # 1. Load original model configuration and experiment ID
             logging.info(f"Loading original model config from: {config_path}")
-            with open(config_path, 'r') as f:
+            with open(config_path) as f:
                 original_experiment_data = json.load(f)
 
             # Get the experiment ID from the foundation model path
@@ -458,7 +458,7 @@ class FoundationModelPipeline:
                 delete_catalogs=delete_catalogs,
             )
             logging.info("Loaded background (test) dataset.")
-            background_dataset_id = data_manager.get_current_dataset_id()
+            data_manager.get_current_dataset_id()
 
             signal_datasets = {}
             if dataset_config.signal_keys:
@@ -553,7 +553,7 @@ class FoundationModelPipeline:
             )
             
             # Run the evaluation
-            evaluation_results = evaluator.run_anomaly_detection_test()
+            evaluator.run_anomaly_detection_test()
             
             # 5. Display Results
             logging.info("=" * 100)
@@ -576,12 +576,12 @@ class FoundationModelPipeline:
                         logging.info(f"  Signal: {signal_name} (Events: {results.get('n_events')})")
                         if "reconstruction_metrics" in results:
                             recon_metrics = results["reconstruction_metrics"]
-                            logging.info(f"    Reconstruction Metrics:")
+                            logging.info("    Reconstruction Metrics:")
                             logging.info(f"      AUC: {recon_metrics.get('roc_auc', 'N/A'):.4f}")
                             logging.info(f"      Separation: {recon_metrics.get('separation', 'N/A'):.4f}")
                         if "kl_divergence_metrics" in results:
                             kl_metrics = results["kl_divergence_metrics"]
-                            logging.info(f"    KL Divergence Metrics:")
+                            logging.info("    KL Divergence Metrics:")
                             logging.info(f"      AUC: {kl_metrics.get('roc_auc', 'N/A'):.4f}")
                             logging.info(f"      Separation: {kl_metrics.get('separation', 'N/A'):.4f}")
             else:

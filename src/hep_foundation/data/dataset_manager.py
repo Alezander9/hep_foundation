@@ -14,8 +14,8 @@ import pandas as pd
 import seaborn as sns
 import tensorflow as tf
 
-from hep_foundation.data.atlas_file_manager import ATLASFileManager
 from hep_foundation.config.logging_config import setup_logging
+from hep_foundation.data.atlas_file_manager import ATLASFileManager
 from hep_foundation.data.physlite_feature_processor import PhysliteFeatureProcessor
 from hep_foundation.data.task_config import TaskConfig
 from hep_foundation.utils.utils import ConfigSerializer

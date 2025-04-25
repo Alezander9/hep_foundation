@@ -5,10 +5,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from hep_foundation.data.task_config import TaskConfig
-from hep_foundation.utils.utils import ATLAS_RUN_NUMBERS
+from hep_foundation.data.atlas_data import get_run_numbers
 from hep_foundation.data.dataset_manager import DatasetConfig
+from hep_foundation.data.task_config import TaskConfig
 from hep_foundation.training.model_trainer import TrainingConfig
+
 
 def create_configs(model_type: str = "vae") -> dict[str, Any]:
     """Create configuration objects for the model pipeline"""
@@ -60,9 +61,12 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
         ],
     )
 
+    # Get run numbers from the new atlas_data module
+    run_numbers = get_run_numbers()
+    
     dataset_config = DatasetConfig(
-        run_numbers=ATLAS_RUN_NUMBERS[-1:],
-        # run_numbers=ATLAS_RUN_NUMBERS[-3:],
+        run_numbers=run_numbers[-1:],
+        # run_numbers=run_numbers[-3:],
         signal_keys=["zprime", "wprime_qq", "zprime_bb"],
         catalog_limit=2,
         # catalog_limit=20,

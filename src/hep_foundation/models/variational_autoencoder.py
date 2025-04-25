@@ -12,8 +12,8 @@ from qkeras import QActivation, QDense, quantized_bits, quantized_relu
 from sklearn.metrics import auc, roc_curve
 from tensorflow import keras
 
-from hep_foundation.models.base_model import BaseModel, ModelConfig
 from hep_foundation.config.logging_config import setup_logging
+from hep_foundation.models.base_model import BaseModel, ModelConfig
 from hep_foundation.utils.plot_utils import (
     MARKER_SIZES,
     get_color_cycle,

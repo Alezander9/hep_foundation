@@ -9,9 +9,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 
+from hep_foundation.config.logging_config import setup_logging
 from hep_foundation.models.base_model import BaseModel
 from hep_foundation.models.dnn_predictor import DNNPredictor
-from hep_foundation.config.logging_config import setup_logging
 
 
 @dataclass

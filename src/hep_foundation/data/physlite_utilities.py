@@ -1,8 +1,8 @@
-import logging
 import json
-from importlib import resources
+import logging
 from enum import Enum
-from typing import Any, Optional, Dict, List, Tuple, Union
+from importlib import resources
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ def get_branch_info(
         category, feature = branch_name.split(".", 1)
 
     # Check if the branch exists in the loaded dictionary
-    branch_info: Optional[Dict[str, Any]] = None
+    branch_info: Optional[dict[str, Any]] = None
     if category:
         if category in PHYSLITE_BRANCHES and feature in PHYSLITE_BRANCHES[category]:
             branch_info = PHYSLITE_BRANCHES[category][feature]
@@ -91,8 +91,8 @@ def get_branch_info(
         )
         return False, BranchType.UNKNOWN, None
 
-    dtype_str = branch_info.get("dtype", "unknown")
-    shape = branch_info.get("shape", None)
+    branch_info.get("dtype", "unknown")
+    branch_info.get("shape", None)
 
     # Determine branch type from shape information
     branch_type = _determine_branch_type(branch_info)

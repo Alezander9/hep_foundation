@@ -46,41 +46,5 @@ Completed step 1 and updated readme.
 Completed step 2 and updated readme.
 Completed step 3 and updated readme.
 Completed step 4 (Ruff setup): Added ruff as dev dependency, configured in pyproject.toml, ran initial format. Ran `uv run ruff check . --fix --unsafe-fixes` to fix deprecated type hints. Added `E501` (line length) to ignored rules in `pyproject.toml`. Updated README with Ruff usage. Fixed all ruff problems
+Completed step 5 (Code Organization): Created directory structure (`src/hep_foundation/{data,models,training,config,utils}`) and moved files. Updated README (pending).
 </scratchpad>
-
-
-<proposedstructure>
-src/hep_foundation/
-├── __init__.py
-├── data/
-│   ├── __init__.py
-│   ├── manager.py             # (was dataset_manager.py)
-│   ├── processor.py           # (was physlite_feature_processor.py)
-│   ├── atlas_files.py       # (was atlas_file_manager.py)
-│   ├── physlite.py            # (was physlite_utilities.py)
-│   ├── branches.json          # (physlite_branch_index.json)
-│   └── ... (maybe break down processor/physlite further)
-├── models/
-│   ├── __init__.py
-│   ├── base.py                # (was base_model.py)
-│   ├── factory.py             # (was model_factory.py)
-│   ├── registry.py            # (was model_registry.py)
-│   ├── autoencoder.py         # (was autoencoder.py)
-│   ├── vae.py                 # (was variational_autoencoder.py)
-│   ├── dnn_predictor.py     # (was dnn_predictor.py)
-│   └── ...
-├── training/
-│   ├── __init__.py
-│   ├── trainer.py             # (was model_trainer.py)
-│   ├── pipeline.py            # (was foundation_model_pipeline.py)
-│   ├── ...
-├── config/
-│   ├── __init__.py
-│   ├── tasks.py               # (was task_config.py)
-│   ├── logging.py             # (was logging_config.py)
-├── utils/
-│   ├── __init__.py
-│   ├── plotting.py            # (was plot_utils.py)
-│   ├── general.py             # (was utils.py)
-│   └── ...
-</proposedstructure>
