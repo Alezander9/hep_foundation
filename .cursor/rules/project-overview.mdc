@@ -17,6 +17,7 @@ This project analyzes High Energy Physics data, specifically ATLAS PHYSLITE data
   - Add runtime dependency: `uv add <package>`
   - Add development dependency: `uv add --dev <package>`
   - IMPORTANT: avoid `uv pip install <package>` in favor of `uv add [--dev] <package>`
+  - IMPORTANT: try to use `uv` commands instead of directly editing `pyproject.toml` to ensure the .venv does not desync
 - **Linting & Formatting**: Uses [`ruff`](mdc:https:/docs.astral.sh/ruff) for linting and formatting. Run `uv run ruff check .` to check for issues and `uv run ruff format .` to format code after making significant changes.
 - **Configuration**: Project metadata and dependencies are defined in [`pyproject.toml`](mdc:pyproject.toml).
 - **Scripts**: Example usage scripts are located in the [`scripts/`](mdc:scripts) directory.

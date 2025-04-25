@@ -48,3 +48,7 @@ Completed step 3 and updated readme.
 Completed step 4 (Ruff setup): Added ruff as dev dependency, configured in pyproject.toml, ran initial format. Ran `uv run ruff check . --fix --unsafe-fixes` to fix deprecated type hints. Added `E501` (line length) to ignored rules in `pyproject.toml`. Updated README with Ruff usage. Fixed all ruff problems
 Completed step 5 (Code Organization): Created directory structure (`src/hep_foundation/{data,models,training,config,utils}`) and moved files. Updated README (pending).
 </scratchpad>
+
+<testingplan>
+
+</testingplan>
