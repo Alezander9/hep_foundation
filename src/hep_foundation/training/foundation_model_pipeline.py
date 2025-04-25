@@ -5,14 +5,14 @@ from pathlib import Path
 import numpy as np
 import tensorflow as tf
 
-from hep_foundation.dataset_manager import DatasetConfig, DatasetManager
-from hep_foundation.logging_config import setup_logging
-from hep_foundation.model_factory import ModelFactory
-from hep_foundation.model_registry import ModelRegistry
-from hep_foundation.model_trainer import ModelTrainer, TrainingConfig
-from hep_foundation.plot_utils import plot_combined_training_histories
-from hep_foundation.task_config import TaskConfig
-from hep_foundation.variational_autoencoder import (
+from hep_foundation.data.dataset_manager import DatasetConfig, DatasetManager
+from hep_foundation.config.logging_config import setup_logging
+from hep_foundation.models.model_factory import ModelFactory
+from hep_foundation.models.model_registry import ModelRegistry
+from hep_foundation.training.model_trainer import ModelTrainer, TrainingConfig
+from hep_foundation.utils.plot_utils import plot_combined_training_histories
+from hep_foundation.data.task_config import TaskConfig
+from hep_foundation.models.variational_autoencoder import (
     AnomalyDetectionEvaluator,
     VariationalAutoEncoder,
     VAEConfig,
@@ -711,12 +711,31 @@ class FoundationModelPipeline:
             if foundation_model_path:
                 # Load from specified path
                 foundation_model_path = Path(foundation_model_path)
+                encoder_path = foundation_model_path / "models" / "foundation_model" / "encoder"
                 logging.info(
-                    f"Loaded foundation model encoder from: {foundation_model_path}/models/foundation_model/encoder"
+                    f"Loading foundation model encoder from: {encoder_path}"
                 )
-                foundation_model = tf.keras.models.load_model(
-                    f"{foundation_model_path}/models/foundation_model/encoder"
-                )
+                foundation_model = tf.keras.models.load_model(encoder_path)
+                # Get the output shape(s) from the loaded encoder
+                encoder_output_shape = foundation_model.output_shape
+                logging.info(f"Encoder raw output shape: {encoder_output_shape}")
+
+                # Check if the output shape is a list (multiple outputs) or a single tuple
+                if isinstance(encoder_output_shape, list):
+                    # Assuming the first output is the desired latent representation (e.g., z_mean for VAE)
+                    target_output_shape = encoder_output_shape[0]
+                    logging.info(f"Using first output shape from list: {target_output_shape}")
+                elif isinstance(encoder_output_shape, tuple):
+                    # Single output case
+                    target_output_shape = encoder_output_shape
+                else:
+                    raise TypeError(f"Unexpected encoder output shape type: {type(encoder_output_shape)}")
+
+                # The shape might be (None, latent_dim), so we take the last element
+                latent_dim = target_output_shape[-1]
+                if not isinstance(latent_dim, int) or latent_dim <= 0:
+                    raise ValueError(f"Could not determine a valid latent dimension from target output shape: {target_output_shape}")
+                logging.info(f"Determined encoder latent dimension: {latent_dim}")
             else:
                 raise ValueError("No foundation model path provided")
 
@@ -731,12 +750,12 @@ class FoundationModelPipeline:
                 labels = args[0] if args else None
 
                 # Encode the features
-                encoded_features = foundation_model(features)
+                encoded_features = foundation_model(features, training=False) # Use training=False for inference
 
-                # Handle case where foundation model returns a list
+                # Handle case where foundation model returns a list (e.g., VAE returning [z_mean, z_log_var, z])
+                # We typically want z_mean or z for downstream tasks. Assuming the first element is the desired latent representation.
                 if isinstance(encoded_features, list):
-                    # Take the first element if it's a list (usually the encoded features)
-                    encoded_features = encoded_features[0]
+                    encoded_features = encoded_features[0] # Using z_mean (first output)
 
                 # Return encoded features and labels
                 if labels is not None:
@@ -769,7 +788,7 @@ class FoundationModelPipeline:
                 **dnn_model_config,
                 "architecture": {
                     **dnn_model_config["architecture"],
-                    "input_shape": (16,),  # Latent dimension from foundation model
+                    "input_shape": (latent_dim,),  # Use determined latent dimension
                     "output_shape": (
                         task_config.labels[0].get_total_feature_size(),
                     ),  # Same as baseline model

@@ -5,8 +5,8 @@ import tensorflow as tf
 from qkeras import QActivation, QDense, quantized_bits, quantized_relu
 from tensorflow import keras
 
-from hep_foundation.base_model import BaseModel, ModelConfig
-from hep_foundation.logging_config import setup_logging
+from hep_foundation.models.base_model import BaseModel, ModelConfig
+from hep_foundation.config.logging_config import setup_logging
 
 
 class DNNPredictorConfig(ModelConfig):

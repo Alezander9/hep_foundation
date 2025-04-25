@@ -10,8 +10,8 @@ logger = logging.getLogger(__name__)
 try:
     # Use importlib.resources for robust path finding within the package
     # The path should be relative to the package root (hep_foundation)
-    json_path_str = str(resources.files('hep_foundation').joinpath('physlite_branch_index.json'))
-    with resources.files('hep_foundation').joinpath('physlite_branch_index.json').open('rt') as f:
+    json_path_str = str(resources.files('hep_foundation').joinpath('data/physlite_branch_index.json'))
+    with resources.files('hep_foundation').joinpath('data/physlite_branch_index.json').open('rt') as f:
         data = json.load(f)
         PHYSLITE_BRANCHES = data["physlite_branches"]
         logger.info(f"Successfully loaded PhysLite branch index from {json_path_str}")

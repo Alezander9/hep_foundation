@@ -6,8 +6,8 @@ from typing import Optional
 import requests
 from tqdm import tqdm
 
-from hep_foundation.logging_config import setup_logging
-from hep_foundation.utils import ATLAS_CATALOG_COUNTS, SIGNAL_CATALOGS
+from hep_foundation.config.logging_config import setup_logging
+from hep_foundation.utils.utils import ATLAS_CATALOG_COUNTS, SIGNAL_CATALOGS
 
 
 class ATLASFileManager:

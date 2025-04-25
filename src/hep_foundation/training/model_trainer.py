@@ -9,9 +9,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 
-from hep_foundation.base_model import BaseModel
-from hep_foundation.dnn_predictor import DNNPredictor
-from hep_foundation.logging_config import setup_logging
+from hep_foundation.models.base_model import BaseModel
+from hep_foundation.models.dnn_predictor import DNNPredictor
+from hep_foundation.config.logging_config import setup_logging
 
 
 @dataclass
@@ -310,7 +310,7 @@ class ModelTrainer:
         plots_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            from hep_foundation.plot_utils import (
+            from hep_foundation.utils.plot_utils import (
                 FONT_SIZES,
                 LINE_WIDTHS,
                 get_color_cycle,

@@ -5,7 +5,7 @@ from typing import Any
 
 import requests
 
-from hep_foundation.utils import ATLAS_RUN_NUMBERS
+from hep_foundation.utils.utils import ATLAS_RUN_NUMBERS
 
 
 def check_rate_limiting(run_number: str) -> bool:

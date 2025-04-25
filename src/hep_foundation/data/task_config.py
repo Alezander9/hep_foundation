@@ -2,8 +2,8 @@ import json
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from hep_foundation.logging_config import setup_logging
-from hep_foundation.physlite_utilities import (
+from hep_foundation.config.logging_config import setup_logging
+from hep_foundation.data.physlite_utilities import (
     PhysliteBranch,
     PhysliteFeatureArrayAggregator,
     PhysliteFeatureArrayFilter,

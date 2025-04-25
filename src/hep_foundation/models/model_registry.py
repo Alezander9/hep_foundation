@@ -9,7 +9,7 @@ import numpy as np
 import psutil
 import tensorflow as tf
 
-from hep_foundation.logging_config import setup_logging
+from hep_foundation.config.logging_config import setup_logging
 
 
 class ModelRegistry:

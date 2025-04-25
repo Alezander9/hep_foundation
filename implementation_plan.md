@@ -57,7 +57,8 @@ src/hep_foundation/
 │   ├── manager.py             # (was dataset_manager.py)
 │   ├── processor.py           # (was physlite_feature_processor.py)
 │   ├── atlas_files.py       # (was atlas_file_manager.py)
-│   ├── physlite.py            # (was physlite_utilities.py + physlite_branch_index.py?) - Needs investigation
+│   ├── physlite.py            # (was physlite_utilities.py)
+│   ├── branches.json          # (physlite_branch_index.json)
 │   └── ... (maybe break down processor/physlite further)
 ├── models/
 │   ├── __init__.py
@@ -71,7 +72,7 @@ src/hep_foundation/
 ├── training/
 │   ├── __init__.py
 │   ├── trainer.py             # (was model_trainer.py)
-│   ├── pipeline.py            # (was foundation_model_pipeline.py or model_pipeline.py?) - Needs investigation
+│   ├── pipeline.py            # (was foundation_model_pipeline.py)
 │   ├── ...
 ├── config/
 │   ├── __init__.py

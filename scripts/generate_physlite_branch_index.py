@@ -248,13 +248,13 @@ def save_branch_dictionary(
         # Ensure this import works relative to where the script is run
         # Or adjust sys.path if needed when running the script
         try:
-            from hep_foundation.atlas_file_manager import ATLASFileManager
+            from hep_foundation.data.atlas_file_manager import ATLASFileManager
         except ImportError:
             # Simple fallback if running script directly from scripts/
             import sys
             script_dir = Path(__file__).parent.parent
             sys.path.append(str(script_dir))
-            from hep_foundation.atlas_file_manager import ATLASFileManager
+            from hep_foundation.data.atlas_file_manager import ATLASFileManager
 
 
         atlas_manager = ATLASFileManager()
