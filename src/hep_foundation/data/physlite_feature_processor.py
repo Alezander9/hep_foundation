@@ -444,6 +444,10 @@ class PhysliteFeatureProcessor:
         processed_inputs = []
         processed_labels = []
 
+        # TODO: Here we will take the derived quantity branches and add the branches they depend on to the required branches
+        # If they are not already in the required branches
+        # Actually we might move this logic into the get_required_branches method
+
         # Collect all required branch names
         required_branches = self.get_required_branches(task_config)
 
@@ -478,13 +482,14 @@ class PhysliteFeatureProcessor:
                                     for branch_name in required_branches
                                     if branch_name in arrays
                                 }
-
                                 # Skip empty events
                                 if not event_data or not any(
                                     len(v) > 0 if isinstance(v, np.ndarray) else True
                                     for v in event_data.values()
                                 ):
                                     continue
+
+                                # TODO: Here we will do the calculation for the derived quantities
 
                                 # Process event
                                 result = self._process_event(event_data, task_config)
