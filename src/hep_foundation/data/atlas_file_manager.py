@@ -1,4 +1,3 @@
-import logging
 import sys
 from pathlib import Path
 from typing import Optional
@@ -6,7 +5,7 @@ from typing import Optional
 import requests
 from tqdm import tqdm
 
-from hep_foundation.config.logging_config import setup_logging
+from hep_foundation.config.logging_config import get_logger
 from hep_foundation.data.atlas_data import (
     get_catalog_count,
     get_signal_catalog,
@@ -22,7 +21,7 @@ class ATLASFileManager:
 
     def __init__(self, base_dir: str = "atlas_data"):
         # Setup logging
-        setup_logging()
+        self.logger = get_logger(__name__)
 
         self.base_dir = Path(base_dir)
         self.base_url = "https://opendata.cern.ch/record/80001/files"
@@ -77,7 +76,7 @@ class ATLASFileManager:
             ):
                 return output_path
         except Exception as e:
-            logging.error(
+            self.logger.error(
                 f"Failed to download catalog {index} for run {run_number}: {str(e)}"
             )
             if output_path.exists():
@@ -95,7 +94,7 @@ class ATLASFileManager:
         if output_path.exists():
             return False
 
-        logging.info(f"Downloading file: {url}")
+        self.logger.info(f"Downloading file: {url}")
         response = requests.get(f"https://opendata.cern.ch{url}", stream=True)
         if response.status_code == 200:
             total_size = int(response.headers.get("content-length", 0))
@@ -127,7 +126,7 @@ class ATLASFileManager:
                 for data in response.iter_content(chunk_size=1024):
                     size = f.write(data)
                     pbar.update(size)
-            logging.info(f"Download complete: {desc}")
+            self.logger.info(f"Download complete: {desc}")
             return True
         else:
             raise Exception(f"Download failed with status code: {response.status_code}")
@@ -187,7 +186,7 @@ class ATLASFileManager:
                 return output_path
             return output_path if output_path.exists() else None
         except Exception as e:
-            logging.error(f"Failed to download {signal_key} catalog {index}: {str(e)}")
+            self.logger.error(f"Failed to download {signal_key} catalog {index}: {str(e)}")
             if output_path.exists():
                 output_path.unlink()
             return None

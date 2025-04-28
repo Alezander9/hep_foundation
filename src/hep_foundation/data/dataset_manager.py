@@ -1,6 +1,5 @@
 import hashlib
 import json
-import logging
 import platform
 from dataclasses import dataclass
 from datetime import datetime
@@ -14,7 +13,7 @@ import pandas as pd
 import seaborn as sns
 import tensorflow as tf
 
-from hep_foundation.config.logging_config import setup_logging
+from hep_foundation.config.logging_config import get_logger
 from hep_foundation.data.atlas_file_manager import ATLASFileManager
 from hep_foundation.data.physlite_feature_processor import PhysliteFeatureProcessor
 from hep_foundation.data.task_config import TaskConfig
@@ -56,7 +55,7 @@ class DatasetManager:
         atlas_manager: Optional[ATLASFileManager] = None,
     ):
         # Setup logging at INFO level
-        setup_logging()
+        self.logger = get_logger(__name__)
 
         self.base_dir = Path(base_dir)
         self.datasets_dir = self.base_dir / "datasets"
@@ -122,7 +121,7 @@ class DatasetManager:
         id_components.append(config_hash)
 
         result = "_".join(id_components)
-        logging.info(f"Generated dataset ID: {result}")
+        self.logger.info(f"Generated dataset ID: {result}")
         return result
 
     def save_dataset_config(self, dataset_id: str, config: Union[dict, TaskConfig]):
@@ -154,9 +153,9 @@ class DatasetManager:
     def get_dataset_info(self, dataset_id: str) -> dict:
         """Get full dataset information including recreation parameters"""
         config_path = self.configs_dir / f"{dataset_id}_config.yaml"
-        logging.info(f"Looking for config at: {config_path}")  # Debug print
+        self.logger.info(f"Looking for config at: {config_path}")  # Debug print
         if not config_path.exists():
-            logging.info(
+            self.logger.info(
                 f"Available configs: {list(self.configs_dir.glob('*.yaml'))}"
             )  # Debug print
             raise ValueError(f"No configuration found for dataset {dataset_id}")
@@ -182,17 +181,17 @@ class DatasetManager:
             - Dataset ID
             - Path to created dataset
         """
-        logging.info("Creating new dataset")
+        self.logger.info("Creating new dataset")
 
         # Generate dataset ID and paths
         dataset_id = self.generate_dataset_id(dataset_config)
         output_path = self.datasets_dir / f"{dataset_id}.h5"
-        logging.info(f"Generated dataset ID: {dataset_id}")
+        self.logger.info(f"Generated dataset ID: {dataset_id}")
 
         try:
             # Save configuration first
             config_path = self.save_dataset_config(dataset_id, dataset_config)
-            logging.info(f"Saved configuration to: {config_path}")
+            self.logger.info(f"Saved configuration to: {config_path}")
 
             # Process all runs
             all_inputs = []
@@ -205,7 +204,7 @@ class DatasetManager:
             }
 
             for run_number in dataset_config.run_numbers:
-                logging.info(f"Processing run {run_number}")
+                self.logger.info(f"Processing run {run_number}")
                 try:
                     result = self.feature_processor._process_data(
                         task_config=dataset_config.task_config,
@@ -221,7 +220,7 @@ class DatasetManager:
                     total_stats["processed_events"] += stats["processed_events"]
                     total_stats["total_features"] += stats["total_features"]
                 except Exception as e:
-                    logging.error(f"Error unpacking process_data result: {str(e)}")
+                    self.logger.error(f"Error unpacking process_data result: {str(e)}")
                     raise
 
             if not all_inputs:
@@ -262,7 +261,7 @@ class DatasetManager:
                 if all_labels and dataset_config.task_config.labels:
                     labels_group = f.create_group("labels")
 
-                    logging.info(
+                    self.logger.info(
                         f"Generating labels datasets for {len(dataset_config.task_config.labels)} labels"
                     )
                     # Process each label configuration
@@ -351,7 +350,7 @@ class DatasetManager:
             - Dataset ID
             - Path to created dataset
         """
-        logging.info("Creating new signal dataset")
+        self.logger.info("Creating new signal dataset")
 
         # Generate dataset ID and paths
         dataset_id = self.generate_dataset_id(dataset_config)
@@ -368,7 +367,7 @@ class DatasetManager:
             with h5py.File(output_path, "w") as f:
                 # Create group for each signal type
                 for signal_key in dataset_config.signal_keys:
-                    logging.info(f"Processing signal type: {signal_key}")
+                    self.logger.info(f"Processing signal type: {signal_key}")
 
                     # Process data for this signal type
                     inputs, labels, stats = self.feature_processor._process_data(
@@ -379,7 +378,7 @@ class DatasetManager:
                     )
 
                     if not inputs:
-                        logging.warning(f"No events passed selection for {signal_key}")
+                        self.logger.warning(f"No events passed selection for {signal_key}")
                         continue
 
                     # Create signal-specific group
@@ -518,14 +517,14 @@ class DatasetManager:
                     )
                 if catalog_path:
                     paths.append(catalog_path)
-            logging.info(f"Found {len(paths)} catalogs for run {run_number}")
+            self.logger.info(f"Found {len(paths)} catalogs for run {run_number}")
             return paths
         elif signal_key is not None:
             # Get signal data catalog
             catalog_path = self.atlas_manager.get_signal_catalog_path(signal_key, 0)
             if not catalog_path.exists():
                 catalog_path = self.atlas_manager.download_signal_catalog(signal_key, 0)
-            logging.info(f"Found signal catalog for {signal_key}")
+            self.logger.info(f"Found signal catalog for {signal_key}")
             return [catalog_path] if catalog_path else []
         else:
             raise ValueError("Must provide either run_number or signal_key")
@@ -541,7 +540,7 @@ class DatasetManager:
         delete_catalogs: bool = True,
     ) -> tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
         """Load and split dataset into train/val/test."""
-        logging.info("Loading datasets")
+        self.logger.info("Loading datasets")
         try:
             # Generate dataset ID and load/create dataset file
             self.current_dataset_id = self.generate_dataset_id(dataset_config)
@@ -625,7 +624,7 @@ class DatasetManager:
         Returns:
             Dictionary mapping signal_type to its corresponding TensorFlow dataset
         """
-        logging.info("Loading signal datasets")
+        self.logger.info("Loading signal datasets")
         try:
             # Generate dataset ID and paths
             dataset_id = self.generate_dataset_id(dataset_config)
@@ -671,7 +670,7 @@ class DatasetManager:
                     dataset = dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
                     signal_datasets[signal_key] = dataset
 
-            logging.info(f"Successfully loaded {len(signal_datasets)} signal datasets")
+            self.logger.info(f"Successfully loaded {len(signal_datasets)} signal datasets")
             return signal_datasets
 
         except Exception as e:
@@ -707,7 +706,7 @@ class DatasetManager:
             - Validation dataset with encoded features
             - Test dataset with encoded features
         """
-        logging.info("Loading and encoding datasets")
+        self.logger.info("Loading and encoding datasets")
         try:
             # Generate dataset ID and load dataset file
             self.current_dataset_id = self.generate_dataset_id(dataset_config)
@@ -803,45 +802,45 @@ class DatasetManager:
         output_dir: Path,
     ):
         """Create distribution plots and print statistical summaries for track and event features"""
-        logging.info(f"Generating plots in: {output_dir}")
+        self.logger.info(f"Generating plots in: {output_dir}")
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Print track multiplicity statistics
-        logging.info("=== Track Multiplicity Statistics ===")
-        logging.info("Before Selection:")
-        logging.info(
+        self.logger.info("=== Track Multiplicity Statistics ===")
+        self.logger.info("Before Selection:")
+        self.logger.info(
             f"  Total events: {len(pre_selection_stats['tracks_per_event']):,}"
         )
-        logging.info(
+        self.logger.info(
             f"  Average tracks/event: {np.mean(pre_selection_stats['tracks_per_event']):.2f}"
         )
-        logging.info(
+        self.logger.info(
             f"  Median tracks/event: {np.median(pre_selection_stats['tracks_per_event']):.2f}"
         )
-        logging.info(f"  Min tracks: {min(pre_selection_stats['tracks_per_event'])}")
-        logging.info(f"  Max tracks: {max(pre_selection_stats['tracks_per_event'])}")
+        self.logger.info(f"  Min tracks: {min(pre_selection_stats['tracks_per_event'])}")
+        self.logger.info(f"  Max tracks: {max(pre_selection_stats['tracks_per_event'])}")
 
-        logging.info("After Selection:")
-        logging.info(
+        self.logger.info("After Selection:")
+        self.logger.info(
             f"  Total events: {len(post_selection_stats['tracks_per_event']):,}"
         )
-        logging.info(
+        self.logger.info(
             f"  Average tracks/event: {np.mean(post_selection_stats['tracks_per_event']):.2f}"
         )
-        logging.info(
+        self.logger.info(
             f"  Median tracks/event: {np.median(post_selection_stats['tracks_per_event']):.2f}"
         )
-        logging.info(f"  Min tracks: {min(post_selection_stats['tracks_per_event'])}")
-        logging.info(f"  Max tracks: {max(post_selection_stats['tracks_per_event'])}")
-        logging.info(
+        self.logger.info(f"  Min tracks: {min(post_selection_stats['tracks_per_event'])}")
+        self.logger.info(f"  Max tracks: {max(post_selection_stats['tracks_per_event'])}")
+        self.logger.info(
             f"  Selection efficiency: {100 * len(post_selection_stats['tracks_per_event']) / len(pre_selection_stats['tracks_per_event']):.1f}%"
         )
 
         # Use matplotlib style
         plt.style.use("seaborn-v0_8")
 
-        logging.info("Creating track multiplicity plot...")
+        self.logger.info("Creating track multiplicity plot...")
         plt.figure(figsize=(12, 6))
 
         # Calculate integer bin edges with percentile limits
@@ -882,7 +881,7 @@ class DatasetManager:
         plt.savefig(output_dir / "track_multiplicity.pdf")
         plt.close()
 
-        logging.info("Creating track features plot...")
+        self.logger.info("Creating track features plot...")
         # 2. Track features distributions (6x2 subplot grid)
         fig, axes = plt.subplots(3, 2, figsize=(15, 18))
         fig.suptitle("Track Feature Distributions (Before vs After Selection)")
@@ -957,7 +956,7 @@ class DatasetManager:
         plt.savefig(output_dir / "track_features.pdf")
         plt.close()
 
-        logging.info("=== Track Feature Statistics ===")
+        self.logger.info("=== Track Feature Statistics ===")
         features = ["pt", "eta", "phi", "d0", "z0", "chi2_per_ndof"]
         labels = {
             "pt": "pT [GeV]",
@@ -969,33 +968,33 @@ class DatasetManager:
         }
 
         for feature in features:
-            logging.info(f"{labels[feature]}:")
-            logging.info("  Before Selection:")
-            logging.info(f"    Mean: {np.mean(pre_selection_stats[feature]):.3f}")
-            logging.info(f"    Std:  {np.std(pre_selection_stats[feature]):.3f}")
-            logging.info(f"    Min:  {np.min(pre_selection_stats[feature]):.3f}")
-            logging.info(f"    Max:  {np.max(pre_selection_stats[feature]):.3f}")
-            logging.info(f"    Tracks: {len(pre_selection_stats[feature]):,}")
+            self.logger.info(f"{labels[feature]}:")
+            self.logger.info("  Before Selection:")
+            self.logger.info(f"    Mean: {np.mean(pre_selection_stats[feature]):.3f}")
+            self.logger.info(f"    Std:  {np.std(pre_selection_stats[feature]):.3f}")
+            self.logger.info(f"    Min:  {np.min(pre_selection_stats[feature]):.3f}")
+            self.logger.info(f"    Max:  {np.max(pre_selection_stats[feature]):.3f}")
+            self.logger.info(f"    Tracks: {len(pre_selection_stats[feature]):,}")
 
-            logging.info("  After Selection:")
-            logging.info(f"    Mean: {np.mean(post_selection_stats[feature]):.3f}")
-            logging.info(f"    Std:  {np.std(post_selection_stats[feature]):.3f}")
-            logging.info(f"    Min:  {np.min(post_selection_stats[feature]):.3f}")
-            logging.info(f"    Max:  {np.max(post_selection_stats[feature]):.3f}")
-            logging.info(f"    Tracks: {len(post_selection_stats[feature]):,}")
+            self.logger.info("  After Selection:")
+            self.logger.info(f"    Mean: {np.mean(post_selection_stats[feature]):.3f}")
+            self.logger.info(f"    Std:  {np.std(post_selection_stats[feature]):.3f}")
+            self.logger.info(f"    Min:  {np.min(post_selection_stats[feature]):.3f}")
+            self.logger.info(f"    Max:  {np.max(post_selection_stats[feature]):.3f}")
+            self.logger.info(f"    Tracks: {len(post_selection_stats[feature]):,}")
 
         # Print correlation information
-        logging.info("=== Feature Correlations ===")
+        self.logger.info("=== Feature Correlations ===")
         df = pd.DataFrame(
             {feature: post_selection_stats[feature] for feature in features}
         )
         corr_matrix = df.corr()
 
-        logging.info("Correlation Matrix (after selection):")
+        self.logger.info("Correlation Matrix (after selection):")
         pd.set_option("display.float_format", "{:.3f}".format)
-        logging.info(corr_matrix)
+        self.logger.info(corr_matrix)
 
-        logging.info("Creating correlation plot...")
+        self.logger.info("Creating correlation plot...")
         # 3. 2D correlation plots
         plt.figure(figsize=(12, 10))
         feature_data = {feature: post_selection_stats[feature] for feature in features}
@@ -1006,4 +1005,4 @@ class DatasetManager:
         plt.savefig(output_dir / "feature_correlations.pdf")
         plt.close()
 
-        logging.info("Plotting complete!")
+        self.logger.info("Plotting complete!")

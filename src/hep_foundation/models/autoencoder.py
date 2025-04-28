@@ -1,4 +1,3 @@
-import logging
 from pathlib import Path
 
 import numpy as np
@@ -6,7 +5,7 @@ import tensorflow as tf
 from qkeras import QActivation, QDense, quantized_bits, quantized_relu
 from tensorflow import keras
 
-from hep_foundation.config.logging_config import setup_logging
+from hep_foundation.config.logging_config import get_logger
 from hep_foundation.models.base_model import BaseModel, ModelConfig
 
 
@@ -91,7 +90,7 @@ class AutoEncoder(BaseModel):
             **kwargs: Alternative way to pass configuration parameters directly
         """
         super().__init__()
-        setup_logging()
+        self.logger = get_logger(__name__)
 
         self.input_shape = config.architecture["input_shape"]
         self.latent_dim = config.architecture["latent_dim"]
@@ -194,7 +193,7 @@ class AutoEncoder(BaseModel):
         # 2. Reconstruction examples
         # 3. Loss components if using custom loss
 
-        logging.info("Creating autoencoder-specific plots...")
+        self.logger.info("Creating autoencoder-specific plots...")
 
         # Example: Plot model architecture
         tf.keras.utils.plot_model(
@@ -205,7 +204,7 @@ class AutoEncoder(BaseModel):
             expand_nested=True,
         )
 
-        logging.info("Created model architecture plot")
+        self.logger.info("Created model architecture plot")
 
         # Could add more autoencoder-specific visualizations:
         # - Latent space clustering

@@ -1,4 +1,3 @@
-import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -9,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 
-from hep_foundation.config.logging_config import setup_logging
+from hep_foundation.config.logging_config import get_logger
 from hep_foundation.models.base_model import BaseModel
 from hep_foundation.models.dnn_predictor import DNNPredictor
 
@@ -33,6 +32,7 @@ class TrainingConfig:
         early_stopping_min_delta: float,
         plot_training: bool,
     ):
+        self.logger = get_logger(__name__)
         self.batch_size = batch_size
         self.epochs = epochs
         self.learning_rate = learning_rate
@@ -55,27 +55,27 @@ class TrainingConfig:
 
 
 class TrainingProgressCallback(tf.keras.callbacks.Callback):
-    """Custom callback for clean logging output"""
+    """Custom callback for clean self.logger output"""
 
     def __init__(self, epochs: int):
         super().__init__()
         self.epochs = epochs
         self.epoch_start_time = None
 
-        # Setup logging
-        setup_logging()
+        # Setup self.logger
+        self.logger = get_logger(__name__)
 
     def on_train_begin(self, logs=None):
-        logging.info(f"Starting training for {self.epochs} epochs")
+        self.logger.info(f"Starting training for {self.epochs} epochs")
 
     def on_epoch_begin(self, epoch, logs=None):
         self.epoch_start_time = time.time()
-        logging.info(f"Starting epoch {epoch + 1}/{self.epochs}")
+        self.logger.info(f"Starting epoch {epoch + 1}/{self.epochs}")
 
     def on_epoch_end(self, epoch, logs=None):
         time_taken = time.time() - self.epoch_start_time
         metrics = " - ".join(f"{k}: {v:.6f}" for k, v in logs.items())
-        logging.info(
+        self.logger.info(
             f"Epoch {epoch + 1}/{self.epochs} completed in {time_taken:.1f}s - {metrics}"
         )
 
@@ -225,7 +225,7 @@ class ModelTrainer:
         plots_dir: Optional[Path] = None,
     ) -> dict[str, Any]:
         """Train with enhanced metrics tracking and optional plotting"""
-        logging.info("Starting training with metrics tracking:")
+        self.logger.info("Starting training with metrics tracking:")
 
         # Record start time
         self.training_start_time = datetime.now()
@@ -235,12 +235,12 @@ class ModelTrainer:
 
         if plot_training:
             plots_dir.mkdir(parents=True, exist_ok=True)
-            logging.info(f"Will save training plots to: {plots_dir}")
+            self.logger.info(f"Will save training plots to: {plots_dir}")
 
         if self.model.model is None:
             raise ValueError("Model not built yet")
 
-        logging.info("Preparing datasets for training...")
+        self.logger.info("Preparing datasets for training...")
 
         try:
             # Prepare training and validation datasets
@@ -250,16 +250,16 @@ class ModelTrainer:
                 validation_data = self.prepare_dataset(validation_data)
 
             # Log dataset size and shapes for debugging
-            logging.info(f"Training dataset batches: {train_dataset.cardinality()}")
+            self.logger.info(f"Training dataset batches: {train_dataset.cardinality()}")
             for batch in train_dataset.take(1):
                 features, targets = batch
-                logging.info("Training dataset batch shapes:")
-                logging.info(f"  Features: {features.shape}")
-                logging.info(f"  Targets: {targets.shape}")
+                self.logger.info("Training dataset batch shapes:")
+                self.logger.info(f"  Features: {features.shape}")
+                self.logger.info(f"  Targets: {targets.shape}")
                 break
 
         except Exception as e:
-            logging.error(f"Error preparing datasets: {str(e)}")
+            self.logger.error(f"Error preparing datasets: {str(e)}")
             raise
 
         # Compile model
@@ -293,20 +293,20 @@ class ModelTrainer:
         for metric, values in history.history.items():
             self.metrics_history[metric] = [float(v) for v in values]
 
-        logging.info("Training completed. Final metrics:")
+        self.logger.info("Training completed. Final metrics:")
         for metric, values in self.metrics_history.items():
-            logging.info(f"  {metric}: {values[-1]:.6f}")
+            self.logger.info(f"  {metric}: {values[-1]:.6f}")
 
         # After training completes, create plots if requested
         if plot_training:
-            logging.info("Generating training plots...")
+            self.logger.info("Generating training plots...")
             self._create_training_plots(plots_dir)
 
         return self.get_training_summary()
 
     def _create_training_plots(self, plots_dir: Path):
         """Create standard training plots with simple formatting"""
-        logging.info(f"Creating training plots in: {plots_dir.absolute()}")
+        self.logger.info(f"Creating training plots in: {plots_dir.absolute()}")
         plots_dir.mkdir(parents=True, exist_ok=True)
 
         try:
@@ -357,10 +357,10 @@ class ModelTrainer:
             if hasattr(self.model, "create_plots"):
                 self.model.create_plots(plots_dir)
 
-            logging.info(f"Plots saved to: {plots_dir}")
+            self.logger.info(f"Plots saved to: {plots_dir}")
 
         except Exception as e:
-            logging.error(f"Error creating plots: {str(e)}")
+            self.logger.error(f"Error creating plots: {str(e)}")
             import traceback
 
             traceback.print_exc()
@@ -382,9 +382,9 @@ class ModelTrainer:
             # Add test_ prefix to metrics
             test_metrics = {"test_" + k: float(v) for k, v in results.items()}
 
-            logging.info("Evaluation metrics:")
+            self.logger.info("Evaluation metrics:")
             for metric, value in test_metrics.items():
-                logging.info(f"  {metric}: {value:.6f}")
+                self.logger.info(f"  {metric}: {value:.6f}")
 
             # Store test metrics in history
             self.metrics_history.update(test_metrics)
@@ -392,5 +392,5 @@ class ModelTrainer:
             return test_metrics
 
         except Exception as e:
-            logging.error(f"Error during evaluation: {str(e)}")
+            self.logger.error(f"Error during evaluation: {str(e)}")
             raise

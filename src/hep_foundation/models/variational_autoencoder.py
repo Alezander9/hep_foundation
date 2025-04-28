@@ -1,5 +1,4 @@
 import json
-import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -12,7 +11,7 @@ from qkeras import QActivation, QDense, quantized_bits, quantized_relu
 from sklearn.metrics import auc, roc_curve
 from tensorflow import keras
 
-from hep_foundation.config.logging_config import setup_logging
+from hep_foundation.config.logging_config import get_logger
 from hep_foundation.models.base_model import BaseModel, ModelConfig
 from hep_foundation.utils.plot_utils import (
     MARKER_SIZES,
@@ -213,7 +212,7 @@ class BetaSchedule(keras.callbacks.Callback):
                 / 2
             )
 
-        logging.info(f"Epoch {epoch + 1}: beta = {beta:.4f}")
+        self.logger.info(f"Epoch {epoch + 1}: beta = {beta:.4f}")
         self.model.beta.assign(beta)
         self.model.get_layer("vae_layer").beta.assign(beta)
 
@@ -229,7 +228,7 @@ class VariationalAutoEncoder(BaseModel):
             config: VAEConfig object containing model configuration
         """
         super().__init__()
-        setup_logging()
+        self.logger = get_logger(__name__)
 
         # Extract configuration parameters
         self.input_shape = config.architecture["input_shape"]
@@ -277,7 +276,7 @@ class VariationalAutoEncoder(BaseModel):
                 )(x)
             x = keras.layers.BatchNormalization(name=f"encoder_{i}_bn")(x)
 
-        logging.info("Built encoder layers")
+        self.logger.info("Built encoder layers")
 
         # VAE latent space parameters
         if self.quant_bits:
@@ -304,7 +303,7 @@ class VariationalAutoEncoder(BaseModel):
         self.encoder = keras.Model(
             encoder_inputs, [z_mean, z_log_var, z], name="encoder"
         )
-        logging.info("Built encoder model")
+        self.logger.info("Built encoder model")
 
         # Build Decoder
         decoder_inputs = keras.Input(shape=(self.latent_dim,), name="decoder_input")
@@ -329,7 +328,7 @@ class VariationalAutoEncoder(BaseModel):
                 )(x)
             x = keras.layers.BatchNormalization(name=f"decoder_{i}_bn")(x)
 
-        logging.info("Built decoder layers")
+        self.logger.info("Built decoder layers")
 
         # Output layer
         if self.quant_bits:
@@ -346,7 +345,7 @@ class VariationalAutoEncoder(BaseModel):
 
         # Create decoder model
         self.decoder = keras.Model(decoder_inputs, decoder_outputs, name="decoder")
-        logging.info("Built decoder model")
+        self.logger.info("Built decoder model")
 
         # Create VAE model
         vae_inputs = keras.Input(shape=input_shape, name="vae_input")
@@ -357,7 +356,7 @@ class VariationalAutoEncoder(BaseModel):
         self.beta = tf.Variable(0.0, dtype=tf.float32, trainable=False)
         self.model.beta = self.beta
 
-        logging.info("Completed VAE architecture build")
+        self.logger.info("Completed VAE architecture build")
 
     def get_config(self) -> dict:
         """Get model configuration"""
@@ -375,17 +374,17 @@ class VariationalAutoEncoder(BaseModel):
 
     def create_plots(self, plots_dir: Path) -> None:
         """Create VAE-specific visualization plots"""
-        logging.info("Creating VAE-specific plots...")
+        self.logger.info("Creating VAE-specific plots...")
         plots_dir.mkdir(parents=True, exist_ok=True)
 
         try:
             if hasattr(self.model, "history") and self.model.history is not None:
                 self._history = self.model.history.history
             else:
-                logging.warning("No training history found in model")
+                self.logger.warning("No training history found in model")
                 return
 
-            logging.info(f"Available metrics: {list(self._history.keys())}")
+            self.logger.info(f"Available metrics: {list(self._history.keys())}")
 
             from hep_foundation.utils.plot_utils import (
                 FONT_SIZES,
@@ -459,13 +458,13 @@ class VariationalAutoEncoder(BaseModel):
                     plots_dir / "training_history.pdf", dpi=300, bbox_inches="tight"
                 )
                 plt.close()
-                logging.info("Created training history plot")
+                self.logger.info("Created training history plot")
 
             else:
-                logging.warning("No history data available for plotting")
+                self.logger.warning("No history data available for plotting")
 
         except Exception as e:
-            logging.error(f"Error creating VAE plots: {str(e)}")
+            self.logger.error(f"Error creating VAE plots: {str(e)}")
             import traceback
 
             traceback.print_exc()
@@ -497,7 +496,7 @@ class VariationalAutoEncoder(BaseModel):
                 bbox_inches="tight",
             )
             plt.close()
-            logging.info("Created latent space distribution plots")
+            self.logger.info("Created latent space distribution plots")
 
             # 4. 2D Latent Space Projection
             if self.latent_dim >= 2:
@@ -517,9 +516,9 @@ class VariationalAutoEncoder(BaseModel):
                     plots_dir / "vae_latent_space_2d.pdf", dpi=300, bbox_inches="tight"
                 )
                 plt.close()
-                logging.info("Created 2D latent space projection plot")
+                self.logger.info("Created 2D latent space projection plot")
 
-        logging.info(f"VAE plots saved to: {plots_dir}")
+        self.logger.info(f"VAE plots saved to: {plots_dir}")
 
     def _calculate_beta_schedule(self, num_epochs):
         """
@@ -594,10 +593,10 @@ class AnomalyDetectionEvaluator:
         self.testing_path = self.experiment_path / "testing"
         self.testing_path.mkdir(parents=True, exist_ok=True)
 
-        # Setup logging
-        logging.basicConfig(
+        # Setup self.logger
+        self.logger.basicConfig(
             format="%(asctime)s - %(levelname)s - %(message)s",
-            level=logging.INFO,
+            level=self.logger.INFO,
             datefmt="%Y-%m-%d %H:%M:%S",
         )
 
@@ -647,7 +646,7 @@ class AnomalyDetectionEvaluator:
         total_batches = 0
         total_events = 0
 
-        logging.info("Calculating losses for dataset...")
+        self.logger.info("Calculating losses for dataset...")
         for batch in dataset:
             total_batches += 1
 
@@ -695,10 +694,10 @@ class AnomalyDetectionEvaluator:
             reconstruction_losses.extend(recon_losses_batch.tolist())
             kl_losses.extend(kl_losses_batch.tolist())
 
-        logging.info("Dataset stats:")
-        logging.info(f"  Total batches: {total_batches}")
-        logging.info(f"  Total events: {total_events}")
-        logging.info(
+        self.logger.info("Dataset stats:")
+        self.logger.info(f"  Total batches: {total_batches}")
+        self.logger.info(f"  Total events: {total_events}")
+        self.logger.info(
             f"  Events per batch: {total_events / total_batches if total_batches > 0 else 0:.1f}"
         )
 
@@ -782,7 +781,7 @@ class AnomalyDetectionEvaluator:
         Returns:
             Dictionary containing test metrics and results
         """
-        logging.info("Running anomaly detection test...")
+        self.logger.info("Running anomaly detection test...")
 
         if not isinstance(self.model, VariationalAutoEncoder):
             raise ValueError("Anomaly detection test requires a VariationalAutoEncoder")
@@ -794,38 +793,38 @@ class AnomalyDetectionEvaluator:
         plots_dir.mkdir(parents=True, exist_ok=True)
 
         # Log dataset info before testing
-        logging.info("Dataset information before testing:")
+        self.logger.info("Dataset information before testing:")
         for batch in self.test_dataset:
             if isinstance(batch, tuple):
                 features, labels = batch
-                logging.info("Background test dataset batch shapes:")
-                logging.info(f"  Features: {features.shape}")
-                logging.info(f"  Labels: {labels.shape}")
+                self.logger.info("Background test dataset batch shapes:")
+                self.logger.info(f"  Features: {features.shape}")
+                self.logger.info(f"  Labels: {labels.shape}")
             else:
-                logging.info(f"Background test dataset batch shape: {batch.shape}")
+                self.logger.info(f"Background test dataset batch shape: {batch.shape}")
             break
 
         for signal_name, signal_dataset in self.signal_datasets.items():
             for batch in signal_dataset:
                 if isinstance(batch, tuple):
                     features, labels = batch
-                    logging.info(f"{signal_name} signal dataset batch shapes:")
-                    logging.info(f"  Features: {features.shape}")
-                    logging.info(f"  Labels: {labels.shape}")
+                    self.logger.info(f"{signal_name} signal dataset batch shapes:")
+                    self.logger.info(f"  Features: {features.shape}")
+                    self.logger.info(f"  Labels: {labels.shape}")
                 else:
-                    logging.info(
+                    self.logger.info(
                         f"{signal_name} signal dataset batch shape: {batch.shape}"
                     )
                 break
 
         # Calculate losses for background dataset
-        logging.info("Calculating losses for background dataset...")
+        self.logger.info("Calculating losses for background dataset...")
         bg_recon_losses, bg_kl_losses = self._calculate_losses(self.test_dataset)
 
         # Calculate losses for each signal dataset
         signal_results = {}
         for signal_name, signal_dataset in self.signal_datasets.items():
-            logging.info(f"Calculating losses for signal dataset: {signal_name}")
+            self.logger.info(f"Calculating losses for signal dataset: {signal_name}")
             sig_recon_losses, sig_kl_losses = self._calculate_losses(signal_dataset)
 
             # Calculate separation metrics

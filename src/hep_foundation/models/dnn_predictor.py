@@ -5,7 +5,7 @@ import tensorflow as tf
 from qkeras import QActivation, QDense, quantized_bits, quantized_relu
 from tensorflow import keras
 
-from hep_foundation.config.logging_config import setup_logging
+from hep_foundation.config.logging_config import get_logger
 from hep_foundation.models.base_model import BaseModel, ModelConfig
 
 
@@ -133,7 +133,7 @@ class DNNPredictor(BaseModel):
             config: DNNPredictorConfig object containing model configuration
         """
         super().__init__()
-        setup_logging()
+        self.logger = get_logger(__name__)
 
         # Extract configuration parameters
         self.input_shape = config.architecture["input_shape"]

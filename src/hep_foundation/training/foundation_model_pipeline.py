@@ -1,11 +1,10 @@
 import json
-import logging
 from pathlib import Path
 
 import numpy as np
 import tensorflow as tf
 
-from hep_foundation.config.logging_config import setup_logging
+from hep_foundation.config.logging_config import get_logger
 from hep_foundation.data.dataset_manager import DatasetConfig, DatasetManager
 from hep_foundation.data.task_config import TaskConfig
 from hep_foundation.models.model_factory import ModelFactory
@@ -36,17 +35,17 @@ class FoundationModelPipeline:
         Args:
             base_dir: Base directory for storing experiment results
         """
-        # Setup logging
-        setup_logging()
+        # Setup self.logger
+        self.logger = get_logger(__name__)
 
         # Create experiment directory
         self.experiment_dir = Path(base_dir)
         self.experiment_dir.mkdir(parents=True, exist_ok=True)
 
-        logging.info(
+        self.logger.info(
             f"Foundation Model Pipeline initialized with base directory: {self.experiment_dir.absolute()}"
         )
-        logging.info(f"TensorFlow: {tf.__version__} (Eager: {tf.executing_eagerly()})")
+        self.logger.info(f"TensorFlow: {tf.__version__} (Eager: {tf.executing_eagerly()})")
 
     def run_process(
         self,
@@ -80,7 +79,7 @@ class FoundationModelPipeline:
         """
         valid_processes = ["train", "anomaly", "regression"]
         if process_name not in valid_processes:
-            logging.error(
+            self.logger.error(
                 f"Invalid process name: {process_name}. Must be one of {valid_processes}"
             )
             return False
@@ -117,7 +116,7 @@ class FoundationModelPipeline:
                 foundation_model_path=foundation_model_path,
             )
         else:
-            logging.error(f"Unknown process name: {process_name}")
+            self.logger.error(f"Unknown process name: {process_name}")
             return False
 
     def train_foundation_model(
@@ -133,9 +132,9 @@ class FoundationModelPipeline:
         """
         Train a foundation model using provided configurations.
         """
-        logging.info("=" * 100)
-        logging.info("Training Foundation Model")
-        logging.info("=" * 100)
+        self.logger.info("=" * 100)
+        self.logger.info("Training Foundation Model")
+        self.logger.info("=" * 100)
 
         try:
             # Helper function for JSON serialization
@@ -157,22 +156,22 @@ class FoundationModelPipeline:
 
             # Initialize registry
             registry = ModelRegistry(str(self.experiment_dir))
-            logging.info(f"Registry initialized at: {registry.db_path}")
+            self.logger.info(f"Registry initialized at: {registry.db_path}")
 
             # 1. Initialize managers
-            logging.info("Initializing managers...")
+            self.logger.info("Initializing managers...")
             data_manager = DatasetManager()
 
             # 2. Validate Configs
             dataset_config.validate()
-            logging.info("Validated dataset config")
+            self.logger.info("Validated dataset config")
 
             training_config.validate()
-            logging.info("Validated training config")
+            self.logger.info("Validated training config")
 
             # 3. Load datasets
 
-            logging.info("Loading datasets...")
+            self.logger.info("Loading datasets...")
             train_dataset, val_dataset, test_dataset = data_manager.load_atlas_datasets(
                 dataset_config=dataset_config,
                 validation_fraction=dataset_config.validation_fraction,
@@ -182,13 +181,13 @@ class FoundationModelPipeline:
                 include_labels=dataset_config.include_labels,
                 delete_catalogs=True,
             )
-            logging.info("Loaded datasets")
+            self.logger.info("Loaded datasets")
 
             # Get the dataset ID from the data manager
             dataset_id = data_manager.get_current_dataset_id()
 
             # 4. Register experiment with existing dataset
-            logging.info("Registering experiment...")
+            self.logger.info("Registering experiment...")
             model_config_dict = {
                 "model_type": model_config["model_type"],
                 "architecture": {
@@ -212,27 +211,27 @@ class FoundationModelPipeline:
                 training_config=training_config_dict,
                 description="Training a foundation VAE model for feature encoding",
             )
-            logging.info(f"Created experiment: {experiment_id}")
+            self.logger.info(f"Created experiment: {experiment_id}")
 
             # 5. Create and Build Model
-            logging.info("Creating model...")
+            self.logger.info("Creating model...")
             try:
                 model = ModelFactory.create_model(
                     model_type="variational_autoencoder", config=model_config_dict
                 )
                 model.build()
             except Exception as e:
-                logging.error(f"Model creation failed: {str(e)}")
-                logging.error(
+                self.logger.error(f"Model creation failed: {str(e)}")
+                self.logger.error(
                     f"Model config used: {json.dumps(model_config_dict, indent=2)}"
                 )
                 raise
 
-            logging.info("Model created")
-            logging.info(model.model.summary())
+            self.logger.info("Model created")
+            self.logger.info(model.model.summary())
 
             # 6. Train Model
-            logging.info("Setting up model and callbacks...")
+            self.logger.info("Setting up model and callbacks...")
             trainer = ModelTrainer(model=model, training_config=training_config_dict)
 
             # Setup callbacks
@@ -245,7 +244,7 @@ class FoundationModelPipeline:
             ]
 
             # Start training
-            logging.info("Starting training...")
+            self.logger.info("Starting training...")
             try:
                 training_results = trainer.train(
                     dataset=train_dataset,
@@ -256,7 +255,7 @@ class FoundationModelPipeline:
                 )
 
                 # Evaluate Model
-                logging.info("Evaluating model...")
+                self.logger.info("Evaluating model...")
                 test_results = trainer.evaluate(test_dataset)
 
                 # Combine results
@@ -275,7 +274,7 @@ class FoundationModelPipeline:
                 )
 
                 # Save the trained model
-                logging.info("Saving trained model...")
+                self.logger.info("Saving trained model...")
                 model_metadata = {
                     "test_loss": test_results.get("test_loss", 0.0),
                     "test_mse": test_results.get("test_mse", 0.0),
@@ -300,67 +299,67 @@ class FoundationModelPipeline:
                 )
 
             except Exception as e:
-                logging.error(f"\nTraining failed with error: {str(e)}")
-                logging.info("Dataset inspection:")
+                self.logger.error(f"\nTraining failed with error: {str(e)}")
+                self.logger.info("Dataset inspection:")
                 for i, batch in enumerate(train_dataset.take(1)):
                     if isinstance(batch, tuple):
                         features, _ = batch
-                        logging.info(
+                        self.logger.info(
                             f"Training batch {i} features shape: {features.shape}"
                         )
-                        logging.info(
+                        self.logger.info(
                             f"Sample of features: \n{features[0, :10]}"
                         )  # Show first 10 features of first event
                     else:
-                        logging.info(f"Training batch {i} shape: {batch.shape}")
-                        logging.info(
+                        self.logger.info(f"Training batch {i} shape: {batch.shape}")
+                        self.logger.info(
                             f"Sample of data: \n{batch[0, :10]}"
                         )  # Show first 10 features of first event
                 raise
 
             # Display Results
-            logging.info("=" * 100)
-            logging.info("Experiment Results")
-            logging.info("=" * 100)
+            self.logger.info("=" * 100)
+            self.logger.info("Experiment Results")
+            self.logger.info("=" * 100)
 
             experiment_data = registry.get_experiment_data(experiment_id)
 
-            logging.info(f"Experiment ID: {experiment_id}")
-            logging.info(f"Status: {experiment_data['experiment_info']['status']}")
+            self.logger.info(f"Experiment ID: {experiment_id}")
+            self.logger.info(f"Status: {experiment_data['experiment_info']['status']}")
 
             if "training_results" in experiment_data:
                 training_results = experiment_data["training_results"]
-                logging.info(
+                self.logger.info(
                     f"Training Duration: {training_results['training_duration']:.2f}s"
                 )
-                logging.info(
+                self.logger.info(
                     f"Epochs Completed: {training_results['epochs_completed']}"
                 )
 
-                logging.info("Metrics:")
+                self.logger.info("Metrics:")
 
                 def print_metrics(metrics, indent=2):
                     """Helper function to print metrics with proper formatting"""
                     for key, value in metrics.items():
                         indent_str = " " * indent
                         if isinstance(value, dict):
-                            logging.info(f"{indent_str}{key}:")
+                            self.logger.info(f"{indent_str}{key}:")
                             print_metrics(value, indent + 2)
                         elif isinstance(value, (float, int)):
-                            logging.info(f"{indent_str}{key}: {value:.6f}")
+                            self.logger.info(f"{indent_str}{key}: {value:.6f}")
                         else:
-                            logging.info(f"{indent_str}{key}: {value}")
+                            self.logger.info(f"{indent_str}{key}: {value}")
 
                 print_metrics(training_results["final_metrics"])
 
-            logging.info("Foundation model training completed successfully")
+            self.logger.info("Foundation model training completed successfully")
             return True
 
         except Exception as e:
-            logging.error(
+            self.logger.error(
                 f"Foundation model training failed: {type(e).__name__}: {str(e)}"
             )
-            logging.error("Error context:")
+            self.logger.error("Error context:")
             raise
 
     def evaluate_foundation_model_anomaly_detection(
@@ -380,12 +379,12 @@ class FoundationModelPipeline:
         Loads a pre-trained VAE, test/signal datasets, performs evaluation,
         and saves results directly in the foundation model's experiment directory.
         """
-        logging.info("=" * 100)
-        logging.info("Evaluating Foundation Model for Anomaly Detection")
-        logging.info("=" * 100)
+        self.logger.info("=" * 100)
+        self.logger.info("Evaluating Foundation Model for Anomaly Detection")
+        self.logger.info("=" * 100)
 
         if not foundation_model_path:
-            logging.error("Foundation model path must be provided for anomaly evaluation.")
+            self.logger.error("Foundation model path must be provided for anomaly evaluation.")
             return False
 
         foundation_model_path = Path(foundation_model_path)
@@ -396,22 +395,22 @@ class FoundationModelPipeline:
             model_weights_path_h5 = model_weights_path.with_suffix(".weights.h5")
             if model_weights_path_h5.exists():
                 model_weights_path = model_weights_path_h5
-                logging.info("Found model weights with .h5 extension.")
+                self.logger.info("Found model weights with .h5 extension.")
             else:
-                logging.error(f"Foundation model weights not found at: {model_weights_path} or {model_weights_path_h5}")
+                self.logger.error(f"Foundation model weights not found at: {model_weights_path} or {model_weights_path_h5}")
                 return False
 
         if not config_path.exists():
-            logging.error(f"Foundation model experiment data not found at: {config_path}")
+            self.logger.error(f"Foundation model experiment data not found at: {config_path}")
             return False
 
         try:
             # Initialize registry
             registry = ModelRegistry(str(self.experiment_dir))
-            logging.info(f"Registry initialized at: {registry.db_path}")
+            self.logger.info(f"Registry initialized at: {registry.db_path}")
 
             # 1. Load original model configuration and experiment ID
-            logging.info(f"Loading original model config from: {config_path}")
+            self.logger.info(f"Loading original model config from: {config_path}")
             with open(config_path) as f:
                 original_experiment_data = json.load(f)
 
@@ -424,15 +423,15 @@ class FoundationModelPipeline:
             elif "model_config" in original_experiment_data:
                 original_model_config = original_experiment_data["model_config"]
             else:
-                logging.error(f"Could not find 'model_config' in experiment data: {config_path}")
+                self.logger.error(f"Could not find 'model_config' in experiment data: {config_path}")
                 return False
 
             if not original_model_config or original_model_config.get("model_type") != "variational_autoencoder":
-                logging.error(f"Loaded config is not for a variational_autoencoder: {config_path}")
+                self.logger.error(f"Loaded config is not for a variational_autoencoder: {config_path}")
                 return False
 
             # 2. Load Datasets
-            logging.info("Initializing Dataset Manager...")
+            self.logger.info("Initializing Dataset Manager...")
             data_manager = DatasetManager()
 
             # Use eval_batch_size or derive from vae_training_config if provided
@@ -440,14 +439,14 @@ class FoundationModelPipeline:
             if vae_training_config:
                 try:
                     batch_size = vae_training_config.batch_size
-                    logging.info(f"Using batch size from provided VAE training config: {batch_size}")
+                    self.logger.info(f"Using batch size from provided VAE training config: {batch_size}")
                 except AttributeError:
-                    logging.warning("Provided vae_training_config lacks batch_size, using default.")
+                    self.logger.warning("Provided vae_training_config lacks batch_size, using default.")
             else:
-                logging.info(f"Using default evaluation batch size: {batch_size}")
+                self.logger.info(f"Using default evaluation batch size: {batch_size}")
 
             # Load test dataset (background) and signal datasets
-            logging.info("Loading background (test) dataset...")
+            self.logger.info("Loading background (test) dataset...")
             _, _, test_dataset = data_manager.load_atlas_datasets(
                 dataset_config=dataset_config,
                 validation_fraction=0.0,
@@ -457,30 +456,30 @@ class FoundationModelPipeline:
                 include_labels=False,
                 delete_catalogs=delete_catalogs,
             )
-            logging.info("Loaded background (test) dataset.")
+            self.logger.info("Loaded background (test) dataset.")
             data_manager.get_current_dataset_id()
 
             signal_datasets = {}
             if dataset_config.signal_keys:
-                logging.info("Loading signal datasets...")
+                self.logger.info("Loading signal datasets...")
                 signal_datasets = data_manager.load_signal_datasets(
                     dataset_config=dataset_config,
                     batch_size=batch_size,
                     include_labels=False,
                 )
-                logging.info(f"Loaded {len(signal_datasets)} signal datasets.")
+                self.logger.info(f"Loaded {len(signal_datasets)} signal datasets.")
             else:
-                logging.warning("No signal keys provided in dataset_config. Anomaly detection evaluation will only use background.")
+                self.logger.warning("No signal keys provided in dataset_config. Anomaly detection evaluation will only use background.")
 
             # 3. Create and Load Model
-            logging.info("Instantiating VAE model from loaded configuration...")
+            self.logger.info("Instantiating VAE model from loaded configuration...")
 
             # Ensure input_shape is present in the loaded config
             if "input_shape" not in original_model_config["architecture"]:
-                logging.warning("Input shape missing in loaded model config, deriving from task_config.")
+                self.logger.warning("Input shape missing in loaded model config, deriving from task_config.")
                 input_shape = (task_config.input.get_total_feature_size(),)
                 if input_shape[0] is None or input_shape[0] <= 0:
-                    logging.error("Could not determine a valid input shape from task_config.")
+                    self.logger.error("Could not determine a valid input shape from task_config.")
                     return False
                 original_model_config["architecture"]["input_shape"] = list(input_shape)
 
@@ -488,7 +487,7 @@ class FoundationModelPipeline:
             if "hyperparameters" not in original_model_config:
                 original_model_config["hyperparameters"] = {}
             if "beta_schedule" not in original_model_config["hyperparameters"]:
-                logging.warning("beta_schedule missing in loaded config, using default.")
+                self.logger.warning("beta_schedule missing in loaded config, using default.")
                 original_model_config["hyperparameters"]["beta_schedule"] = {
                     "start": 0.0, "end": 1.0, "warmup_epochs": 0, "cycle_epochs": 0
                 }
@@ -503,17 +502,17 @@ class FoundationModelPipeline:
             model.build(input_shape=tuple(original_model_config["architecture"]["input_shape"]))
             
             # Load weights
-            logging.info(f"Loading model weights from: {model_weights_path}")
+            self.logger.info(f"Loading model weights from: {model_weights_path}")
             try:
                 model.model.load_weights(str(model_weights_path))
-                logging.info("VAE model loaded successfully.")
-                logging.info(model.model.summary())
+                self.logger.info("VAE model loaded successfully.")
+                self.logger.info(model.model.summary())
             except Exception as e:
-                logging.error(f"Failed to load model weights: {str(e)}")
+                self.logger.error(f"Failed to load model weights: {str(e)}")
                 return False
 
             # 4. Run Anomaly Detection Evaluation directly on the foundation model's directory
-            logging.info("Running anomaly detection evaluation...")
+            self.logger.info("Running anomaly detection evaluation...")
             
             # Create testing/anomaly_detection directory in the foundation model directory
             testing_path = foundation_model_path / "testing"
@@ -525,22 +524,22 @@ class FoundationModelPipeline:
             
             # Manual implementation similar to AnomalyDetectionEvaluator but using foundation model's directory
             # First log dataset info
-            logging.info("Dataset information before testing:")
+            self.logger.info("Dataset information before testing:")
             for batch in test_dataset:
                 if isinstance(batch, tuple):
                     features, _ = batch
-                    logging.info(f"Background test dataset batch shape: {features.shape}")
+                    self.logger.info(f"Background test dataset batch shape: {features.shape}")
                 else:
-                    logging.info(f"Background test dataset batch shape: {batch.shape}")
+                    self.logger.info(f"Background test dataset batch shape: {batch.shape}")
                 break
 
             for signal_name, signal_dataset in signal_datasets.items():
                 for batch in signal_dataset:
                     if isinstance(batch, tuple):
                         features, _ = batch
-                        logging.info(f"{signal_name} signal dataset batch shape: {features.shape}")
+                        self.logger.info(f"{signal_name} signal dataset batch shape: {features.shape}")
                     else:
-                        logging.info(f"{signal_name} signal dataset batch shape: {batch.shape}")
+                        self.logger.info(f"{signal_name} signal dataset batch shape: {batch.shape}")
                     break
             
             # Create custom evaluator that will use the foundation model's directory
@@ -556,43 +555,43 @@ class FoundationModelPipeline:
             evaluator.run_anomaly_detection_test()
             
             # 5. Display Results
-            logging.info("=" * 100)
-            logging.info("Anomaly Detection Results")
-            logging.info("=" * 100)
+            self.logger.info("=" * 100)
+            self.logger.info("Anomaly Detection Results")
+            self.logger.info("=" * 100)
             
             experiment_data = registry.get_experiment_data(foundation_experiment_id)
-            logging.info(f"Foundation Model ID: {foundation_experiment_id}")
+            self.logger.info(f"Foundation Model ID: {foundation_experiment_id}")
 
             # Display anomaly detection specific results
             if "test_results" in experiment_data and "anomaly_detection" in experiment_data["test_results"]:
                 anomaly_results = experiment_data["test_results"]["anomaly_detection"]
-                logging.info(f"Timestamp: {anomaly_results.get('timestamp')}")
-                logging.info(f"Background Events: {anomaly_results.get('background_events')}")
-                logging.info(f"Plots Directory: {anomaly_results.get('plots_directory')}")
+                self.logger.info(f"Timestamp: {anomaly_results.get('timestamp')}")
+                self.logger.info(f"Background Events: {anomaly_results.get('background_events')}")
+                self.logger.info(f"Plots Directory: {anomaly_results.get('plots_directory')}")
                 
                 if "signal_results" in anomaly_results:
-                    logging.info("Signal Results:")
+                    self.logger.info("Signal Results:")
                     for signal_name, results in anomaly_results["signal_results"].items():
-                        logging.info(f"  Signal: {signal_name} (Events: {results.get('n_events')})")
+                        self.logger.info(f"  Signal: {signal_name} (Events: {results.get('n_events')})")
                         if "reconstruction_metrics" in results:
                             recon_metrics = results["reconstruction_metrics"]
-                            logging.info("    Reconstruction Metrics:")
-                            logging.info(f"      AUC: {recon_metrics.get('roc_auc', 'N/A'):.4f}")
-                            logging.info(f"      Separation: {recon_metrics.get('separation', 'N/A'):.4f}")
+                            self.logger.info("    Reconstruction Metrics:")
+                            self.logger.info(f"      AUC: {recon_metrics.get('roc_auc', 'N/A'):.4f}")
+                            self.logger.info(f"      Separation: {recon_metrics.get('separation', 'N/A'):.4f}")
                         if "kl_divergence_metrics" in results:
                             kl_metrics = results["kl_divergence_metrics"]
-                            logging.info("    KL Divergence Metrics:")
-                            logging.info(f"      AUC: {kl_metrics.get('roc_auc', 'N/A'):.4f}")
-                            logging.info(f"      Separation: {kl_metrics.get('separation', 'N/A'):.4f}")
+                            self.logger.info("    KL Divergence Metrics:")
+                            self.logger.info(f"      AUC: {kl_metrics.get('roc_auc', 'N/A'):.4f}")
+                            self.logger.info(f"      Separation: {kl_metrics.get('separation', 'N/A'):.4f}")
             else:
-                logging.warning("No anomaly detection results found in experiment data.")
+                self.logger.warning("No anomaly detection results found in experiment data.")
 
-            logging.info("Anomaly detection evaluation completed successfully")
+            self.logger.info("Anomaly detection evaluation completed successfully")
             return True
 
         except Exception as e:
-            logging.error(f"Anomaly detection evaluation failed: {type(e).__name__}: {str(e)}")
-            logging.exception("Detailed traceback:")
+            self.logger.error(f"Anomaly detection evaluation failed: {type(e).__name__}: {str(e)}")
+            self.logger.exception("Detailed traceback:")
             return False
 
     def evaluate_foundation_model_regression(
@@ -618,9 +617,9 @@ class FoundationModelPipeline:
         6. Evaluate the model's regression performance compared to the original regression model
         7. Save the evaluation results
         """
-        logging.info("=" * 100)
-        logging.info("Evaluating Foundation Model for Regression")
-        logging.info("=" * 100)
+        self.logger.info("=" * 100)
+        self.logger.info("Evaluating Foundation Model for Regression")
+        self.logger.info("=" * 100)
 
         try:
             # Initialize registry and data manager
@@ -628,7 +627,7 @@ class FoundationModelPipeline:
             data_manager = DatasetManager()
 
             # 1. Load dataset with regression labels
-            logging.info("Loading datasets with regression labels...")
+            self.logger.info("Loading datasets with regression labels...")
             train_dataset, val_dataset, test_dataset = data_manager.load_atlas_datasets(
                 dataset_config=dataset_config,
                 validation_fraction=dataset_config.validation_fraction,
@@ -640,10 +639,10 @@ class FoundationModelPipeline:
             )
 
             dataset_config.validate()
-            logging.info("Validated dataset config")
+            self.logger.info("Validated dataset config")
 
             dnn_training_config.validate()
-            logging.info("Validated training config")
+            self.logger.info("Validated training config")
 
             # 2. Train baseline regression model
             # Add input shape to the model config
@@ -662,13 +661,13 @@ class FoundationModelPipeline:
                 "hyperparameters": dnn_model_config["hyperparameters"],
             }
 
-            logging.info("Training baseline regression model...")
+            self.logger.info("Training baseline regression model...")
             baseline_model = ModelFactory.create_model(
                 model_type="dnn_predictor", config=dnn_model_config_dict
             )
             baseline_model.build()
-            logging.info("Baseline model created")
-            logging.info(baseline_model.model.summary())
+            self.logger.info("Baseline model created")
+            self.logger.info(baseline_model.model.summary())
 
             dnn_training_config_dict = {
                 "batch_size": dnn_training_config.batch_size,
@@ -677,21 +676,21 @@ class FoundationModelPipeline:
                 "early_stopping": dnn_training_config.early_stopping,
             }
 
-            logging.info("Setting up baseline model trainer...")
+            self.logger.info("Setting up baseline model trainer...")
             baseline_trainer = ModelTrainer(
                 model=baseline_model, training_config=dnn_training_config_dict
             )
             # Log sizes and shapes of baseline datasets
-            logging.info(f"Baseline train dataset size: {train_dataset.cardinality()}")
+            self.logger.info(f"Baseline train dataset size: {train_dataset.cardinality()}")
             for batch in train_dataset.take(1):
                 if isinstance(batch, tuple):
                     features, labels = batch
-                    logging.info("Baseline training dataset shapes:")
-                    logging.info(f"  Features: {features.shape}")
-                    logging.info(f"  Labels: {labels.shape}")
+                    self.logger.info("Baseline training dataset shapes:")
+                    self.logger.info(f"  Features: {features.shape}")
+                    self.logger.info(f"  Labels: {labels.shape}")
                 else:
-                    logging.info(f"Baseline training dataset shape: {batch.shape}")
-            logging.info("Training baseline regression model...")
+                    self.logger.info(f"Baseline training dataset shape: {batch.shape}")
+            self.logger.info("Training baseline regression model...")
             baseline_results = baseline_trainer.train(
                 dataset=train_dataset,
                 validation_data=val_dataset,
@@ -707,24 +706,24 @@ class FoundationModelPipeline:
             )
 
             # 3. Load foundation model encoder
-            logging.info("Loading foundation model...")
+            self.logger.info("Loading foundation model...")
             if foundation_model_path:
                 # Load from specified path
                 foundation_model_path = Path(foundation_model_path)
                 encoder_path = foundation_model_path / "models" / "foundation_model" / "encoder"
-                logging.info(
+                self.logger.info(
                     f"Loading foundation model encoder from: {encoder_path}"
                 )
                 foundation_model = tf.keras.models.load_model(encoder_path)
                 # Get the output shape(s) from the loaded encoder
                 encoder_output_shape = foundation_model.output_shape
-                logging.info(f"Encoder raw output shape: {encoder_output_shape}")
+                self.logger.info(f"Encoder raw output shape: {encoder_output_shape}")
 
                 # Check if the output shape is a list (multiple outputs) or a single tuple
                 if isinstance(encoder_output_shape, list):
                     # Assuming the first output is the desired latent representation (e.g., z_mean for VAE)
                     target_output_shape = encoder_output_shape[0]
-                    logging.info(f"Using first output shape from list: {target_output_shape}")
+                    self.logger.info(f"Using first output shape from list: {target_output_shape}")
                 elif isinstance(encoder_output_shape, tuple):
                     # Single output case
                     target_output_shape = encoder_output_shape
@@ -735,12 +734,12 @@ class FoundationModelPipeline:
                 latent_dim = target_output_shape[-1]
                 if not isinstance(latent_dim, int) or latent_dim <= 0:
                     raise ValueError(f"Could not determine a valid latent dimension from target output shape: {target_output_shape}")
-                logging.info(f"Determined encoder latent dimension: {latent_dim}")
+                self.logger.info(f"Determined encoder latent dimension: {latent_dim}")
             else:
                 raise ValueError("No foundation model path provided")
 
             # 4. Create encoded datasets
-            logging.info("Creating encoded datasets...")
+            self.logger.info("Creating encoded datasets...")
 
             def encode_batch(
                 batch, *args
@@ -762,27 +761,27 @@ class FoundationModelPipeline:
                     return encoded_features, labels
                 return encoded_features
 
-            logging.info("Encoded datasets")
+            self.logger.info("Encoded datasets")
 
             # Create encoded datasets
-            logging.info("Creating encoded datasets...")
+            self.logger.info("Creating encoded datasets...")
             encoded_train_dataset = train_dataset.map(encode_batch)
             encoded_val_dataset = val_dataset.map(encode_batch)
             encoded_test_dataset = test_dataset.map(encode_batch)
-            logging.info("Encoded datasets created")
+            self.logger.info("Encoded datasets created")
             # Log sizes and shapes of encoded datasets
-            logging.info(
+            self.logger.info(
                 f"Encoded train dataset size: {encoded_train_dataset.cardinality()}"
             )
             for batch in encoded_train_dataset.take(1):
                 if isinstance(batch, tuple):
                     features, labels = batch
-                    logging.info("Encoded training dataset shapes:")
-                    logging.info(f"  Features: {features.shape}")
-                    logging.info(f"  Labels: {labels.shape}")
+                    self.logger.info("Encoded training dataset shapes:")
+                    self.logger.info(f"  Features: {features.shape}")
+                    self.logger.info(f"  Labels: {labels.shape}")
 
             # 5. Train regression model on encoded data
-            logging.info("Training regression model on encoded data...")
+            self.logger.info("Training regression model on encoded data...")
             # Create a new config for the encoded model with adjusted input shape
             encoded_model_config = {
                 **dnn_model_config,
@@ -796,19 +795,19 @@ class FoundationModelPipeline:
                 },
             }
 
-            logging.info("Creating regression model on encoded data...")
+            self.logger.info("Creating regression model on encoded data...")
             encoded_model = ModelFactory.create_model(
                 model_type="dnn_predictor", config=encoded_model_config
             )
             encoded_model.build()
-            logging.info("Regression model on encoded data created")
-            logging.info(encoded_model.model.summary())
+            self.logger.info("Regression model on encoded data created")
+            self.logger.info(encoded_model.model.summary())
 
-            logging.info("Setting up regression model training on encoded data...")
+            self.logger.info("Setting up regression model training on encoded data...")
             encoded_trainer = ModelTrainer(
                 model=encoded_model, training_config=dnn_training_config_dict
             )
-            logging.info("Training regression model on encoded data...")
+            self.logger.info("Training regression model on encoded data...")
             encoded_results = encoded_trainer.train(
                 dataset=encoded_train_dataset,
                 validation_data=encoded_val_dataset,
@@ -822,9 +821,9 @@ class FoundationModelPipeline:
                 plot_training=True,
                 plots_dir=Path(f"{foundation_model_path}/encoded_regression/plots"),
             )
-            logging.info("Regression model on encoded data trained")
+            self.logger.info("Regression model on encoded data trained")
             # 6. Evaluate and compare models
-            logging.info("Evaluating models...")
+            self.logger.info("Evaluating models...")
 
             # 6a. Generate combined training plot
             try:
@@ -850,11 +849,11 @@ class FoundationModelPipeline:
                         # metric_labels={'loss': 'Loss', 'val_loss': 'Val Loss', 'mse': 'MSE', 'val_mse': 'Val MSE'}
                     )
                 else:
-                    logging.warning(
+                    self.logger.warning(
                         "Skipping combined plot generation: No history data found in results."
                     )
             except Exception as plot_error:
-                logging.error(
+                self.logger.error(
                     f"Failed to generate combined training plot: {plot_error}"
                 )
 
@@ -862,7 +861,7 @@ class FoundationModelPipeline:
             encoded_test_results = encoded_trainer.evaluate(encoded_test_dataset)
 
             # 7. Save evaluation results
-            logging.info("Saving evaluation results...")
+            self.logger.info("Saving evaluation results...")
             evaluation_results = {
                 "baseline_model": {
                     "training_metrics": baseline_results["final_metrics"],
@@ -901,26 +900,26 @@ class FoundationModelPipeline:
             # )
 
             # Display results
-            logging.info("Regression Evaluation Results:")
-            logging.info("=" * 50)
-            logging.info("Baseline Model:")
-            logging.info(f"Test Loss: {baseline_test_results['test_loss']:.6f}")
-            logging.info(f"Test MSE: {baseline_test_results['test_mse']:.6f}")
-            logging.info("Encoded Model:")
-            logging.info(f"Test Loss: {encoded_test_results['test_loss']:.6f}")
-            logging.info(f"Test MSE: {encoded_test_results['test_mse']:.6f}")
-            logging.info("Comparison:")
-            logging.info(
+            self.logger.info("Regression Evaluation Results:")
+            self.logger.info("=" * 50)
+            self.logger.info("Baseline Model:")
+            self.logger.info(f"Test Loss: {baseline_test_results['test_loss']:.6f}")
+            self.logger.info(f"Test MSE: {baseline_test_results['test_mse']:.6f}")
+            self.logger.info("Encoded Model:")
+            self.logger.info(f"Test Loss: {encoded_test_results['test_loss']:.6f}")
+            self.logger.info(f"Test MSE: {encoded_test_results['test_mse']:.6f}")
+            self.logger.info("Comparison:")
+            self.logger.info(
                 f"Test Loss Ratio: {evaluation_results['comparison']['test_loss_ratio']:.3f}"
             )
-            logging.info(
+            self.logger.info(
                 f"Test MSE Ratio: {evaluation_results['comparison']['test_mse_ratio']:.3f}"
             )
 
-            logging.info("Regression evaluation completed successfully")
+            self.logger.info("Regression evaluation completed successfully")
             return True
 
         except Exception as e:
-            logging.error(f"Regression evaluation failed: {type(e).__name__}: {str(e)}")
-            logging.error("Error context:")
+            self.logger.error(f"Regression evaluation failed: {type(e).__name__}: {str(e)}")
+            self.logger.error("Error context:")
             raise

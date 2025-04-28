@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from hep_foundation.config.logging_config import setup_logging
+from hep_foundation.config.logging_config import get_logger
 from hep_foundation.data.physlite_utilities import (
     PhysliteBranch,
     PhysliteFeatureArrayAggregator,
@@ -13,6 +13,8 @@ from hep_foundation.data.physlite_utilities import (
     PhysliteSelectionConfig,
 )
 
+# Get module-specific logger
+logger = get_logger(__name__)  # __name__ will be 'hep_foundation.data.task_config'
 
 class TaskConfig:
     """
@@ -43,8 +45,6 @@ class TaskConfig:
             input_config: Configuration for input data selection
             label_configs: Optional list of configurations for output labels
         """
-        # Setup logging
-        setup_logging()
 
         self.event_filters = event_filters
         self.input = input_config
@@ -321,6 +321,7 @@ class TaskConfig:
         Returns:
             New TaskConfig instance
         """
+        logger.info("TASK CONFIG: Creating task config from branch names")
         # Create event filters
         event_filters = []
         for branch_name, range_dict in event_filter_dict.items():
@@ -342,6 +343,7 @@ class TaskConfig:
                     )
             except ValueError:
                 # Skip invalid branches
+                logger.warning(f"Invalid branch name: {branch_name}")
                 continue
 
         # Create input configuration

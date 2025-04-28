@@ -29,3 +29,4 @@ src/hep_foundation/training/model_trainer.py
 src/hep_foundation/utils/__init__.py
 src/hep_foundation/utils/plot_utils.py
 src/hep_foundation/utils/utils.py
+tests/test_pipeline.py

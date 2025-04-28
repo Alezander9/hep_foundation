@@ -1,4 +1,3 @@
-import logging
 import os
 from datetime import datetime
 from pathlib import Path
@@ -9,7 +8,7 @@ import numpy as np
 import tensorflow as tf
 import uproot
 
-from hep_foundation.config.logging_config import setup_logging
+from hep_foundation.config.logging_config import get_logger
 from hep_foundation.data.atlas_file_manager import ATLASFileManager
 from hep_foundation.data.task_config import (
     PhysliteFeatureArrayAggregator,
@@ -40,8 +39,7 @@ class PhysliteFeatureProcessor:
         Args:
             atlas_manager: Optional ATLASFileManager instance
         """
-        # Setup logging at INFO level
-        setup_logging()
+        self.logger = get_logger(__name__)
 
         # Could add configuration parameters here if needed in the future
         # For now, keeping it simple as the class is primarily stateless
@@ -427,9 +425,9 @@ class PhysliteFeatureProcessor:
         """
 
         if signal_key:
-            logging.info(f"Processing signal data for {signal_key}")
+            self.logger.info(f"Processing signal data for {signal_key}")
         elif run_number:
-            logging.info(f"Processing ATLAS data for run {run_number}")
+            self.logger.info(f"Processing ATLAS data for run {run_number}")
         else:
             raise ValueError("Must provide either run_number or signal_key")
 
@@ -452,14 +450,14 @@ class PhysliteFeatureProcessor:
         required_branches = self.get_required_branches(task_config)
 
         # Get catalog paths
-        logging.info(
+        self.logger.info(
             f"Getting catalog paths for run {run_number} and signal {signal_key}"
         )
         catalog_paths = self._get_catalog_paths(run_number, signal_key, catalog_limit)
-        logging.info(f"Found {len(catalog_paths)} catalog paths")
+        self.logger.info(f"Found {len(catalog_paths)} catalog paths")
 
         for catalog_idx, catalog_path in enumerate(catalog_paths):
-            logging.info(f"Processing catalog {catalog_idx} with path: {catalog_path}")
+            self.logger.info(f"Processing catalog {catalog_idx} with path: {catalog_path}")
 
             try:
                 catalog_start_time = datetime.now()
@@ -519,7 +517,7 @@ class PhysliteFeatureProcessor:
                                             np.any(first_aggregator != 0, axis=1)
                                         )
                         except Exception as e:
-                            logging.error(f"Error in batch processing: {str(e)}")
+                            self.logger.error(f"Error in batch processing: {str(e)}")
                             raise
 
                 # Update statistics
@@ -529,13 +527,13 @@ class PhysliteFeatureProcessor:
                 stats["processed_events"] += catalog_stats["processed"]
 
                 # Print catalog summary
-                logging.info(f"Catalog {catalog_idx} summary:")
-                logging.info(f"  Events processed: {catalog_stats['events']}")
-                logging.info(
+                self.logger.info(f"Catalog {catalog_idx} summary:")
+                self.logger.info(f"  Events processed: {catalog_stats['events']}")
+                self.logger.info(
                     f"  Events passing selection: {catalog_stats['processed']}"
                 )
-                logging.info(f"  Processing time: {catalog_duration:.1f}s")
-                logging.info(
+                self.logger.info(f"  Processing time: {catalog_duration:.1f}s")
+                self.logger.info(
                     f"  Rate: {catalog_stats['events'] / catalog_duration:.1f} events/s"
                 )
 
@@ -543,7 +541,7 @@ class PhysliteFeatureProcessor:
                     break
 
             except Exception as e:
-                logging.error(f"Error processing catalog {catalog_path}: {str(e)}")
+                self.logger.error(f"Error processing catalog {catalog_path}: {str(e)}")
                 continue
 
             finally:

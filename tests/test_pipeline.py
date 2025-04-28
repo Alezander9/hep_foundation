@@ -4,10 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from hep_foundation.training.foundation_model_pipeline import FoundationModelPipeline
-from hep_foundation.data.task_config import TaskConfig
 from hep_foundation.data.dataset_manager import DatasetConfig
+from hep_foundation.data.task_config import TaskConfig
+from hep_foundation.training.foundation_model_pipeline import FoundationModelPipeline
 from hep_foundation.training.model_trainer import TrainingConfig
+
 
 def create_test_configs():
     """Create a minimal config for fast testing."""
