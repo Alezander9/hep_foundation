@@ -90,6 +90,7 @@ class ModelTrainer:
         optimizer: Optional[tf.keras.optimizers.Optimizer] = None,
         loss: Optional[tf.keras.losses.Loss] = None,
     ):
+        self.logger = get_logger(__name__)
         self.model = model
         self.config = training_config
 

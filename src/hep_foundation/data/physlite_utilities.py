@@ -4,6 +4,12 @@ from enum import Enum
 from importlib import resources
 from typing import Any, Optional
 
+# Import functions to check and retrieve derived feature definitions
+from hep_foundation.data.physlite_derived_features import (
+    is_derived_feature,
+    get_derived_feature,
+)
+
 logger = logging.getLogger(__name__)
 
 # Load the branch index data from the JSON file
@@ -40,34 +46,51 @@ def get_branch_info(
     branch_name: str,
 ) -> tuple[bool, BranchType, Optional[dict[str, Any]]]:
     """
-    Check if a branch name is valid and determine its type.
+    Check if a branch name is valid (either real or derived) and determine its type.
 
     Args:
-        branch_name: Full branch name (e.g., "InDetTrackParticlesAuxDyn.d0")
+        branch_name: Full branch name (e.g., "InDetTrackParticlesAuxDyn.d0" or "derived.XYZ")
 
     Returns:
         Tuple containing:
-        - Boolean indicating if branch exists
-        - BranchType enum value
-        - Dictionary with branch information if available, None otherwise
+        - Boolean indicating if branch exists (or is a known derived feature)
+        - BranchType enum value based on shape (real or derived)
+        - Dictionary with branch information (from index or constructed for derived)
 
     Raises:
-        RuntimeError: If branch index is not available
+        RuntimeError: If branch index is not available and the branch is not derived.
     """
-    # If branch index is not available, raise error
+    # First, check if it's a known derived feature
+    if is_derived_feature(branch_name):
+        derived_feature = get_derived_feature(branch_name)
+        if derived_feature:
+            # Get the constructed branch info dict (shape, dtype, status)
+            branch_info_dict = derived_feature.get_branch_info_dict()
+            # Determine the branch type from the derived feature's shape
+            branch_type = _determine_branch_type(branch_info_dict)
+            logger.debug(f"Branch '{branch_name}' identified as derived: type={branch_type}, info={branch_info_dict}")
+            return True, branch_type, branch_info_dict
+        else:
+            # Should not happen if is_derived_feature is True, but handle defensively
+            logger.warning(f"Branch '{branch_name}' flagged as derived but definition not found.")
+            return False, BranchType.UNKNOWN, None
+
+
+    # If not derived, proceed to check the PhysLite index file
     if not PHYSLITE_BRANCHES:
+        # Raise error only if it's not derived and the index is missing
         raise RuntimeError(
-            "PhysLite branch index not found. Cannot validate branches or determine their types. "
+            "PhysLite branch index not found and branch is not derived. Cannot validate branches. "
             "Please ensure the branch index is properly installed and accessible."
         )
 
-    # Extract category and feature name
-    branch_name: str = branch_name
+    # Extract category and feature name for index lookup
+    branch_name_str: str = branch_name # Ensure it's a string
     category: Optional[str] = None
-    feature: str = branch_name
+    feature: str = branch_name_str
 
-    if "." in branch_name:
-        category, feature = branch_name.split(".", 1)
+    if "." in branch_name_str:
+        category, feature = branch_name_str.split(".", 1)
 
     # Check if the branch exists in the loaded dictionary
     branch_info: Optional[dict[str, Any]] = None
@@ -78,25 +101,23 @@ def get_branch_info(
         if "Other" in PHYSLITE_BRANCHES and feature in PHYSLITE_BRANCHES["Other"]:
              branch_info = PHYSLITE_BRANCHES["Other"][feature]
 
-
     if not branch_info:
-        logger.warning(f"Branch '{branch_name}' not found in PHYSLITE_BRANCHES index.")
+        # It wasn't derived and wasn't found in the index
+        logger.warning(f"Branch '{branch_name}' not found in PHYSLITE_BRANCHES index and is not a known derived feature.")
         return False, BranchType.UNKNOWN, None
 
-    # Check status
+    # Check status (only for branches found in the index)
     status = branch_info.get("status", "unknown")
     if status != "success":
         logger.warning(
-            f"Branch '{branch_name}' has status '{status}' in index. Using default type."
+            f"Branch '{branch_name}' has status '{status}' in index. Treating as invalid."
         )
         return False, BranchType.UNKNOWN, None
 
-    branch_info.get("dtype", "unknown")
-    branch_info.get("shape", None)
-
-    # Determine branch type from shape information
+    # Determine branch type from shape information (only for branches found in the index)
     branch_type = _determine_branch_type(branch_info)
 
+    # If we reached here, it's a valid branch from the index file
     return True, branch_type, branch_info
 
 

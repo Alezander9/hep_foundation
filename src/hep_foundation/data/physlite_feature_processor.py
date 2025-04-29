@@ -10,6 +10,11 @@ import uproot
 
 from hep_foundation.config.logging_config import get_logger
 from hep_foundation.data.atlas_file_manager import ATLASFileManager
+from hep_foundation.data.physlite_derived_features import (
+    is_derived_feature,
+    get_derived_feature,
+    get_dependencies,
+)
 from hep_foundation.data.task_config import (
     PhysliteFeatureArrayAggregator,
     PhysliteFeatureArrayFilter,
@@ -48,18 +53,19 @@ class PhysliteFeatureProcessor:
     def get_required_branches(self, task_config: TaskConfig) -> set:
         """
         Get set of all required branch names for a given task configuration.
+        This includes both real and potentially derived branches at this stage.
 
         Args:
             task_config: TaskConfig object containing event filters, input features, and labels
 
         Returns:
-            set: Set of branch names required for processing
+            set: Set of branch names required for processing (including derived ones initially)
         """
         required_branches = set()
 
         # Add event filter branches
-        for filter in task_config.event_filters:
-            required_branches.add(filter.branch.name)
+        for filter_item in task_config.event_filters:
+            required_branches.add(filter_item.branch.name)
 
         # Process all selection configs (input and labels)
         for selection_config in [task_config.input, *task_config.labels]:
@@ -73,8 +79,8 @@ class PhysliteFeatureProcessor:
                 for selector in aggregator.input_branches:
                     required_branches.add(selector.branch.name)
                 # Add filter branches
-                for filter in aggregator.filter_branches:
-                    required_branches.add(filter.branch.name)
+                for filter_item in aggregator.filter_branches:
+                    required_branches.add(filter_item.branch.name)
                 # Add sort branch if present
                 if aggregator.sort_by_branch:
                     required_branches.add(aggregator.sort_by_branch.branch.name)
@@ -374,6 +380,12 @@ class PhysliteFeatureProcessor:
         Returns:
             Dictionary of processed features (scalar, array, and labels) or None if event rejected
         """
+
+        # TODO: Here we will do the calculation for the derived quantities
+        # We have all the information we need in the event_data dictionary
+        # We need to make a new dictionary with the derived quantities
+
+
         # Apply event filters first
         if not self._apply_event_filters(event_data, task_config.event_filters):
             return None
@@ -442,12 +454,41 @@ class PhysliteFeatureProcessor:
         processed_inputs = []
         processed_labels = []
 
-        # TODO: Here we will take the derived quantity branches and add the branches they depend on to the required branches
-        # If they are not already in the required branches
-        # Actually we might move this logic into the get_required_branches method
+        # Collect all initially required branch names (including derived ones)
+        initially_required_branches = self.get_required_branches(task_config)
+        self.logger.debug(f"Initially required branches (incl. derived): {initially_required_branches}")
 
-        # Collect all required branch names
-        required_branches = self.get_required_branches(task_config)
+        # Separate derived features and identify their dependencies
+        derived_features_requested = set()
+        actual_branches_to_read = set()
+        dependencies_to_add = set()
+
+        for branch_name in initially_required_branches:
+            if is_derived_feature(branch_name):
+                derived_features_requested.add(branch_name)
+                deps = get_dependencies(branch_name)
+                if deps:
+                    dependencies_to_add.update(deps)
+                else:
+                    # This case should be handled by definition checks, but log if it occurs
+                    self.logger.warning(f"Derived feature '{branch_name}' has no dependencies defined.")
+            else:
+                # This is a real branch, add it directly
+                actual_branches_to_read.add(branch_name)
+
+        # Add the identified dependencies to the set of branches to read
+        actual_branches_to_read.update(dependencies_to_add)
+
+        if derived_features_requested:
+             self.logger.info(f"Identified derived features: {derived_features_requested}")
+             self.logger.info(f"Added dependencies for derived features: {dependencies_to_add}")
+        self.logger.info(f"Actual branches to read from file: {actual_branches_to_read}")
+
+        # Check if we have anything to read
+        if not actual_branches_to_read:
+             self.logger.warning("No actual branches identified to read from the file after processing dependencies. Check TaskConfig and derived feature definitions.")
+             return [], [], stats # Return empty results
+
 
         # Get catalog paths
         self.logger.info(
@@ -466,31 +507,81 @@ class PhysliteFeatureProcessor:
                 with uproot.open(catalog_path) as file:
                     tree = file["CollectionTree;1"]
 
-                    # Read all required branches
+                    # Check which required branches are actually available in the tree
+                    available_branches = set(tree.keys())
+                    branches_to_read_in_tree = actual_branches_to_read.intersection(available_branches)
+                    missing_branches = actual_branches_to_read - branches_to_read_in_tree
+
+                    if missing_branches:
+                        self.logger.warning(f"Branches required but not found in tree {catalog_path}: {missing_branches}")
+                        # Decide if we should skip or continue with available ones. For now, let's try to continue.
+                        if not branches_to_read_in_tree:
+                             self.logger.error(f"No required branches available in tree {catalog_path}. Skipping catalog.")
+                             continue # Skip this catalog if none of the needed branches are present
+
+                    # Read only the available required branches
                     for arrays in tree.iterate(
-                        required_branches, library="np", step_size=1000
+                        branches_to_read_in_tree, library="np", step_size=1000
                     ):
                         try:
-                            catalog_stats["events"] += len(next(iter(arrays.values())))
+                            # Check if the returned dictionary itself is empty (safer check)
+                            if not arrays:
+                                continue
 
-                            for evt_idx in range(len(next(iter(arrays.values())))):
-                                # Extract all branches for this event
-                                event_data = {
+                            # Get number of events and skip if batch is empty
+                            # This correctly handles batches with 0 events.
+                            num_events_in_batch = len(next(iter(arrays.values())))
+                            if num_events_in_batch == 0:
+                                continue
+                            catalog_stats["events"] += num_events_in_batch
+
+
+                            for evt_idx in range(num_events_in_batch):
+                                # Extract data only for the branches read
+                                raw_event_data = {
                                     branch_name: arrays[branch_name][evt_idx]
-                                    for branch_name in required_branches
-                                    if branch_name in arrays
+                                    for branch_name in branches_to_read_in_tree
+                                    if branch_name in arrays # Double check presence
                                 }
-                                # Skip empty events
-                                if not event_data or not any(
-                                    len(v) > 0 if isinstance(v, np.ndarray) else True
-                                    for v in event_data.values()
-                                ):
+                                # Skip if somehow event data is empty (shouldn't happen with checks above)
+                                if not raw_event_data:
                                     continue
 
-                                # TODO: Here we will do the calculation for the derived quantities
+                                # --- Calculate Derived Features ---
+                                processed_event_data = raw_event_data.copy() # Start with real data
+                                calculation_failed = False
+                                for derived_name in derived_features_requested:
+                                    derived_feature_def = get_derived_feature(derived_name)
+                                    if not derived_feature_def: continue # Should not happen
 
-                                # Process event
-                                result = self._process_event(event_data, task_config)
+                                    # Check if all dependencies were read successfully for this event
+                                    dependencies_present = all(dep in raw_event_data for dep in derived_feature_def.dependencies)
+
+                                    if dependencies_present:
+                                        try:
+                                            # Prepare dependency data for calculation
+                                            dependency_values = {
+                                                dep: raw_event_data[dep]
+                                                for dep in derived_feature_def.dependencies
+                                            }
+                                            # Calculate and add to the processed data
+                                            calculated_value = derived_feature_def.calculate(dependency_values)
+                                            processed_event_data[derived_name] = calculated_value
+                                        except Exception as calc_e:
+                                            self.logger.error(f"Error calculating derived feature '{derived_name}' for event {evt_idx} in batch: {calc_e}")
+                                            calculation_failed = True
+                                            break # Stop processing derived features for this event
+                                    else:
+                                        missing_deps = [dep for dep in derived_feature_def.dependencies if dep not in raw_event_data]
+                                        self.logger.warning(f"Cannot calculate derived feature '{derived_name}' due to missing dependencies: {missing_deps}. Skipping for this event.")
+                                        calculation_failed = True
+                                        break # Stop processing derived features for this event
+
+                                if calculation_failed:
+                                    continue # Skip this event entirely if any derived feature calculation failed
+
+                                # --- Process Event (using data with derived features added) ---
+                                result = self._process_event(processed_event_data, task_config)
                                 if result is not None:
                                     # Extract the components from the result dictionary
                                     input_features = {
@@ -505,20 +596,31 @@ class PhysliteFeatureProcessor:
                                     catalog_stats["processed"] += 1
 
                                     # Update feature statistics
+                                    # Note: This might need adjustment if derived features impact how stats are counted
                                     if input_features["aggregated_features"]:
-                                        first_aggregator = next(
-                                            iter(
-                                                input_features[
-                                                    "aggregated_features"
-                                                ].values()
-                                            )
-                                        )
-                                        stats["total_features"] += np.sum(
-                                            np.any(first_aggregator != 0, axis=1)
-                                        )
+                                         first_aggregator_key = next(iter(input_features["aggregated_features"].keys()), None)
+                                         if first_aggregator_key:
+                                             first_aggregator = input_features["aggregated_features"][first_aggregator_key]
+                                             # Ensure the aggregator output is not empty before checking shape
+                                             if first_aggregator.size > 0:
+                                                  try:
+                                                       # Check for non-zero elements along the feature axis
+                                                       stats["total_features"] += np.sum(
+                                                            np.any(first_aggregator != 0, axis=1)
+                                                       )
+                                                  except np.AxisError:
+                                                       # Handle potential scalar case if aggregator somehow returns it
+                                                       stats["total_features"] += np.sum(first_aggregator != 0)
+
+
+                        except StopIteration:
+                             # This can happen if arrays dict is empty but passed 'if not arrays'
+                             self.logger.warning("Encountered StopIteration accessing batch arrays, likely empty batch.")
+                             continue # Skip to next batch
                         except Exception as e:
-                            self.logger.error(f"Error in batch processing: {str(e)}")
-                            raise
+                            self.logger.error(f"Error processing batch in catalog {catalog_path}: {str(e)}", exc_info=True) # Add traceback
+                            # Potentially continue to next batch or re-raise depending on severity
+                            continue # Try to continue with the next batch
 
                 # Update statistics
                 catalog_duration = (datetime.now() - catalog_start_time).total_seconds()
@@ -527,32 +629,46 @@ class PhysliteFeatureProcessor:
                 stats["processed_events"] += catalog_stats["processed"]
 
                 # Print catalog summary
+                if catalog_duration > 0:
+                     rate = catalog_stats['events'] / catalog_duration
+                else:
+                     rate = float('inf') # Avoid division by zero if processing was instant
+
                 self.logger.info(f"Catalog {catalog_idx} summary:")
-                self.logger.info(f"  Events processed: {catalog_stats['events']}")
+                self.logger.info(f"  Total events read: {catalog_stats['events']}")
                 self.logger.info(
-                    f"  Events passing selection: {catalog_stats['processed']}"
+                    f"  Events passing selection (incl. derived calc): {catalog_stats['processed']}"
                 )
-                self.logger.info(f"  Processing time: {catalog_duration:.1f}s")
-                self.logger.info(
-                    f"  Rate: {catalog_stats['events'] / catalog_duration:.1f} events/s"
-                )
+                self.logger.info(f"  Processing time: {catalog_duration:.2f}s")
+                self.logger.info(f"  Rate: {rate:.1f} events/s")
+
 
                 if catalog_limit and catalog_idx >= catalog_limit - 1:
                     break
 
+            except FileNotFoundError:
+                 self.logger.error(f"Catalog file not found: {catalog_path}. Skipping.")
+                 continue
             except Exception as e:
-                self.logger.error(f"Error processing catalog {catalog_path}: {str(e)}")
-                continue
+                self.logger.error(f"Critical error processing catalog {catalog_path}: {str(e)}", exc_info=True) # Add traceback
+                # Depending on error, might want to stop or continue
+                continue # Try to continue with the next catalog
 
             finally:
-                if delete_catalogs and catalog_path.exists():
-                    os.remove(catalog_path)
+                # Optional: Consider if deleting catalogs is still desired if errors occurred
+                if delete_catalogs and Path(catalog_path).exists():
+                   try:
+                       os.remove(catalog_path)
+                       self.logger.info(f"Deleted catalog file: {catalog_path}")
+                   except OSError as delete_e:
+                       self.logger.error(f"Error deleting catalog file {catalog_path}: {delete_e}")
+
 
         # Convert stats to native Python types
         stats = {
             "total_events": int(stats["total_events"]),
             "processed_events": int(stats["processed_events"]),
-            "total_features": int(stats["total_features"]),
+            "total_features": int(stats["total_features"]), # Note: feature counting might need adjustment for derived
             "processing_time": float(stats["processing_time"]),
         }
 

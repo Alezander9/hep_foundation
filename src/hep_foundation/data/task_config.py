@@ -14,7 +14,7 @@ from hep_foundation.data.physlite_utilities import (
 )
 
 # Get module-specific logger
-logger = get_logger(__name__)  # __name__ will be 'hep_foundation.data.task_config'
+logger = get_logger(__name__) 
 
 class TaskConfig:
     """
@@ -321,7 +321,6 @@ class TaskConfig:
         Returns:
             New TaskConfig instance
         """
-        logger.info("TASK CONFIG: Creating task config from branch names")
         # Create event filters
         event_filters = []
         for branch_name, range_dict in event_filter_dict.items():
