@@ -167,6 +167,7 @@ class DatasetManager:
         dataset_config: DatasetConfig,
         plot_distributions: bool = False,
         delete_catalogs: bool = True,
+        plot_output_dir: Optional[Path] = None,
     ) -> tuple[str, Path]:
         """
         Create new processed dataset from ATLAS data.
@@ -210,8 +211,9 @@ class DatasetManager:
                         task_config=dataset_config.task_config,
                         run_number=run_number,
                         catalog_limit=dataset_config.catalog_limit,
-                        plot_distributions=plot_distributions,
                         delete_catalogs=delete_catalogs,
+                        plot_distributions=plot_distributions,
+                        plot_output_dir=plot_output_dir,
                     )
                     inputs, labels, stats = result
                     all_inputs.extend(inputs)
@@ -373,8 +375,9 @@ class DatasetManager:
                     inputs, labels, stats = self.feature_processor._process_data(
                         task_config=dataset_config.task_config,
                         signal_key=signal_key,
-                        plot_distributions=plot_distributions,
                         delete_catalogs=False,  # Always keep signal catalogs
+                        plot_distributions=plot_distributions,
+                        plot_output_dir=plot_output_dir,
                     )
 
                     if not inputs:
@@ -538,6 +541,7 @@ class DatasetManager:
         shuffle_buffer: int = 10000,
         include_labels: bool = False,
         delete_catalogs: bool = True,
+        plot_distributions: bool = False,
     ) -> tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
         """Load and split dataset into train/val/test."""
         self.logger.info("Loading datasets")
@@ -547,11 +551,15 @@ class DatasetManager:
             self.current_dataset_path = (
                 self.datasets_dir / f"{self.current_dataset_id}.h5"
             )
+            plot_output_dir = self.datasets_dir / f"{self.current_dataset_id}/plots"
 
             if not self.current_dataset_path.exists():
                 self.current_dataset_id, self.current_dataset_path = (
                     self._create_atlas_dataset(
-                        dataset_config, delete_catalogs=delete_catalogs
+                        dataset_config,
+                        delete_catalogs=delete_catalogs,
+                        plot_distributions=plot_distributions,
+                        plot_output_dir=plot_output_dir,
                     )
                 )
 
@@ -612,6 +620,8 @@ class DatasetManager:
         dataset_config: DatasetConfig,
         batch_size: int = 1000,
         include_labels: bool = False,
+        plot_distributions: bool = False,
+        plot_output_dir: Optional[Path] = None,
     ) -> dict[str, tf.data.Dataset]:
         """
         Load signal datasets for evaluation.
@@ -633,7 +643,9 @@ class DatasetManager:
             # Create if doesn't exist
             if not dataset_path.exists():
                 dataset_id, dataset_path = self._create_signal_dataset(
-                    dataset_config=dataset_config
+                    dataset_config=dataset_config,
+                    plot_distributions=plot_distributions,
+                    plot_output_dir=plot_output_dir,
                 )
 
             # Load datasets
@@ -795,6 +807,7 @@ class DatasetManager:
         except Exception as e:
             raise Exception(f"Failed to load and encode dataset: {str(e)}")
 
+    # NO LONGER USED
     def _plot_distributions(
         self,
         pre_selection_stats: dict[str, list],

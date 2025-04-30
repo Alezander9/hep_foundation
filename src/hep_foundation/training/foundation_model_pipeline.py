@@ -180,6 +180,7 @@ class FoundationModelPipeline:
                 shuffle_buffer=dataset_config.shuffle_buffer,
                 include_labels=dataset_config.include_labels,
                 delete_catalogs=True,
+                plot_distributions=True,
             )
             self.logger.info("Loaded datasets")
 

@@ -2,11 +2,17 @@ import os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from collections import defaultdict
+import math # Import math for ceil
 
 import h5py
 import numpy as np
 import tensorflow as tf
 import uproot
+import matplotlib.pyplot as plt
+
+# Import plotting utilities
+from hep_foundation.utils import plot_utils
 
 from hep_foundation.config.logging_config import get_logger
 from hep_foundation.data.atlas_file_manager import ATLASFileManager
@@ -166,37 +172,62 @@ class PhysliteFeatureProcessor:
     ) -> np.ndarray:
         """
         Apply array feature filters to track-level features.
+        Assumes filters list is not empty when called.
 
         Args:
-            feature_arrays: Dictionary mapping feature names to their array values
-            filters: List of PhysliteFeatureArrayFilter objects to apply
+            feature_arrays: Dictionary mapping feature names (for filtering) to their array values.
+                            Must contain arrays corresponding to filters.
+            filters: List of PhysliteFeatureArrayFilter objects to apply (non-empty).
 
         Returns:
-            np.ndarray: Boolean mask indicating which array elements pass all filters
+            np.ndarray: Boolean mask indicating which array elements pass all filters.
         """
-        if not filters:
-            # If no filters, accept all elements
-            sample_array = next(iter(feature_arrays.values()))
-            return np.ones(len(sample_array), dtype=bool)
+        # This function now assumes 'filters' is not empty.
+        # The case of no filters is handled by the caller (_process_selection_config).
 
-        # Start with all True mask
-        mask = np.ones(len(next(iter(feature_arrays.values()))), dtype=bool)
+        # Determine the length from the first filter array provided
+        # This assumes all arrays in feature_arrays for filtering have the same length
+        if not feature_arrays:
+             # This case should ideally not be reached if filters are present and data was fetched
+             self.logger.warning("_apply_feature_array_filters called with empty feature_arrays dictionary despite non-empty filters. Returning empty mask.")
+             return np.array([], dtype=bool) # Return empty mask if feature_arrays is empty
 
-        for filter in filters:
+        try:
+            first_array_key = filters[0].branch.name # Use first filter's branch name
+            initial_length = len(feature_arrays[first_array_key])
+        except KeyError:
+             self.logger.error(f"Filter branch '{filters[0].branch.name}' not found in feature_arrays passed to _apply_feature_array_filters. Returning empty mask.")
+             return np.array([], dtype=bool) # Return empty if the first filter's array is missing
+        except Exception as e:
+             self.logger.error(f"Error determining length in _apply_feature_array_filters: {e}. Returning empty mask.")
+             return np.array([], dtype=bool)
+
+
+        # Start with all True mask of the correct length
+        mask = np.ones(initial_length, dtype=bool)
+
+        for filter_item in filters:
             # Get the feature array using the branch name
-            values = feature_arrays.get(filter.branch.name)
+            values = feature_arrays.get(filter_item.branch.name)
             if values is None:
-                # If feature is missing, reject all elements
+                # If a required filter feature is missing, reject all elements
+                self.logger.warning(f"Filter branch '{filter_item.branch.name}' missing in _apply_feature_array_filters. Rejecting all elements.")
                 mask[:] = False
                 break
+            if len(values) != initial_length:
+                 # If lengths mismatch, something is wrong
+                 self.logger.warning(f"Length mismatch for filter branch '{filter_item.branch.name}' ({len(values)}) vs expected ({initial_length}). Rejecting all elements.")
+                 mask[:] = False
+                 break
+
 
             # Apply min filter if it exists
-            if filter.min_value is not None:
-                mask &= values >= filter.min_value
+            if filter_item.min_value is not None:
+                mask &= values >= filter_item.min_value
 
             # Apply max filter if it exists
-            if filter.max_value is not None:
-                mask &= values <= filter.max_value
+            if filter_item.max_value is not None:
+                mask &= values <= filter_item.max_value
 
         return mask
 
@@ -289,6 +320,103 @@ class PhysliteFeatureProcessor:
 
         return selected_features
 
+    def _process_event(
+        self, event_data: dict[str, np.ndarray], task_config: TaskConfig
+    ) -> Optional[dict[str, np.ndarray]]:
+        """
+        Process a single event using the task configuration.
+        (Now returns the structure including original branch names for plotting)
+
+        Args:
+            event_data: Dictionary mapping branch names (real and derived) to their raw values
+            task_config: TaskConfig object containing event filters, input features, and labels
+
+        Returns:
+            Dictionary of processed features or None if event rejected. Structure:
+            {
+                "scalar_features": {branch_name: value, ...},
+                "aggregated_features": {
+                     aggregator_key: { # e.g., "aggregator_0"
+                          "array": aggregated_array,
+                          "branch_names": [original_branch_name1, ...]
+                     }, ...
+                },
+                "label_features": [ # List for multiple label sets
+                     {
+                          "scalar_features": {branch_name: value, ...},
+                          "aggregated_features": {agg_key: {"array": ..., "branch_names": [...]}}
+                     }, ...
+                ]
+            }
+        """
+        # Apply event filters first
+        if not self._apply_event_filters(event_data, task_config.event_filters):
+            return None
+
+        # Process input selection config
+        input_result = self._process_selection_config(event_data, task_config.input)
+        if input_result is None:
+            return None
+
+        # Process each label config if present
+        label_results = []
+        for label_config in task_config.labels:
+            label_result = self._process_selection_config(event_data, label_config)
+            if label_result is None:
+                # If any label processing fails for a supervised task, reject the event
+                # Modify this if partial labels are acceptable
+                return None
+            label_results.append(label_result)
+
+        # Construct the final result dictionary, adding branch names to aggregators
+        final_result = {
+            "scalar_features": input_result["scalar_features"],
+            "aggregated_features": {},
+            "label_features": []
+        }
+
+        # Add input aggregators with branch names
+        for agg_key, agg_array in input_result["aggregated_features"].items():
+             agg_index = int(agg_key.split("_")[1])
+             original_branches = [
+                 sel.branch.name for sel in task_config.input.feature_array_aggregators[agg_index].input_branches
+             ]
+             final_result["aggregated_features"][agg_key] = {
+                 "array": agg_array,
+                 "branch_names": original_branches
+             }
+
+        # Add label results with branch names
+        for i, label_res in enumerate(label_results):
+             processed_label = {
+                 "scalar_features": label_res["scalar_features"],
+                 "aggregated_features": {}
+             }
+             for agg_key, agg_array in label_res["aggregated_features"].items():
+                  # Assuming label aggregators follow the same index structure
+                  agg_index = int(agg_key.split("_")[1])
+                  # Ensure the label config exists and has aggregators
+                  if i < len(task_config.labels) and agg_index < len(task_config.labels[i].feature_array_aggregators):
+                      original_branches = [
+                          sel.branch.name for sel in task_config.labels[i].feature_array_aggregators[agg_index].input_branches
+                      ]
+                      processed_label["aggregated_features"][agg_key] = {
+                           "array": agg_array,
+                           "branch_names": original_branches
+                      }
+                  else:
+                       self.logger.warning(f"Could not map label aggregator key '{agg_key}' back to TaskConfig definition for label set {i}.")
+                       # Fallback: store without branch names
+                       processed_label["aggregated_features"][agg_key] = {
+                           "array": agg_array,
+                           "branch_names": []
+                       }
+
+             final_result["label_features"].append(processed_label)
+
+
+        return final_result
+
     def _process_selection_config(
         self,
         event_data: dict[str, np.ndarray],
@@ -296,6 +424,7 @@ class PhysliteFeatureProcessor:
     ) -> Optional[dict[str, np.ndarray]]:
         """
         Process a single selection configuration to extract and aggregate features.
+        (Modified to return structure compatible with _process_event needs)
 
         Args:
             event_data: Dictionary mapping branch names to their values
@@ -303,17 +432,16 @@ class PhysliteFeatureProcessor:
 
         Returns:
             Dictionary containing:
-                - 'scalar_features': Dict of selected scalar features
-                - 'aggregated_features': Dict of aggregated array features
+                - 'scalar_features': Dict of selected scalar features {branch_name: value}
+                - 'aggregated_features': Dict of aggregated array features {aggregator_key: array}
             Returns None if any required features are missing or aggregation fails
         """
         # Extract scalar features
+        scalar_features = {}
         if selection_config.feature_selectors:
-            scalar_features = self._extract_selected_features(
-                event_data, selection_config.feature_selectors
-            )
-        else:
-            scalar_features = {}
+             scalar_features = self._extract_selected_features(
+                  event_data, selection_config.feature_selectors
+             )
 
         # Process aggregators
         aggregated_features = {}
@@ -321,92 +449,97 @@ class PhysliteFeatureProcessor:
             for idx, aggregator in enumerate(
                 selection_config.feature_array_aggregators
             ):
-                # Get all needed arrays first
-                array_features = {}
-
-                # Get input branch arrays
-                for selector in aggregator.input_branches:
-                    value = event_data.get(selector.branch.name)
-                    if value is None or len(value) == 0:
-                        return None
-                    array_features[selector.branch.name] = value
-
-                # Apply filters to get valid mask
-                valid_mask = self._apply_feature_array_filters(
-                    array_features, aggregator.filter_branches
-                )
-
-                # Get sort values and indices if sort_by_branch is specified
+                # --- Check Requirements and Get Input Arrays ---
+                array_features = {} # Stores input arrays for aggregation
+                required_for_agg = set(s.branch.name for s in aggregator.input_branches)
+                filter_branch_names = set(f.branch.name for f in aggregator.filter_branches)
+                required_for_agg.update(filter_branch_names)
                 if aggregator.sort_by_branch:
-                    sort_value = event_data.get(aggregator.sort_by_branch.branch.name)
-                    if sort_value is None or len(sort_value) == 0:
-                        return None
-                    array_features[aggregator.sort_by_branch.branch.name] = sort_value
-                    # Create sort indices in descending order
-                    sort_indices = np.argsort(sort_value[valid_mask])[::-1]
-                else:
-                    # If no sorting specified, keep original order
-                    sort_indices = np.arange(np.sum(valid_mask))
+                    required_for_agg.add(aggregator.sort_by_branch.branch.name)
 
-                # Apply aggregator with optional sorting
+                if not all(branch_name in event_data for branch_name in required_for_agg):
+                     missing = required_for_agg - set(event_data.keys())
+                     self.logger.debug(f"Skipping aggregator {idx} due to missing branches in event data: {missing}")
+                     return None
+
+                initial_length = -1
+                for selector in aggregator.input_branches:
+                    branch_name = selector.branch.name
+                    current_array = event_data[branch_name]
+                    array_features[branch_name] = current_array
+                    current_length = len(current_array)
+                    if current_length == 0:
+                        self.logger.debug(f"Skipping aggregator {idx} because required input branch '{branch_name}' is empty.")
+                        return None
+                    if initial_length == -1:
+                        initial_length = current_length
+                    elif initial_length != current_length:
+                         self.logger.warning(f"Input array length mismatch in aggregator {idx} ('{branch_name}' has {current_length}, expected {initial_length}). Skipping event.")
+                         return None # Lengths of input arrays must be consistent
+
+                if initial_length == -1:
+                     # This happens if there were no input branches, should not occur if TaskConfig validation is correct
+                     self.logger.warning(f"Aggregator {idx} has no input branches defined. Skipping.")
+                     return None
+
+
+                # --- Prepare and Apply Filters ---
+                valid_mask = np.ones(initial_length, dtype=bool) # Start with all true mask
+                if aggregator.filter_branches:
+                     filter_arrays = {}
+                     for filter_branch_name in filter_branch_names:
+                         filter_array = event_data[filter_branch_name]
+                         if len(filter_array) != initial_length:
+                              self.logger.warning(f"Filter array length mismatch in aggregator {idx} ('{filter_branch_name}' has {len(filter_array)}, expected {initial_length}). Skipping event.")
+                              return None
+                         filter_arrays[filter_branch_name] = filter_array
+
+                     # Only call if filters exist and filter_arrays is populated
+                     if filter_arrays:
+                          filter_mask = self._apply_feature_array_filters(
+                               filter_arrays, aggregator.filter_branches
+                          )
+                          if len(filter_mask) != initial_length:
+                               self.logger.warning(f"Filter mask length ({len(filter_mask)}) mismatch vs expected ({initial_length}) for aggregator {idx}. Skipping event.")
+                               return None
+                          valid_mask &= filter_mask
+
+
+                # --- Prepare and Apply Sorting ---
+                if aggregator.sort_by_branch:
+                    sort_branch_name = aggregator.sort_by_branch.branch.name
+                    sort_value = event_data[sort_branch_name]
+                    if len(sort_value) != initial_length:
+                        self.logger.warning(f"Sort array length mismatch in aggregator {idx} ('{sort_branch_name}' has {len(sort_value)}, expected {initial_length}). Skipping event.")
+                        return None
+
+                    masked_sort_value = sort_value[valid_mask]
+                    if len(masked_sort_value) == 0:
+                         sort_indices = np.array([], dtype=int)
+                    else:
+                         sort_indices = np.argsort(masked_sort_value)[::-1]
+                else:
+                    sort_indices = np.arange(np.sum(valid_mask)) # Indices relative to masked array
+
+
+                # --- Apply Aggregator ---
                 result = self._apply_feature_array_aggregator(
                     array_features, aggregator, valid_mask, sort_indices
                 )
-
                 if result is None:
                     return None
 
                 aggregated_features[f"aggregator_{idx}"] = result
 
-        # Return None if we have no features at all
+
+        # Return results if we have anything
         if not scalar_features and not aggregated_features:
-            return None
+             self.logger.debug("No scalar features found and no successful aggregations for this selection config.")
+             return None
 
         return {
             "scalar_features": scalar_features,
             "aggregated_features": aggregated_features,
-        }
-
-    def _process_event(
-        self, event_data: dict[str, np.ndarray], task_config: TaskConfig
-    ) -> Optional[dict[str, np.ndarray]]:
-        """
-        Process a single event using the task configuration.
-
-        Args:
-            event_data: Dictionary mapping branch names to their raw values
-            task_config: TaskConfig object containing event filters, input features, and labels
-
-        Returns:
-            Dictionary of processed features (scalar, array, and labels) or None if event rejected
-        """
-
-        # TODO: Here we will do the calculation for the derived quantities
-        # We have all the information we need in the event_data dictionary
-        # We need to make a new dictionary with the derived quantities
-
-
-        # Apply event filters first
-        if not self._apply_event_filters(event_data, task_config.event_filters):
-            return None
-
-        # Process input selection config
-        input_features = self._process_selection_config(event_data, task_config.input)
-        if input_features is None:
-            return None
-
-        # Process each label config if present
-        label_features = []  # Change to list since we can have multiple label configs
-        for label_config in task_config.labels:
-            label_result = self._process_selection_config(event_data, label_config)
-            if label_result is None:
-                return None
-            label_features.append(label_result)  # Append the whole result
-
-        return {
-            "scalar_features": input_features["scalar_features"],
-            "aggregated_features": input_features["aggregated_features"],
-            "label_features": label_features,  # Now a list of dicts, each with scalar_features and aggregated_features
         }
 
     def _process_data(
@@ -417,6 +550,7 @@ class PhysliteFeatureProcessor:
         catalog_limit: Optional[int] = None,
         plot_distributions: bool = False,
         delete_catalogs: bool = True,
+        plot_output_dir: Optional[Path] = None,
     ) -> tuple[list[dict[str, np.ndarray]], list[dict[str, np.ndarray]], dict]:
         """
         Process either ATLAS or signal data using task configuration.
@@ -428,6 +562,7 @@ class PhysliteFeatureProcessor:
             catalog_limit: Optional limit on number of catalogs to process
             plot_distributions: Whether to generate distribution plots
             delete_catalogs: Whether to delete catalogs after processing
+            plot_output_dir: Optional path to directory for saving plots
 
         Returns:
             Tuple containing:
@@ -435,13 +570,15 @@ class PhysliteFeatureProcessor:
             - List of processed label features (each a list of dicts for multiple label configs)
             - Processing statistics
         """
-
         if signal_key:
             self.logger.info(f"Processing signal data for {signal_key}")
         elif run_number:
             self.logger.info(f"Processing ATLAS data for run {run_number}")
         else:
             raise ValueError("Must provide either run_number or signal_key")
+
+        if plot_distributions:
+            self.logger.warning("Plotting distributions is enabled. This will significantly slow down processing.")
 
         # Initialize statistics
         stats = {
@@ -495,10 +632,34 @@ class PhysliteFeatureProcessor:
             f"Getting catalog paths for run {run_number} and signal {signal_key}"
         )
         catalog_paths = self._get_catalog_paths(run_number, signal_key, catalog_limit)
-        self.logger.info(f"Found {len(catalog_paths)} catalog paths")
+        self.logger.info(f"Found {len(catalog_paths)} catalog paths to process.")
 
+        # --- Plotting Setup ---
+        plotting_enabled = plot_distributions and plot_output_dir is not None
+        max_plot_samples_total = 5000 # Overall target for plotting samples
+        overall_plot_samples_count = 0 # Counter for total samples accumulated
+        samples_per_catalog = 0       # Target samples from each catalog
+        num_catalogs_to_process = len(catalog_paths)
+
+        if plotting_enabled and num_catalogs_to_process > 0:
+            # Calculate target samples per catalog, ensuring at least 1
+            samples_per_catalog = max(1, max_plot_samples_total // num_catalogs_to_process)
+            self.logger.info(f"Plotting enabled. Aiming for ~{samples_per_catalog} samples per catalog (total target: {max_plot_samples_total}).")
+        elif plotting_enabled:
+            self.logger.warning("Plotting enabled, but no catalog paths found.")
+            plotting_enabled = False # Disable if no catalogs
+
+        # Data accumulators for plotting (only if enabled)
+        sampled_scalar_features = defaultdict(list) if plotting_enabled else None
+        sampled_aggregated_features = defaultdict(list) if plotting_enabled else None
+        # --- End Plotting Setup ---
+
+        # --- Main Processing Loop ---
         for catalog_idx, catalog_path in enumerate(catalog_paths):
-            self.logger.info(f"Processing catalog {catalog_idx} with path: {catalog_path}")
+            # Reset counter for this specific catalog
+            current_catalog_samples_count = 0
+
+            self.logger.info(f"Processing catalog {catalog_idx+1}/{num_catalogs_to_process} with path: {catalog_path}")
 
             try:
                 catalog_start_time = datetime.now()
@@ -523,19 +684,35 @@ class PhysliteFeatureProcessor:
                     for arrays in tree.iterate(
                         branches_to_read_in_tree, library="np", step_size=1000
                     ):
+                        # Removed the stop_processing flag check here
+
                         try:
-                            # Check if the returned dictionary itself is empty (safer check)
+                            # Check if the returned dictionary itself is empty
                             if not arrays:
+                                self.logger.debug("Skipping empty batch dictionary.")
                                 continue
 
-                            # Get number of events and skip if batch is empty
-                            # This correctly handles batches with 0 events.
-                            num_events_in_batch = len(next(iter(arrays.values())))
+                            # Safely get the number of events in the batch
+                            # Assumes uproot provides dicts with at least one key if not empty,
+                            # and all arrays have the same length.
+                            try:
+                                first_key = next(iter(arrays.keys()))
+                                num_events_in_batch = len(arrays[first_key])
+                            except StopIteration:
+                                # This handles the case where arrays is non-empty ({}) but has no keys/values
+                                self.logger.warning("Encountered batch dictionary with no arrays inside. Skipping.")
+                                continue
+                            except KeyError:
+                                # Should not happen if StopIteration doesn't, but defensive
+                                self.logger.error("Internal error accessing first key in non-empty batch. Skipping.")
+                                continue
+
                             if num_events_in_batch == 0:
+                                self.logger.debug("Skipping batch with 0 events.")
                                 continue
                             catalog_stats["events"] += num_events_in_batch
 
-
+                            # --- Event Loop ---
                             for evt_idx in range(num_events_in_batch):
                                 # Extract data only for the branches read
                                 raw_event_data = {
@@ -583,24 +760,51 @@ class PhysliteFeatureProcessor:
                                 # --- Process Event (using data with derived features added) ---
                                 result = self._process_event(processed_event_data, task_config)
                                 if result is not None:
-                                    # Extract the components from the result dictionary
-                                    input_features = {
-                                        "scalar_features": result["scalar_features"],
-                                        "aggregated_features": result[
-                                            "aggregated_features"
-                                        ],
+                                    # Store the result for dataset creation
+                                    # We only store the arrays for the final dataset, not the metadata like branch names
+                                    input_features_for_dataset = {
+                                         "scalar_features": result["scalar_features"],
+                                         "aggregated_features": {
+                                              agg_key: agg_data["array"]
+                                              for agg_key, agg_data in result["aggregated_features"].items()
+                                         }
                                     }
-                                    processed_inputs.append(input_features)
-                                    processed_labels.append(result["label_features"])
+                                    # Process labels similarly for the dataset
+                                    label_features_for_dataset = []
+                                    for label_set in result["label_features"]:
+                                         label_set_for_dataset = {
+                                              "scalar_features": label_set["scalar_features"],
+                                              "aggregated_features": {
+                                                   agg_key: agg_data["array"]
+                                                   for agg_key, agg_data in label_set["aggregated_features"].items()
+                                              }
+                                         }
+                                         label_features_for_dataset.append(label_set_for_dataset)
 
+
+                                    processed_inputs.append(input_features_for_dataset)
+                                    processed_labels.append(label_features_for_dataset)
                                     catalog_stats["processed"] += 1
+
+
+                                    # --- Accumulate data for plotting (conditional on per-catalog count) ---
+                                    if plotting_enabled and current_catalog_samples_count < samples_per_catalog:
+                                        # Append scalar features
+                                        for name, value in result["scalar_features"].items():
+                                            sampled_scalar_features[name].append(value)
+                                        # Append aggregated features (dict with array + names)
+                                        for agg_key, agg_data in result["aggregated_features"].items():
+                                            sampled_aggregated_features[agg_key].append(agg_data)
+
+                                        current_catalog_samples_count += 1 # Increment count for THIS catalog
+                                        overall_plot_samples_count += 1   # Increment overall count
 
                                     # Update feature statistics
                                     # Note: This might need adjustment if derived features impact how stats are counted
-                                    if input_features["aggregated_features"]:
-                                         first_aggregator_key = next(iter(input_features["aggregated_features"].keys()), None)
+                                    if input_features_for_dataset["aggregated_features"]:
+                                         first_aggregator_key = next(iter(input_features_for_dataset["aggregated_features"].keys()), None)
                                          if first_aggregator_key:
-                                             first_aggregator = input_features["aggregated_features"][first_aggregator_key]
+                                             first_aggregator = input_features_for_dataset["aggregated_features"][first_aggregator_key]
                                              # Ensure the aggregator output is not empty before checking shape
                                              if first_aggregator.size > 0:
                                                   try:
@@ -613,13 +817,9 @@ class PhysliteFeatureProcessor:
                                                        stats["total_features"] += np.sum(first_aggregator != 0)
 
 
-                        except StopIteration:
-                             # This can happen if arrays dict is empty but passed 'if not arrays'
-                             self.logger.warning("Encountered StopIteration accessing batch arrays, likely empty batch.")
-                             continue # Skip to next batch
                         except Exception as e:
-                            self.logger.error(f"Error processing batch in catalog {catalog_path}: {str(e)}", exc_info=True) # Add traceback
-                            # Potentially continue to next batch or re-raise depending on severity
+                            # General error handling for the batch processing
+                            self.logger.error(f"Error processing batch in catalog {catalog_path}: {str(e)}", exc_info=True)
                             continue # Try to continue with the next batch
 
                 # Update statistics
@@ -662,6 +862,161 @@ class PhysliteFeatureProcessor:
                        self.logger.info(f"Deleted catalog file: {catalog_path}")
                    except OSError as delete_e:
                        self.logger.error(f"Error deleting catalog file {catalog_path}: {delete_e}")
+
+        # --- Plotting Section (Uses sampled data) ---
+        if plotting_enabled and overall_plot_samples_count > 0:
+            self.logger.info(f"Plotting feature distributions from {overall_plot_samples_count} sampled events (distributed across catalogs) to {plot_output_dir}")
+            plot_output_dir.mkdir(parents=True, exist_ok=True)
+
+            plot_utils.set_science_style(use_tex=False)
+
+            # --- Prepare Subplots ---
+            num_scalar_plots = len(sampled_scalar_features)
+            num_agg_features = 0
+            agg_feature_details = [] # Store details: (agg_key, feature_index, feature_name)
+
+            for agg_key, arrays_data_list in sampled_aggregated_features.items():
+                if arrays_data_list:
+                    branch_names = arrays_data_list[0].get("branch_names", [])
+                    if "array" in arrays_data_list[0] and arrays_data_list[0]["array"] is not None:
+                         try:
+                              n_features_in_agg = arrays_data_list[0]["array"].shape[1]
+                              if len(branch_names) != n_features_in_agg:
+                                   plot_branch_names = [f"Feature_{k}" for k in range(n_features_in_agg)]
+                              else:
+                                   plot_branch_names = branch_names
+                              num_agg_features += n_features_in_agg
+                              for k in range(n_features_in_agg):
+                                   agg_feature_details.append((agg_key, k, plot_branch_names[k]))
+                         except IndexError:
+                              self.logger.warning(f"Aggregator '{agg_key}' data seems malformed (expected 2D array). Skipping its plots.")
+                         except Exception as e:
+                              self.logger.error(f"Error processing aggregator '{agg_key}' details: {e}. Skipping its plots.")
+                    else:
+                         self.logger.warning(f"Aggregator '{agg_key}' data list item missing 'array' key or array is None. Skipping its plots.")
+
+            total_plots = num_scalar_plots + num_agg_features
+            if total_plots == 0:
+                 self.logger.warning("No features found to plot.")
+            else:
+                 ncols = max(1, int(math.ceil(math.sqrt(total_plots))))
+                 nrows = max(1, int(math.ceil(total_plots / ncols)))
+
+                 # Get figure size with a fixed 16:9 aspect ratio
+                 target_ratio = 16 / 9
+                 fig_width, fig_height = plot_utils.get_figure_size(
+                     width="double",  # Use wider figure for subplots
+                     ratio=target_ratio # Set fixed aspect ratio
+                 )
+                 # Adjust height slightly based on rows to prevent crowding if many rows
+                 # Heuristic: increase height slightly for > 3 rows
+                 if nrows > 3:
+                      fig_height *= (nrows / 3.0)**0.5 # Increase height gently with more rows
+
+
+                 fig, axes = plt.subplots(nrows, ncols, figsize=(fig_width, fig_height), squeeze=False)
+                 axes = axes.flatten()
+                 plot_idx = 0
+                 colors = plot_utils.get_color_cycle(palette="high_contrast", n=total_plots)
+
+
+                 # --- Plot Scalar Features ---
+                 self.logger.info("Plotting sampled scalar features...")
+                 for name, values_list in sampled_scalar_features.items():
+                     if plot_idx >= len(axes): break
+                     ax = axes[plot_idx]
+                     try:
+                         values_arr = np.array(values_list)
+                         if values_arr.size == 0:
+                              ax.set_title(f"{name}\n(No Data)", fontsize=plot_utils.FONT_SIZES["small"])
+                              ax.tick_params(axis='both', which='major', labelsize=plot_utils.FONT_SIZES['tiny'])
+                              ax.grid(True, linestyle='--', alpha=0.6)
+                              plot_idx += 1
+                              continue
+                         p1, p99 = np.percentile(values_arr, [1, 99])
+                         if p1 == p99:
+                             p1 -= 0.5
+                             p99 += 0.5
+                         plot_range = (p1, p99)
+                         ax.hist(values_arr, bins='auto', range=plot_range, histtype='stepfilled', density=True, color=colors[plot_idx % len(colors)], alpha=0.7)
+                         ax.set_ylabel("Density")
+                         ax.set_title(f"{name}", fontsize=plot_utils.FONT_SIZES["small"])
+                         ax.grid(True, linestyle='--', alpha=0.6)
+                         ax.tick_params(axis='both', which='major', labelsize=plot_utils.FONT_SIZES['tiny'])
+                         plot_idx += 1
+                     except Exception as plot_e:
+                          self.logger.error(f"Failed to plot scalar feature '{name}': {plot_e}", exc_info=True)
+                          ax.set_title(f"Error plotting {name}")
+                          plot_idx += 1
+
+
+                 # --- Plot Aggregated Features ---
+                 self.logger.info("Plotting sampled aggregated features...")
+                 agg_data_cache = {}
+                 for agg_key, k, feature_name in agg_feature_details:
+                      if plot_idx >= len(axes): break
+                      ax = axes[plot_idx]
+                      try:
+                           if agg_key not in agg_data_cache:
+                                arrays_data_list = sampled_aggregated_features.get(agg_key, [])
+                                if not arrays_data_list: continue
+                                arrays_list = [item["array"] for item in arrays_data_list if item.get("array") is not None]
+                                if not arrays_list: continue
+                                first_shape = arrays_list[0].shape
+                                if not all(a.shape == first_shape for a in arrays_list):
+                                     self.logger.warning(f"Inconsistent array shapes found within aggregator '{agg_key}'. Skipping plot for this aggregator.")
+                                     agg_data_cache[agg_key] = None
+                                     ax.set_title(f"Error: Inconsistent shapes in {agg_key}")
+                                     plot_idx += (first_shape[1] - k)
+                                     continue
+                                stacked_array = np.stack(arrays_list, axis=0)
+                                agg_data_cache[agg_key] = stacked_array
+                           else:
+                                stacked_array = agg_data_cache[agg_key]
+                                if stacked_array is None:
+                                     ax.set_title(f"Error: Skipped due to shape inconsistency")
+                                     plot_idx += 1
+                                     continue
+                           if stacked_array.size == 0: continue
+                           if k >= stacked_array.shape[2]:
+                                self.logger.warning(f"Feature index {k} out of bounds for {agg_key}")
+                                continue
+                           data_slice = stacked_array[:, :, k]
+                           mask = data_slice != 0
+                           valid_data = data_slice[mask]
+                           if valid_data.size == 0:
+                                self.logger.info(f"No non-zero data for aggregated feature '{feature_name}' in {agg_key}. Skipping plot.")
+                                ax.set_title(f"{feature_name}\n(No Data)", fontsize=plot_utils.FONT_SIZES["small"])
+                                ax.tick_params(axis='both', which='major', labelsize=plot_utils.FONT_SIZES['tiny'])
+                                ax.grid(True, linestyle='--', alpha=0.6)
+                                plot_idx += 1
+                                continue
+                           p1, p99 = np.percentile(valid_data, [1, 99])
+                           if p1 == p99:
+                               p1 -= 0.5
+                               p99 += 0.5
+                           plot_range = (p1, p99)
+                           ax.hist(valid_data, bins='auto', range=plot_range, histtype='stepfilled', density=True, color=colors[plot_idx % len(colors)], alpha=0.7)
+                           ax.set_ylabel("Density")
+                           ax.set_title(f"{feature_name}", fontsize=plot_utils.FONT_SIZES["small"])
+                           ax.grid(True, linestyle='--', alpha=0.6)
+                           ax.tick_params(axis='both', which='major', labelsize=plot_utils.FONT_SIZES['tiny'])
+                           plot_idx += 1
+                      except Exception as outer_plot_e:
+                           self.logger.error(f"Failed to process or plot feature '{feature_name}' for aggregator '{agg_key}': {outer_plot_e}", exc_info=True)
+                           ax.set_title(f"Error plotting {feature_name}")
+                           plot_idx += 1
+
+
+                 # --- Finalize Figure ---
+                 for i in range(plot_idx, len(axes)):
+                     axes[i].axis('off')
+                 fig.suptitle(f"Sampled Feature Distributions ({overall_plot_samples_count} Events)", fontsize=plot_utils.FONT_SIZES['large'])
+                 plt.tight_layout(rect=[0, 0.03, 1, 0.97])
+                 plot_path = plot_output_dir / "feature_distributions_sampled.png"
+                 fig.savefig(plot_path, dpi=300, bbox_inches='tight')
+                 plt.close(fig)
+                 self.logger.info(f"Saved combined distribution plot to {plot_path}")
 
 
         # Convert stats to native Python types
