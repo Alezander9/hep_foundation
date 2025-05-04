@@ -67,11 +67,11 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
     run_numbers = get_run_numbers()
     
     dataset_config = DatasetConfig(
-        # run_numbers=run_numbers[-1:],
+        
         run_numbers=run_numbers[-3:],
         signal_keys=["zprime", "wprime_qq", "zprime_bb"],
-        # catalog_limit=2,
-        catalog_limit=20,
+        catalog_limit=2,
+        # catalog_limit=20,
         validation_fraction=0.15,
         test_fraction=0.15,
         shuffle_buffer=50000,

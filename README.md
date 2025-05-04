@@ -95,7 +95,16 @@ This project uses [Ruff](https://docs.astral.sh/ruff/) for linting and formattin
   uv run ruff format .
   ```
 
-It's recommended to run these commands after making significant changes and before committing code.
+## Testing
+
+Run the foundation model pipeline tests with:
+```bash
+pytest tests/test_pipeline.py -v
+```
+
+This will execute the test suite with verbose output, showing real-time logging of the training and evaluation processes. Test logs are stored in `./test_results/test_foundation_experiments_<timestamp>/test_logs/`.
+
+It's recommended to run both code quality checks and tests after making significant changes and before committing code.
 
 ## Data Access
 The package automatically handles ATLAS PHYSLITE data download from CERN OpenData.

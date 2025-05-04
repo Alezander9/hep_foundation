@@ -1,6 +1,9 @@
 import shutil
 import tempfile
 from pathlib import Path
+import logging
+import os
+from datetime import datetime
 
 import pytest
 
@@ -122,12 +125,29 @@ def create_test_configs():
         "task_config": task_config,
     }
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def experiment_dir():
     """Create a temporary experiment directory for the test run."""
-    tmpdir = tempfile.mkdtemp(prefix="test_foundation_experiments_")
-    yield tmpdir
-    shutil.rmtree(tmpdir)
+    # Create a directory in the current working directory instead of system temp
+    base_dir = Path.cwd() / "test_results"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    test_dir = base_dir / f"test_foundation_experiments_{timestamp}"
+    test_dir.mkdir(parents=True, exist_ok=True)
+    
+    log_dir = test_dir / "test_logs"
+    log_dir.mkdir(exist_ok=True)
+    
+    print(f"\nTest directory created at: {test_dir.absolute()}\n")  # Print location explicitly
+    
+    yield str(test_dir)  # Convert to string for compatibility
+    
+    # Clean up everything except logs
+    for item in Path(test_dir).iterdir():
+        if item.name != "test_logs":
+            if item.is_dir():
+                shutil.rmtree(item)
+            else:
+                item.unlink()
 
 @pytest.fixture(scope="module")
 def test_configs():
@@ -138,23 +158,68 @@ def pipeline(experiment_dir):
     # Use the temp dir as the base_dir for the pipeline
     return FoundationModelPipeline(base_dir=experiment_dir)
 
+@pytest.fixture(scope="session", autouse=True)
+def setup_logging(experiment_dir):
+    """Configure logging for all tests"""
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_dir = Path(experiment_dir) / "test_logs"
+    log_dir.mkdir(exist_ok=True)
+    
+    # Configure root logger to write to both file and console
+    log_file = log_dir / f"test_run_{timestamp}.log"
+    
+    # Console handler with custom formatter
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter(
+        '%(asctime)s - %(levelname)s - %(message)s'
+    ))
+    
+    # File handler
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setFormatter(logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    ))
+    
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(console_handler)
+    root_logger.addHandler(file_handler)
+    
+    yield  # Let the tests run
+    
+    # Cleanup handlers
+    root_logger.removeHandler(console_handler)
+    root_logger.removeHandler(file_handler)
+
 def test_train_foundation_model(pipeline, test_configs, experiment_dir):
-    experiment_name = "pytest_foundation_test"
-    result = pipeline.train_foundation_model(
-        dataset_config=test_configs["dataset_config"],
-        model_config=test_configs["vae_model_config"],
-        training_config=test_configs["vae_training_config"],
-        task_config=test_configs["task_config"],
-        experiment_name=experiment_name,
-        experiment_description="pytest train test",
-        delete_catalogs=True,
-    )
-    assert result is True
-    experiment_path = Path(experiment_dir) / experiment_name
-    assert experiment_path.exists(), f"Experiment dir {experiment_path} not found"
+    """Test foundation model training"""
+    logger = logging.getLogger(__name__)
+    experiment_name = "001_Foundation VAE Model"
+    
+    logger.info("Starting foundation model training test")
+    try:
+        result = pipeline.train_foundation_model(
+            dataset_config=test_configs["dataset_config"],
+            model_config=test_configs["vae_model_config"],
+            training_config=test_configs["vae_training_config"],
+            task_config=test_configs["task_config"],
+            experiment_name=experiment_name,
+            experiment_description="pytest train test",
+            delete_catalogs=True,
+        )
+        experiment_path = Path(experiment_dir) / experiment_name
+        
+        assert result is True, "Pipeline training returned False"
+        assert experiment_path.exists(), f"Experiment dir {experiment_path} not found"
+        logger.info("Foundation model training test completed successfully")
+        
+    except Exception as e:
+        logger.error(f"Foundation model training failed: {str(e)}")
+        raise
 
 def test_evaluate_foundation_model_anomaly_detection(pipeline, test_configs, experiment_dir):
-    experiment_name = "pytest_foundation_test"
+    experiment_name = "001_Foundation VAE Model"
     foundation_model_path = str(Path(experiment_dir) / experiment_name)
     result = pipeline.evaluate_foundation_model_anomaly_detection(
         dataset_config=test_configs["dataset_config"],
@@ -170,7 +235,7 @@ def test_evaluate_foundation_model_anomaly_detection(pipeline, test_configs, exp
     assert anomaly_dir.exists(), f"Anomaly detection dir {anomaly_dir} not found"
 
 def test_evaluate_foundation_model_regression(pipeline, test_configs, experiment_dir):
-    experiment_name = "pytest_foundation_test"
+    experiment_name = "001_Foundation VAE Model"
     foundation_model_path = str(Path(experiment_dir) / experiment_name)
     result = pipeline.evaluate_foundation_model_regression(
         dataset_config=test_configs["dataset_config"],

@@ -594,11 +594,7 @@ class AnomalyDetectionEvaluator:
         self.testing_path.mkdir(parents=True, exist_ok=True)
 
         # Setup self.logger
-        self.logger.basicConfig(
-            format="%(asctime)s - %(levelname)s - %(message)s",
-            level=self.logger.INFO,
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
+        self.logger = get_logger(__name__)
 
         # Verify experiment data exists
         self.experiment_data_path = self.experiment_path / "experiment_data.json"

@@ -3,6 +3,7 @@ from pathlib import Path
 
 import numpy as np
 import tensorflow as tf
+import h5py
 
 from hep_foundation.config.logging_config import get_logger
 from hep_foundation.data.dataset_manager import DatasetConfig, DatasetManager
@@ -137,6 +138,12 @@ class FoundationModelPipeline:
         self.logger.info("=" * 100)
 
         try:
+            # Add logging for signal keys
+            if dataset_config.signal_keys:
+                self.logger.info(f"Signal keys to process: {dataset_config.signal_keys}")
+            else:
+                self.logger.warning("No signal keys specified in dataset_config")
+
             # Helper function for JSON serialization
             def ensure_serializable(obj):
                 """Recursively convert numpy types to Python native types"""
@@ -170,8 +177,10 @@ class FoundationModelPipeline:
             self.logger.info("Validated training config")
 
             # 3. Load datasets
-
             self.logger.info("Loading datasets...")
+            
+            # Add detailed logging for ATLAS dataset loading
+            self.logger.info("Loading ATLAS datasets...")
             train_dataset, val_dataset, test_dataset = data_manager.load_atlas_datasets(
                 dataset_config=dataset_config,
                 validation_fraction=dataset_config.validation_fraction,
@@ -182,10 +191,44 @@ class FoundationModelPipeline:
                 delete_catalogs=True,
                 plot_distributions=True,
             )
-            self.logger.info("Loaded datasets")
+            
+            # Add logging to inspect dataset structure
+            self.logger.info("ATLAS datasets loaded. Inspecting structure...")
+            for name, dataset in [("train", train_dataset), ("val", val_dataset), ("test", test_dataset)]:
+                try:
+                    for batch in dataset.take(1):
+                        if isinstance(batch, tuple):
+                            features, labels = batch
+                            self.logger.info(f"{name} dataset - Features shape: {features.shape}, Labels shape: {labels.shape}")
+                        else:
+                            self.logger.info(f"{name} dataset - Batch shape: {batch.shape}")
+                except Exception as e:
+                    self.logger.error(f"Error inspecting {name} dataset: {str(e)}")
 
-            # Get the dataset ID from the data manager
+            # Get the dataset ID and verify it exists
             dataset_id = data_manager.get_current_dataset_id()
+            self.logger.info(f"Created/loaded dataset with ID: {dataset_id}")
+            
+            # Verify dataset file exists and log its size
+            dataset_path = data_manager.get_current_dataset_path()
+            if dataset_path.exists():
+                self.logger.info(f"Dataset file exists at: {dataset_path}")
+                self.logger.info(f"Dataset file size: {dataset_path.stat().st_size / (1024*1024):.2f} MB")
+                
+                # Add HDF5 structure inspection
+                try:
+                    with h5py.File(dataset_path, 'r') as f:
+                        self.logger.info("Dataset HDF5 structure:")
+                        def print_structure(name, obj):
+                            if isinstance(obj, h5py.Dataset):
+                                self.logger.info(f"  Dataset: {name}, Shape: {obj.shape}, Type: {obj.dtype}")
+                            elif isinstance(obj, h5py.Group):
+                                self.logger.info(f"  Group: {name}")
+                        f.visititems(print_structure)
+                except Exception as e:
+                    self.logger.error(f"Error inspecting HDF5 structure: {str(e)}")
+            else:
+                self.logger.error(f"Dataset file not found at: {dataset_path}")
 
             # 4. Register experiment with existing dataset
             self.logger.info("Registering experiment...")
@@ -363,6 +406,7 @@ class FoundationModelPipeline:
             self.logger.error("Error context:")
             raise
 
+
     def evaluate_foundation_model_anomaly_detection(
         self,
         dataset_config: DatasetConfig,
@@ -467,6 +511,7 @@ class FoundationModelPipeline:
                     dataset_config=dataset_config,
                     batch_size=batch_size,
                     include_labels=False,
+                    plot_distributions=True,
                 )
                 self.logger.info(f"Loaded {len(signal_datasets)} signal datasets.")
             else:
@@ -505,7 +550,7 @@ class FoundationModelPipeline:
             # Load weights
             self.logger.info(f"Loading model weights from: {model_weights_path}")
             try:
-                model.model.load_weights(str(model_weights_path))
+                model.model.load_weights(str(model_weights_path)).expect_partial()
                 self.logger.info("VAE model loaded successfully.")
                 self.logger.info(model.model.summary())
             except Exception as e:

@@ -1,8 +1,3 @@
----
-description: 
-globs: 
-alwaysApply: true
----
 # HEP Foundation Project Overview
 
 This project analyzes High Energy Physics data, specificpally ATLAS PHYSLITE data.

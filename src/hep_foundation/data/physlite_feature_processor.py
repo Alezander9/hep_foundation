@@ -550,7 +550,7 @@ class PhysliteFeatureProcessor:
         catalog_limit: Optional[int] = None,
         plot_distributions: bool = False,
         delete_catalogs: bool = True,
-        plot_output_dir: Optional[Path] = None,
+        plot_output: Optional[Path] = None,
     ) -> tuple[list[dict[str, np.ndarray]], list[dict[str, np.ndarray]], dict]:
         """
         Process either ATLAS or signal data using task configuration.
@@ -562,7 +562,7 @@ class PhysliteFeatureProcessor:
             catalog_limit: Optional limit on number of catalogs to process
             plot_distributions: Whether to generate distribution plots
             delete_catalogs: Whether to delete catalogs after processing
-            plot_output_dir: Optional path to directory for saving plots
+            plot_output: Optional complete path (including filename) for saving plots
 
         Returns:
             Tuple containing:
@@ -578,7 +578,13 @@ class PhysliteFeatureProcessor:
             raise ValueError("Must provide either run_number or signal_key")
 
         if plot_distributions:
-            self.logger.warning("Plotting distributions is enabled. This will significantly slow down processing.")
+            if plot_output is None:
+                self.logger.warning("Plot distributions enabled but no output path provided. Disabling plotting.")
+                plot_distributions = False
+            else:
+                # Ensure parent directory exists
+                plot_output.parent.mkdir(parents=True, exist_ok=True)
+                self.logger.warning("Plotting distributions is enabled. This will significantly slow down processing.")
 
         # Initialize statistics
         stats = {
@@ -635,7 +641,7 @@ class PhysliteFeatureProcessor:
         self.logger.info(f"Found {len(catalog_paths)} catalog paths to process.")
 
         # --- Plotting Setup ---
-        plotting_enabled = plot_distributions and plot_output_dir is not None
+        plotting_enabled = plot_distributions and plot_output is not None
         max_plot_samples_total = 5000 # Overall target for plotting samples
         overall_plot_samples_count = 0 # Counter for total samples accumulated
         samples_per_catalog = 0       # Target samples from each catalog
@@ -865,8 +871,7 @@ class PhysliteFeatureProcessor:
 
         # --- Plotting Section (Uses sampled data) ---
         if plotting_enabled and overall_plot_samples_count > 0:
-            self.logger.info(f"Plotting feature distributions from {overall_plot_samples_count} sampled events (distributed across catalogs) to {plot_output_dir}")
-            plot_output_dir.mkdir(parents=True, exist_ok=True)
+            self.logger.info(f"Plotting feature distributions from {overall_plot_samples_count} sampled events (distributed across catalogs) to {plot_output}")
 
             plot_utils.set_science_style(use_tex=False)
 
@@ -1013,10 +1018,9 @@ class PhysliteFeatureProcessor:
                      axes[i].axis('off')
                  fig.suptitle(f"Sampled Feature Distributions ({overall_plot_samples_count} Events)", fontsize=plot_utils.FONT_SIZES['large'])
                  plt.tight_layout(rect=[0, 0.03, 1, 0.97])
-                 plot_path = plot_output_dir / "feature_distributions_sampled.png"
-                 fig.savefig(plot_path, dpi=300, bbox_inches='tight')
+                 fig.savefig(plot_output, dpi=300, bbox_inches='tight')
                  plt.close(fig)
-                 self.logger.info(f"Saved combined distribution plot to {plot_path}")
+                 self.logger.info(f"Saved combined distribution plot to {plot_output}")
 
 
         # Convert stats to native Python types

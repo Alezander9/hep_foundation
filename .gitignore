@@ -4,7 +4,7 @@ foundation_experiments
 processed_datasets
 notebooks
 logs
-
+test_results
 # Python cache files
 __pycache__/
 *.py[cod]

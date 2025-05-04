@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import tensorflow as tf
+import shutil
 
 from hep_foundation.config.logging_config import get_logger
 from hep_foundation.data.atlas_file_manager import ATLASFileManager
@@ -58,10 +59,7 @@ class DatasetManager:
         self.logger = get_logger(__name__)
 
         self.base_dir = Path(base_dir)
-        self.datasets_dir = self.base_dir / "datasets"
-        self.configs_dir = self.base_dir / "configs"
-        self.datasets_dir.mkdir(parents=True, exist_ok=True)
-        self.configs_dir.mkdir(parents=True, exist_ok=True)
+        self.base_dir.mkdir(parents=True, exist_ok=True)
         self.atlas_manager = atlas_manager or ATLASFileManager()
 
         # Add feature processor
@@ -71,6 +69,34 @@ class DatasetManager:
         self.current_dataset_id = None
         self.current_dataset_path = None
         self.current_dataset_info = None
+
+    def get_dataset_dir(self, dataset_id: str) -> Path:
+        """Get the directory path for a specific dataset.
+        
+        Args:
+            dataset_id: The ID of the dataset
+            
+        Returns:
+            Path to the dataset directory
+        """
+        return self.base_dir / dataset_id
+
+    def get_dataset_paths(self, dataset_id: str) -> tuple[Path, Path]:
+        """Get all relevant paths for a dataset.
+        
+        Args:
+            dataset_id: The ID of the dataset
+            
+        Returns:
+            Tuple containing:
+            - Path to the dataset HDF5 file
+            - Path to the config file
+        """
+        dataset_dir = self.get_dataset_dir(dataset_id)
+        return (
+            dataset_dir / "dataset.h5",  # dataset path
+            dataset_dir / "config.yaml",  # config path
+        )
 
     def get_current_dataset_id(self) -> str:
         """Get ID of currently loaded dataset"""
@@ -126,7 +152,12 @@ class DatasetManager:
 
     def save_dataset_config(self, dataset_id: str, config: Union[dict, TaskConfig]):
         """Save full dataset configuration"""
-        config_path = self.configs_dir / f"{dataset_id}_config.yaml"
+        # Get paths
+        dataset_dir = self.get_dataset_dir(dataset_id)
+        config_path = dataset_dir / "config.yaml"
+        
+        # Ensure directory exists
+        dataset_dir.mkdir(parents=True, exist_ok=True)
 
         # Convert TaskConfig to dict if needed
         if isinstance(config, TaskConfig):
@@ -152,11 +183,11 @@ class DatasetManager:
 
     def get_dataset_info(self, dataset_id: str) -> dict:
         """Get full dataset information including recreation parameters"""
-        config_path = self.configs_dir / f"{dataset_id}_config.yaml"
+        config_path = self.get_dataset_dir(dataset_id) / "config.yaml"
         self.logger.info(f"Looking for config at: {config_path}")  # Debug print
         if not config_path.exists():
             self.logger.info(
-                f"Available configs: {list(self.configs_dir.glob('*.yaml'))}"
+                f"Available configs: {list(self.get_dataset_dir(dataset_id).glob('*.yaml'))}"
             )  # Debug print
             raise ValueError(f"No configuration found for dataset {dataset_id}")
 
@@ -167,7 +198,7 @@ class DatasetManager:
         dataset_config: DatasetConfig,
         plot_distributions: bool = False,
         delete_catalogs: bool = True,
-        plot_output_dir: Optional[Path] = None,
+        plot_output: Optional[Path] = None,
     ) -> tuple[str, Path]:
         """
         Create new processed dataset from ATLAS data.
@@ -176,6 +207,7 @@ class DatasetManager:
             dataset_config: Configuration defining event filters, input features, and labels
             plot_distributions: Whether to generate distribution plots
             delete_catalogs: Whether to delete catalogs after processing
+            plot_output: Optional path to directory for saving plots
 
         Returns:
             Tuple containing:
@@ -186,12 +218,18 @@ class DatasetManager:
 
         # Generate dataset ID and paths
         dataset_id = self.generate_dataset_id(dataset_config)
-        output_path = self.datasets_dir / f"{dataset_id}.h5"
-        self.logger.info(f"Generated dataset ID: {dataset_id}")
+        dataset_dir = self.get_dataset_dir(dataset_id)
+        dataset_path, config_path = self.get_dataset_paths(dataset_id)
+        
+        # Create directory structure
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+        if plot_distributions and plot_output is None:
+            plot_output = dataset_dir / "atlas_dataset_features.png"
+            plot_output.mkdir(parents=True, exist_ok=True)
 
         try:
             # Save configuration first
-            config_path = self.save_dataset_config(dataset_id, dataset_config)
+            self.save_dataset_config(dataset_id, dataset_config)
             self.logger.info(f"Saved configuration to: {config_path}")
 
             # Process all runs
@@ -213,7 +251,7 @@ class DatasetManager:
                         catalog_limit=dataset_config.catalog_limit,
                         delete_catalogs=delete_catalogs,
                         plot_distributions=plot_distributions,
-                        plot_output_dir=plot_output_dir,
+                        plot_output=plot_output,
                     )
                     inputs, labels, stats = result
                     all_inputs.extend(inputs)
@@ -229,7 +267,7 @@ class DatasetManager:
                 raise ValueError("No events passed selection criteria")
 
             # Create HDF5 dataset
-            with h5py.File(output_path, "w") as f:
+            with h5py.File(dataset_path, "w") as f:
                 # Create input features group
                 features_group = f.create_group("features")
 
@@ -327,18 +365,45 @@ class DatasetManager:
                     }
                 )
 
-            return dataset_id, output_path
+            return dataset_id, dataset_path
 
         except Exception as e:
             # Clean up on failure
-            if output_path.exists():
-                output_path.unlink()
+            if dataset_path.exists():
+                dataset_path.unlink()
             if config_path.exists():
                 config_path.unlink()
+            if plot_output and plot_output.exists():
+                shutil.rmtree(plot_output)
+            if dataset_dir.exists() and not any(dataset_dir.iterdir()):
+                dataset_dir.rmdir()
             raise Exception(f"Dataset creation failed: {str(e)}")
 
+    def get_signal_dataset_paths(self, dataset_id: str) -> tuple[Path, Path]:
+        """Get all relevant paths for a signal dataset.
+        
+        Args:
+            dataset_id: The ID of the dataset
+            
+        Returns:
+            Tuple containing:
+            - Path to the dataset HDF5 file
+            - Path to the config file
+        """
+        dataset_dir = self.get_dataset_dir(dataset_id)
+        dataset_path = dataset_dir / "signal_dataset.h5"
+        config_path = dataset_dir / "config.yaml"
+        
+        self.logger.info(f"[Debug] Signal dataset directory: {dataset_dir}")
+        self.logger.info(f"[Debug] Signal dataset path: {dataset_path}")
+        self.logger.info(f"[Debug] Signal config path: {config_path}")
+        
+        return dataset_path, config_path
+
     def _create_signal_dataset(
-        self, dataset_config: DatasetConfig, plot_distributions: bool = False
+        self, 
+        dataset_config: DatasetConfig, 
+        plot_distributions: bool = False,
     ) -> tuple[str, Path]:
         """
         Create new processed dataset from signal data.
@@ -352,24 +417,34 @@ class DatasetManager:
             - Dataset ID
             - Path to created dataset
         """
-        self.logger.info("Creating new signal dataset")
-
+        self.logger.info("[Debug] Creating new signal dataset")
+        
         # Generate dataset ID and paths
         dataset_id = self.generate_dataset_id(dataset_config)
-        output_path = self.datasets_dir / "signals" / f"{dataset_id}.h5"
-
+        dataset_dir = self.get_dataset_dir(dataset_id)
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+        
+        dataset_path, config_path = self.get_signal_dataset_paths(dataset_id)
+        
+        self.logger.info(f"[Debug] Generated dataset ID: {dataset_id}")
+        self.logger.info(f"[Debug] Signal keys to process: {dataset_config.signal_keys}")
+        self.logger.info(f"[Debug] Will create dataset at: {dataset_path}")
+        
         try:
-            # Create signals directory if it doesn't exist
-            output_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Save configuration
-            config_path = self.save_dataset_config(dataset_id, dataset_config)
-
-            # Process each signal type separately
-            with h5py.File(output_path, "w") as f:
-                # Create group for each signal type
+            with h5py.File(dataset_path, "w") as f:
+                self.logger.info("[Debug] Created HDF5 file, processing signal types...")
                 for signal_key in dataset_config.signal_keys:
-                    self.logger.info(f"Processing signal type: {signal_key}")
+                    self.logger.info(f"[Debug] Processing signal type: {signal_key}")
+
+                    # Create plot directory if needed
+                    if plot_distributions:
+                        plots_dir = dataset_dir / "plots"
+                        plots_dir.mkdir(parents=True, exist_ok=True)
+                        plot_output = plots_dir / f"{signal_key}_dataset_features.png"
+                        self.logger.info(f"[Debug] in signal dataset plots output: {plot_output}")
+                    else:
+                        plot_output = None
 
                     # Process data for this signal type
                     inputs, labels, stats = self.feature_processor._process_data(
@@ -377,7 +452,7 @@ class DatasetManager:
                         signal_key=signal_key,
                         delete_catalogs=False,  # Always keep signal catalogs
                         plot_distributions=plot_distributions,
-                        plot_output_dir=plot_output_dir,
+                        plot_output=plot_output,
                     )
 
                     if not inputs:
@@ -400,7 +475,9 @@ class DatasetManager:
 
                     for name, values in scalar_features.items():
                         features_group.create_dataset(
-                            f"scalar/{name}", data=np.array(values), compression="gzip"
+                            f"scalar/{name}", 
+                            data=np.array(values), 
+                            compression="gzip"
                         )
 
                     # Save aggregated features
@@ -425,22 +502,17 @@ class DatasetManager:
                         for label_idx, label_config in enumerate(
                             dataset_config.task_config.labels
                         ):
-                            label_subgroup = labels_group.create_group(
-                                f"config_{label_idx}"
-                            )
+                            label_subgroup = labels_group.create_group(f"config_{label_idx}")
 
                             # Get all label data for this configuration
                             label_data = [label_set[label_idx] for label_set in labels]
 
                             # Save scalar features
                             scalar_features = {
-                                name: []
-                                for name in label_data[0]["scalar_features"].keys()
+                                name: [] for name in label_data[0]["scalar_features"].keys()
                             }
                             for event_labels in label_data:
-                                for name, value in event_labels[
-                                    "scalar_features"
-                                ].items():
+                                for name, value in event_labels["scalar_features"].items():
                                     scalar_features[name].append(value)
 
                             for name, values in scalar_features.items():
@@ -451,16 +523,13 @@ class DatasetManager:
                                 )
 
                             # Save aggregated features if any exist
-                            for agg_name, agg_data in label_data[0][
-                                "aggregated_features"
-                            ].items():
+                            for agg_name, agg_data in label_data[0]["aggregated_features"].items():
                                 stacked_data = np.stack(
                                     [
                                         event_labels["aggregated_features"][agg_name]
                                         for event_labels in label_data
                                     ]
                                 )
-
                                 label_subgroup.create_dataset(
                                     f"aggregated/{agg_name}",
                                     data=stacked_data,
@@ -475,9 +544,7 @@ class DatasetManager:
                     # Store signal-specific attributes
                     signal_group.attrs.update(
                         {
-                            "has_labels": bool(
-                                labels and dataset_config.task_config.labels
-                            ),
+                            "has_labels": bool(labels and dataset_config.task_config.labels),
                             "normalization_params": json.dumps(norm_params),
                             "processing_stats": json.dumps(stats),
                         }
@@ -488,14 +555,12 @@ class DatasetManager:
                     {"dataset_id": dataset_id, "creation_date": str(datetime.now())}
                 )
 
-            return dataset_id, output_path
+            return dataset_id, dataset_path
 
         except Exception as e:
             # Clean up on failure
-            if output_path.exists():
-                output_path.unlink()
-            if config_path.exists():
-                config_path.unlink()
+            if dataset_path.exists():
+                dataset_path.unlink()
             raise Exception(f"Signal dataset creation failed: {str(e)}")
 
     def _get_catalog_paths(
@@ -549,9 +614,9 @@ class DatasetManager:
             # Generate dataset ID and load/create dataset file
             self.current_dataset_id = self.generate_dataset_id(dataset_config)
             self.current_dataset_path = (
-                self.datasets_dir / f"{self.current_dataset_id}.h5"
+                self.get_dataset_dir(self.current_dataset_id) / "dataset.h5"
             )
-            plot_output_dir = self.datasets_dir / f"{self.current_dataset_id}/plots"
+            plot_output = self.get_dataset_dir(self.current_dataset_id) / "atlas_dataset_features.png"
 
             if not self.current_dataset_path.exists():
                 self.current_dataset_id, self.current_dataset_path = (
@@ -559,7 +624,7 @@ class DatasetManager:
                         dataset_config,
                         delete_catalogs=delete_catalogs,
                         plot_distributions=plot_distributions,
-                        plot_output_dir=plot_output_dir,
+                        plot_output=plot_output,
                     )
                 )
 
@@ -621,36 +686,28 @@ class DatasetManager:
         batch_size: int = 1000,
         include_labels: bool = False,
         plot_distributions: bool = False,
-        plot_output_dir: Optional[Path] = None,
     ) -> dict[str, tf.data.Dataset]:
-        """
-        Load signal datasets for evaluation.
-
-        Args:
-            dataset_config: Dataset configuration defining data selection and processing
-            batch_size: Size of batches in returned dataset
-            include_labels: Whether to include labels in the dataset
-
-        Returns:
-            Dictionary mapping signal_type to its corresponding TensorFlow dataset
-        """
+        """Load signal datasets for evaluation."""
         self.logger.info("Loading signal datasets")
         try:
-            # Generate dataset ID and paths
-            dataset_id = self.generate_dataset_id(dataset_config)
-            dataset_path = self.datasets_dir / "signals" / f"{dataset_id}.h5"
+            # Generate dataset ID and load/create dataset file
+            self.current_dataset_id = self.generate_dataset_id(dataset_config)
+            self.current_dataset_path = (
+                self.get_dataset_dir(self.current_dataset_id) / "signal_dataset.h5"
+            )
 
-            # Create if doesn't exist
-            if not dataset_path.exists():
-                dataset_id, dataset_path = self._create_signal_dataset(
-                    dataset_config=dataset_config,
-                    plot_distributions=plot_distributions,
-                    plot_output_dir=plot_output_dir,
+            if not self.current_dataset_path.exists():
+                self.current_dataset_id, self.current_dataset_path = (
+                    self._create_signal_dataset(
+                        dataset_config,
+                        plot_distributions=plot_distributions,
+                    )
                 )
 
             # Load datasets
             signal_datasets = {}
-            with h5py.File(dataset_path, "r") as f:
+            with h5py.File(self.current_dataset_path, "r") as f:
+                # Load and process each signal type
                 for signal_key in f.keys():
                     signal_group = f[signal_key]
 
@@ -682,8 +739,8 @@ class DatasetManager:
                     dataset = dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
                     signal_datasets[signal_key] = dataset
 
-            self.logger.info(f"Successfully loaded {len(signal_datasets)} signal datasets")
-            return signal_datasets
+                self.logger.info(f"Successfully loaded {len(signal_datasets)} signal datasets")
+                return signal_datasets
 
         except Exception as e:
             raise Exception(f"Failed to load signal datasets: {str(e)}")
@@ -723,7 +780,7 @@ class DatasetManager:
             # Generate dataset ID and load dataset file
             self.current_dataset_id = self.generate_dataset_id(dataset_config)
             self.current_dataset_path = (
-                self.datasets_dir / f"{self.current_dataset_id}.h5"
+                self.get_dataset_dir(self.current_dataset_id) / "dataset.h5"
             )
 
             if not self.current_dataset_path.exists():
