@@ -455,7 +455,7 @@ class VariationalAutoEncoder(BaseModel):
                 )
 
                 plt.savefig(
-                    plots_dir / "training_history.pdf", dpi=300, bbox_inches="tight"
+                    plots_dir / "training_history.png", dpi=300, bbox_inches="tight"
                 )
                 plt.close()
                 self.logger.info("Created training history plot")
@@ -491,7 +491,7 @@ class VariationalAutoEncoder(BaseModel):
 
             plt.tight_layout()
             plt.savefig(
-                plots_dir / "vae_latent_space_distributions.pdf",
+                plots_dir / "vae_latent_space_distributions.png",
                 dpi=300,
                 bbox_inches="tight",
             )
@@ -513,7 +513,7 @@ class VariationalAutoEncoder(BaseModel):
                 plt.ylabel("z2", fontsize=FONT_SIZES["large"])
                 plt.tight_layout()
                 plt.savefig(
-                    plots_dir / "vae_latent_space_2d.pdf", dpi=300, bbox_inches="tight"
+                    plots_dir / "vae_latent_space_2d.png", dpi=300, bbox_inches="tight"
                 )
                 plt.close()
                 self.logger.info("Created 2D latent space projection plot")
@@ -941,7 +941,7 @@ class AnomalyDetectionEvaluator:
 
         plt.suptitle(f"Loss Distributions: Background vs {signal_name}")
         plt.tight_layout()
-        plt.savefig(plots_dir / f"loss_distributions_{signal_name}.pdf")
+        plt.savefig(plots_dir / f"loss_distributions_{signal_name}.png")
 
         # 2. ROC curves
         plt.figure(figsize=get_figure_size("single"))
@@ -980,5 +980,5 @@ class AnomalyDetectionEvaluator:
         plt.legend(loc="lower right")
         plt.grid(True, alpha=0.3)
 
-        plt.savefig(plots_dir / f"roc_curves_{signal_name}.pdf")
+        plt.savefig(plots_dir / f"roc_curves_{signal_name}.png")
         plt.close()

@@ -350,7 +350,7 @@ class ModelTrainer:
             )  # Grid lines for both major and minor ticks
 
             plt.savefig(
-                plots_dir / "training_history.pdf", dpi=300, bbox_inches="tight"
+                plots_dir / "training_history.png", dpi=300, bbox_inches="tight"
             )
             plt.close()
 

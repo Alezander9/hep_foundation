@@ -223,9 +223,6 @@ class DatasetManager:
         
         # Create directory structure
         dataset_dir.mkdir(parents=True, exist_ok=True)
-        if plot_distributions and plot_output is None:
-            plot_output = dataset_dir / "atlas_dataset_features.png"
-            plot_output.mkdir(parents=True, exist_ok=True)
 
         try:
             # Save configuration first
@@ -242,6 +239,7 @@ class DatasetManager:
                 "processing_time": 0,
             }
 
+            first_event_logged = False
             for run_number in dataset_config.run_numbers:
                 self.logger.info(f"Processing run {run_number}")
                 try:
@@ -252,7 +250,9 @@ class DatasetManager:
                         delete_catalogs=delete_catalogs,
                         plot_distributions=plot_distributions,
                         plot_output=plot_output,
+                        first_event_logged=first_event_logged,
                     )
+                    first_event_logged = True
                     inputs, labels, stats = result
                     all_inputs.extend(inputs)
                     all_labels.extend(labels)
@@ -434,6 +434,7 @@ class DatasetManager:
 
             with h5py.File(dataset_path, "w") as f:
                 self.logger.info("[Debug] Created HDF5 file, processing signal types...")
+                first_event_logged = False
                 for signal_key in dataset_config.signal_keys:
                     self.logger.info(f"[Debug] Processing signal type: {signal_key}")
 
@@ -453,8 +454,9 @@ class DatasetManager:
                         delete_catalogs=False,  # Always keep signal catalogs
                         plot_distributions=plot_distributions,
                         plot_output=plot_output,
+                        first_event_logged=first_event_logged,
                     )
-
+                    first_event_logged = True
                     if not inputs:
                         self.logger.warning(f"No events passed selection for {signal_key}")
                         continue
@@ -616,7 +618,7 @@ class DatasetManager:
             self.current_dataset_path = (
                 self.get_dataset_dir(self.current_dataset_id) / "dataset.h5"
             )
-            plot_output = self.get_dataset_dir(self.current_dataset_id) / "atlas_dataset_features.png"
+            plot_output = self.get_dataset_dir(self.current_dataset_id) / "plots/atlas_dataset_features.png"
 
             if not self.current_dataset_path.exists():
                 self.current_dataset_id, self.current_dataset_path = (
@@ -948,7 +950,7 @@ class DatasetManager:
         # Set x-axis limits to show the main distribution
         plt.xlim(min_tracks - 1, max_tracks + 1)
 
-        plt.savefig(output_dir / "track_multiplicity.pdf")
+        plt.savefig(output_dir / "track_multiplicity.png")
         plt.close()
 
         self.logger.info("Creating track features plot...")
@@ -1023,7 +1025,7 @@ class DatasetManager:
                 ax.set_xlabel("z0 [mm]")
 
         plt.tight_layout()
-        plt.savefig(output_dir / "track_features.pdf")
+        plt.savefig(output_dir / "track_features.png")
         plt.close()
 
         self.logger.info("=== Track Feature Statistics ===")
@@ -1072,7 +1074,7 @@ class DatasetManager:
         sns.heatmap(df.corr(), annot=True, cmap="coolwarm", center=0)
         plt.title("Track Feature Correlations (After Selection)")
         plt.tight_layout()
-        plt.savefig(output_dir / "feature_correlations.pdf")
+        plt.savefig(output_dir / "feature_correlations.png")
         plt.close()
 
         self.logger.info("Plotting complete!")

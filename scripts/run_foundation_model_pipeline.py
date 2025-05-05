@@ -27,8 +27,12 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
                     # "InDetTrackParticlesAuxDyn.theta",
                     "derived.InDetTrackParticlesAuxDyn.pt",
                     # "InDetTrackParticlesAuxDyn.qOverP",
-                    "InDetTrackParticlesAuxDyn.chiSquared",
-                    "InDetTrackParticlesAuxDyn.numberDoF",
+                    # "InDetTrackParticlesAuxDyn.chiSquared",
+                    # "InDetTrackParticlesAuxDyn.numberDoF",
+                    "derived.InDetTrackParticlesAuxDyn.reducedChiSquared",
+
+                    "InDetTrackParticlesAuxDyn.definingParametersCovMatrixDiag",
+                    "InDetTrackParticlesAuxDyn.definingParametersCovMatrixOffDiag",
                 ],
                 "filter_branches": [
                     {"branch": "InDetTrackParticlesAuxDyn.d0", "min": -5.0, "max": 5.0},
@@ -43,7 +47,7 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
                 "sort_by_branch": {"branch": "InDetTrackParticlesAuxDyn.qOverP"},
                 "min_length": 10,
                 "max_length": 30,
-            }
+            },
         ],
         label_features=[[]],
         label_array_aggregators=[
@@ -68,7 +72,8 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
     
     dataset_config = DatasetConfig(
         
-        run_numbers=run_numbers[-3:],
+        # run_numbers=run_numbers[-3:],
+        run_numbers=run_numbers[-1:],
         signal_keys=["zprime", "wprime_qq", "zprime_bb"],
         catalog_limit=2,
         # catalog_limit=20,
@@ -123,7 +128,8 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
     vae_training_config = TrainingConfig(
         batch_size=1024,
         learning_rate=0.001,
-        epochs=2,
+        # epochs=30,
+        epochs=3,
         early_stopping_patience=10,
         early_stopping_min_delta=1e-4,
         plot_training=True,
@@ -132,6 +138,7 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
     dnn_training_config = TrainingConfig(
         batch_size=1024,
         learning_rate=0.001,
+        # epochs=20,
         epochs=2,
         early_stopping_patience=100,
         early_stopping_min_delta=1e-4,

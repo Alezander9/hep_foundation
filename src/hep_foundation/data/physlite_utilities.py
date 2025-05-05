@@ -68,7 +68,7 @@ def get_branch_info(
             branch_info_dict = derived_feature.get_branch_info_dict()
             # Determine the branch type from the derived feature's shape
             branch_type = _determine_branch_type(branch_info_dict)
-            logger.debug(f"Branch '{branch_name}' identified as derived: type={branch_type}, info={branch_info_dict}")
+            logger.info(f"[debug] Branch '{branch_name}' identified as derived: type={branch_type}, info={branch_info_dict}")
             return True, branch_type, branch_info_dict
         else:
             # Should not happen if is_derived_feature is True, but handle defensively
@@ -525,8 +525,35 @@ class PhysliteSelectionConfig:
 
         # Add size from each aggregator
         for aggregator in self.feature_array_aggregators:
-            # For each aggregator, multiply its max_length by number of input features
-            aggregator_size = aggregator.max_length * len(aggregator.input_branches)
+            # Calculate size contributed by this aggregator's inputs
+            aggregator_feature_count_per_track = 0
+            for selector in aggregator.input_branches:
+                # --- Determine feature multiplicity (k) from branch shape ---
+                branch_shape = selector.branch.get_shape()
+                k = 1 # Default to 1 feature
+                if branch_shape is not None:
+                    if len(branch_shape) == 1:
+                        # Shape like (-1,) or (N,) -> k=1 feature per track
+                        k = 1
+                    elif len(branch_shape) == 2:
+                        # Shape like (-1, k) or (N, k) -> k features per track
+                        # Use the second dimension as k
+                        k = branch_shape[1]
+                        if k <= 0:
+                             # Handle cases like shape [-1, 0] or [-1, -1] if they occur
+                             logger.warning(f"Branch '{selector.branch.name}' has non-positive inner dimension {k} in shape {branch_shape}. Assuming k=1.")
+                             k = 1
+                    else:
+                        # Unexpected shape dimensions (e.g., 0D or 3D+ for an aggregator input)
+                        logger.warning(f"Branch '{selector.branch.name}' has unexpected shape {branch_shape} for feature size calculation. Assuming k=1.")
+                        k = 1
+                else:
+                     logger.warning(f"Branch '{selector.branch.name}' has no shape info available. Assuming k=1.")
+
+                aggregator_feature_count_per_track += k
+
+            # Multiply total features per track by max_length for this aggregator
+            aggregator_size = aggregator.max_length * aggregator_feature_count_per_track
             total_size += aggregator_size
 
         return total_size

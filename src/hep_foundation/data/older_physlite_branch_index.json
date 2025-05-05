@@ -28,24 +28,21 @@
             },
             "/xTrigDecisionAux.tav": {
                 "shape": [
-                    -1,
-                    1
+                    16
                 ],
                 "dtype": "uint32",
                 "status": "success"
             },
             "/xTrigDecisionAux.tap": {
                 "shape": [
-                    -1,
-                    1
+                    16
                 ],
                 "dtype": "uint32",
                 "status": "success"
             },
             "/xTrigDecisionAux.tbp": {
                 "shape": [
-                    -1,
-                    1
+                    16
                 ],
                 "dtype": "uint32",
                 "status": "success"
@@ -62,90 +59,80 @@
             },
             "/xTrigDecisionAux.lvl2Truncated": {
                 "shape": [],
-                "dtype": "bool_",
+                "dtype": "bool",
                 "status": "success"
             },
             "/xTrigDecisionAux.efTruncated": {
                 "shape": [],
-                "dtype": "bool_",
+                "dtype": "bool",
                 "status": "success"
             },
             "/xTrigDecisionAux.lvl2PassedPhysics": {
                 "shape": [
-                    -1,
-                    1
+                    256
                 ],
                 "dtype": "uint32",
                 "status": "success"
             },
             "/xTrigDecisionAux.efPassedPhysics": {
                 "shape": [
-                    -1,
-                    1
+                    256
                 ],
                 "dtype": "uint32",
                 "status": "success"
             },
             "/xTrigDecisionAux.lvl2PassedRaw": {
                 "shape": [
-                    -1,
-                    1
+                    256
                 ],
                 "dtype": "uint32",
                 "status": "success"
             },
             "/xTrigDecisionAux.efPassedRaw": {
                 "shape": [
-                    -1,
-                    1
+                    256
                 ],
                 "dtype": "uint32",
                 "status": "success"
             },
             "/xTrigDecisionAux.lvl2PassedThrough": {
                 "shape": [
-                    -1,
-                    1
+                    256
                 ],
                 "dtype": "uint32",
                 "status": "success"
             },
             "/xTrigDecisionAux.efPassedThrough": {
                 "shape": [
-                    -1,
-                    1
+                    256
                 ],
                 "dtype": "uint32",
                 "status": "success"
             },
             "/xTrigDecisionAux.lvl2Prescaled": {
                 "shape": [
-                    -1,
-                    1
+                    256
                 ],
                 "dtype": "uint32",
                 "status": "success"
             },
             "/xTrigDecisionAux.efPrescaled": {
                 "shape": [
-                    -1,
-                    1
+                    256
                 ],
                 "dtype": "uint32",
                 "status": "success"
             },
             "/xTrigDecisionAux.lvl2Resurrected": {
                 "shape": [
-                    -1,
-                    1
+                    256
                 ],
                 "dtype": "uint32",
                 "status": "success"
             },
             "/xTrigDecisionAux.efResurrected": {
                 "shape": [
-                    -1,
-                    1
+                    256
                 ],
                 "dtype": "uint32",
                 "status": "success"
@@ -164,176 +151,124 @@
             },
             "/METAssoc_AnalysisMETAux.jetLink": {
                 "shape": [
-                    -1,
-                    1
+                    3
                 ],
                 "dtype": "object",
                 "status": "success"
             },
             "/METAssoc_AnalysisMETAux.objectLinks": {
-                "shape": [
-                    -1,
-                    2
-                ],
-                "dtype": "Model_ElementLink_3c_DataVector_3c_xAOD_3a3a_IParticle_3e3e__v1",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "/METAssoc_AnalysisMETAux.calpx": {
-                "shape": [
-                    -1,
-                    2
-                ],
-                "dtype": "float32",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "/METAssoc_AnalysisMETAux.calpy": {
-                "shape": [
-                    -1,
-                    2
-                ],
-                "dtype": "float32",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "/METAssoc_AnalysisMETAux.calpz": {
-                "shape": [
-                    -1,
-                    2
-                ],
-                "dtype": "float32",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "/METAssoc_AnalysisMETAux.cale": {
-                "shape": [
-                    -1,
-                    2
-                ],
-                "dtype": "float32",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "/METAssoc_AnalysisMETAux.calsumpt": {
-                "shape": [
-                    -1,
-                    2
-                ],
-                "dtype": "float32",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "/METAssoc_AnalysisMETAux.calkey": {
-                "shape": [
-                    -1,
-                    2
-                ],
-                "dtype": "uint64",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "/METAssoc_AnalysisMETAux.trkpx": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "/METAssoc_AnalysisMETAux.trkpy": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "/METAssoc_AnalysisMETAux.trkpz": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "/METAssoc_AnalysisMETAux.trke": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "/METAssoc_AnalysisMETAux.trksumpt": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "/METAssoc_AnalysisMETAux.trkkey": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "/METAssoc_AnalysisMETAux.jettrkpx": {
                 "shape": [
-                    -1,
-                    1
+                    3
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "/METAssoc_AnalysisMETAux.jettrkpy": {
                 "shape": [
-                    -1,
-                    1
+                    3
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "/METAssoc_AnalysisMETAux.jettrkpz": {
                 "shape": [
-                    -1,
-                    1
+                    3
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "/METAssoc_AnalysisMETAux.jettrke": {
                 "shape": [
-                    -1,
-                    1
+                    3
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "/METAssoc_AnalysisMETAux.jettrksumpt": {
                 "shape": [
-                    -1,
-                    1
+                    3
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "/METAssoc_AnalysisMETAux.overlapIndices": {
-                "shape": [
-                    -1,
-                    2
-                ],
-                "dtype": "deeply_nested_stl_vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "/METAssoc_AnalysisMETAux.overlapTypes": {
-                "shape": [
-                    -1,
-                    2
-                ],
-                "dtype": "deeply_nested_stl_vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "/METAssoc_AnalysisMETAux.isMisc": {
                 "shape": [
-                    -1,
-                    1
+                    3
                 ],
                 "dtype": "int8",
                 "status": "success"
@@ -1626,50 +1561,40 @@
             },
             "/AntiKt10UFOCSSKJetsAux.pt": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "/AntiKt10UFOCSSKJetsAux.eta": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "/AntiKt10UFOCSSKJetsAux.phi": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "/AntiKt10UFOCSSKJetsAux.m": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "/AntiKt10UFOCSSKJetsAux.constituentLinks": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "/AntiKt10UFOCSSKJetsAux.constituentWeights": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
@@ -2612,11 +2537,8 @@
         },
         "AnalysisElectronsAuxDyn": {
             "trackParticleLinks": {
-                "shape": [
-                    -1,
-                    1
-                ],
-                "dtype": "Model_ElementLink_3c_DataVector_3c_xAOD_3a3a_TrackParticle_5f_v1_3e3e__v1",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "ambiguityLink": {
@@ -2626,7 +2548,6 @@
             },
             "ambiguityLink/AnalysisElectronsAuxDyn.ambiguityLink.m_persKey": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint32",
@@ -2634,7 +2555,6 @@
             },
             "ambiguityLink/AnalysisElectronsAuxDyn.ambiguityLink.m_persIndex": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint32",
@@ -2642,7 +2562,6 @@
             },
             "pt": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -2650,7 +2569,6 @@
             },
             "eta": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -2658,7 +2576,6 @@
             },
             "phi": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -2666,7 +2583,6 @@
             },
             "m": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -2674,7 +2590,6 @@
             },
             "charge": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -2682,7 +2597,6 @@
             },
             "topoetcone20": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -2690,7 +2604,6 @@
             },
             "neflowisol20": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -2698,7 +2611,6 @@
             },
             "ptvarcone30_Nonprompt_All_MaxWeightTTVALooseCone_pt1000": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -2706,7 +2618,6 @@
             },
             "ptcone20_Nonprompt_All_MaxWeightTTVALooseCone_pt1000": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -2714,7 +2625,6 @@
             },
             "ptvarcone30_Nonprompt_All_MaxWeightTTVALooseCone_pt1000_CloseByCorr": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -2722,7 +2632,6 @@
             },
             "topoetcone20_CloseByCorr": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -2730,7 +2639,6 @@
             },
             "ptcone20_Nonprompt_All_MaxWeightTTVALooseCone_pt1000_CloseByCorr": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -2738,7 +2646,6 @@
             },
             "DFCommonElectronsLHLoose": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "int8",
@@ -2746,7 +2653,6 @@
             },
             "DFCommonElectronsLHLooseBLIsEMValue": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint32",
@@ -2754,7 +2660,6 @@
             },
             "author": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint16",
@@ -2762,7 +2667,6 @@
             },
             "ptcone20_Nonprompt_All_MaxWeightTTVALooseCone_pt500": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -2770,23 +2674,18 @@
             },
             "ptvarcone30_Nonprompt_All_MaxWeightTTVALooseCone_pt500": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "caloClusterLinks": {
-                "shape": [
-                    -1,
-                    1
-                ],
-                "dtype": "Model_ElementLink_3c_DataVector_3c_xAOD_3a3a_CaloCluster_5f_v1_3e3e__v1",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "OQ": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint32",
@@ -2794,7 +2693,6 @@
             },
             "f1": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -2802,7 +2700,6 @@
             },
             "ambiguityType": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint8",
@@ -2810,7 +2707,6 @@
             },
             "topoetcone20ptCorrection": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -2818,7 +2714,6 @@
             },
             "DFCommonElectronsLHVeryLoose": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "int8",
@@ -2826,7 +2721,6 @@
             },
             "DFCommonElectronsLHVeryLooseIsEMValue": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint32",
@@ -2834,7 +2728,6 @@
             },
             "DFCommonElectronsLHLooseIsEMValue": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint32",
@@ -2842,7 +2735,6 @@
             },
             "DFCommonElectronsLHLooseBL": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "int8",
@@ -2850,7 +2742,6 @@
             },
             "DFCommonElectronsLHMedium": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "int8",
@@ -2858,7 +2749,6 @@
             },
             "DFCommonElectronsLHMediumIsEMValue": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint32",
@@ -2866,7 +2756,6 @@
             },
             "DFCommonElectronsLHTight": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "int8",
@@ -2874,7 +2763,6 @@
             },
             "DFCommonElectronsLHTightIsEMValue": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint32",
@@ -2882,7 +2770,6 @@
             },
             "DFCommonElectronsECIDS": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "int8",
@@ -2890,7 +2777,6 @@
             },
             "DFCommonElectronsECIDSResult": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -2900,64 +2786,56 @@
         "AnalysisJetsAuxDyn": {
             "pt": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "eta": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "phi": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "m": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "JetConstitScaleMomentum_pt": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "JetConstitScaleMomentum_eta": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "JetConstitScaleMomentum_phi": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "JetConstitScaleMomentum_m": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
@@ -2969,7 +2847,6 @@
             },
             "btaggingLink/AnalysisJetsAuxDyn.btaggingLink.m_persKey": {
                 "shape": [
-                    -1,
                     2
                 ],
                 "dtype": "uint32",
@@ -2977,7 +2854,6 @@
             },
             "btaggingLink/AnalysisJetsAuxDyn.btaggingLink.m_persIndex": {
                 "shape": [
-                    -1,
                     2
                 ],
                 "dtype": "uint32",
@@ -2985,184 +2861,147 @@
             },
             "ActiveArea4vec_eta": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "ActiveArea4vec_m": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "ActiveArea4vec_phi": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "ActiveArea4vec_pt": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "DetectorEta": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "EMFrac": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "JVFCorr": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "Timing": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "NumTrkPt1000": {
-                "shape": [
-                    -1,
-                    26
-                ],
-                "dtype": "int32",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "NumTrkPt500": {
-                "shape": [
-                    -1,
-                    26
-                ],
-                "dtype": "int32",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "EnergyPerSampling": {
-                "shape": [
-                    -1,
-                    28
-                ],
-                "dtype": "float32",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "SumPtChargedPFOPt500": {
-                "shape": [
-                    -1,
-                    26
-                ],
-                "dtype": "float32",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "SumPtTrkPt500": {
-                "shape": [
-                    -1,
-                    26
-                ],
-                "dtype": "float32",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "TrackWidthPt1000": {
-                "shape": [
-                    -1,
-                    26
-                ],
-                "dtype": "float32",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "PSFrac": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "Width": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "DFCommonJets_fJvt": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "GhostTrack": {
-                "shape": [
-                    -1,
-                    11
-                ],
-                "dtype": "Model_ElementLink_3c_DataVector_3c_xAOD_3a3a_IParticle_3e3e__v1",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "GhostMuonSegmentCount": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "int32",
                 "status": "success"
             },
             "DFCommonJets_QGTagger_NTracks": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "int32",
                 "status": "success"
             },
             "DFCommonJets_QGTagger_TracksWidth": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "DFCommonJets_QGTagger_TracksC1": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "NNJvtPass": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "int8",
                 "status": "success"
@@ -3176,7 +3015,6 @@
             },
             "ambiguityLink/AnalysisPhotonsAuxDyn.ambiguityLink.m_persKey": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint32",
@@ -3184,7 +3022,6 @@
             },
             "ambiguityLink/AnalysisPhotonsAuxDyn.ambiguityLink.m_persIndex": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint32",
@@ -3192,7 +3029,6 @@
             },
             "pt": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3200,7 +3036,6 @@
             },
             "eta": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3208,7 +3043,6 @@
             },
             "phi": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3216,7 +3050,6 @@
             },
             "m": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3224,7 +3057,6 @@
             },
             "ptcone20": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3232,7 +3064,6 @@
             },
             "topoetcone20": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3240,7 +3071,6 @@
             },
             "topoetcone40": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3248,7 +3078,6 @@
             },
             "topoetcone20_CloseByCorr": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3256,7 +3085,6 @@
             },
             "ptcone20_CloseByCorr": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3264,7 +3092,6 @@
             },
             "topoetcone40_CloseByCorr": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3272,7 +3099,6 @@
             },
             "DFCommonPhotonsCleaning": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "int8",
@@ -3280,7 +3106,6 @@
             },
             "DFCommonPhotonsIsEMLoose": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "int8",
@@ -3288,23 +3113,18 @@
             },
             "author": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint16",
                 "status": "success"
             },
             "caloClusterLinks": {
-                "shape": [
-                    -1,
-                    1
-                ],
-                "dtype": "Model_ElementLink_3c_DataVector_3c_xAOD_3a3a_CaloCluster_5f_v1_3e3e__v1",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "OQ": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint32",
@@ -3312,7 +3132,6 @@
             },
             "f1": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3320,7 +3139,6 @@
             },
             "topoetcone20ptCorrection": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3328,23 +3146,18 @@
             },
             "topoetcone40ptCorrection": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "vertexLinks": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "DFCommonPhotonsIsEMTight": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "int8",
@@ -3352,7 +3165,6 @@
             },
             "DFCommonPhotonsIsEMTightIsEMValue": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint32",
@@ -3360,7 +3172,6 @@
             },
             "DFCommonPhotonsCleaningNoTime": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "int8",
@@ -3370,7 +3181,6 @@
         "AnalysisTauJetsAuxDyn": {
             "pt": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3378,7 +3188,6 @@
             },
             "eta": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3386,7 +3195,6 @@
             },
             "phi": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3394,7 +3202,6 @@
             },
             "m": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3407,7 +3214,6 @@
             },
             "vertexLink/AnalysisTauJetsAuxDyn.vertexLink.m_persKey": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint32",
@@ -3415,23 +3221,18 @@
             },
             "vertexLink/AnalysisTauJetsAuxDyn.vertexLink.m_persIndex": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint32",
                 "status": "success"
             },
             "tauTrackLinks": {
-                "shape": [
-                    -1,
-                    10
-                ],
-                "dtype": "Model_ElementLink_3c_DataVector_3c_xAOD_3a3a_TauTrack_5f_v1_3e3e__v1",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "charge": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3439,7 +3240,6 @@
             },
             "EleRNNLoose_v1": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "int8",
@@ -3447,7 +3247,6 @@
             },
             "EleRNNMedium_v1": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "int8",
@@ -3455,7 +3254,6 @@
             },
             "EleRNNTight_v1": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "int8",
@@ -3463,7 +3261,6 @@
             },
             "JetDeepSetVeryLoose": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "int8",
@@ -3471,7 +3268,6 @@
             },
             "JetDeepSetLoose": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "int8",
@@ -3479,7 +3275,6 @@
             },
             "JetDeepSetMedium": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "int8",
@@ -3487,7 +3282,6 @@
             },
             "JetDeepSetTight": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "int8",
@@ -3495,7 +3289,6 @@
             },
             "ptTauEnergyScale": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3503,7 +3296,6 @@
             },
             "etaTauEnergyScale": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3511,7 +3303,6 @@
             },
             "ptFinalCalib": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3519,7 +3310,6 @@
             },
             "etaFinalCalib": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3527,7 +3317,6 @@
             },
             "isTauFlags": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint32",
@@ -3535,7 +3324,6 @@
             },
             "PanTau_DecayMode": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "int32",
@@ -3543,7 +3331,6 @@
             },
             "RNNJetScore": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3551,7 +3338,6 @@
             },
             "RNNJetScoreSigTrans": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3559,7 +3345,6 @@
             },
             "RNNEleScore": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3567,7 +3352,6 @@
             },
             "NNDecayMode": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "int32",
@@ -3575,7 +3359,6 @@
             },
             "RNNEleScoreSigTrans_v1": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3583,7 +3366,6 @@
             },
             "JetDeepSetScore": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3591,7 +3373,6 @@
             },
             "JetDeepSetScoreTrans": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -3600,209 +3381,155 @@
         },
         "AnalysisTrigMatch_HLT_e10_lhvloose_L1EM7AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    1
-                ],
-                "dtype": "Model_ElementLink_3c_DataVector_3c_xAOD_3a3a_IParticle_3e3e__v1",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e10_lhvloose_nod0_L1EM7AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    1
-                ],
-                "dtype": "Model_ElementLink_3c_DataVector_3c_xAOD_3a3a_IParticle_3e3e__v1",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e12_lhvloose_L1EM10VHAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    1
-                ],
-                "dtype": "Model_ElementLink_3c_DataVector_3c_xAOD_3a3a_IParticle_3e3e__v1",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e12_lhvloose_nod0_L1EM10VHAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    1
-                ],
-                "dtype": "Model_ElementLink_3c_DataVector_3c_xAOD_3a3a_IParticle_3e3e__v1",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e15_lhvloose_L1EM13VHAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    1
-                ],
-                "dtype": "Model_ElementLink_3c_DataVector_3c_xAOD_3a3a_IParticle_3e3e__v1",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e15_lhvloose_nod0_L1EM7AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    1
-                ],
-                "dtype": "Model_ElementLink_3c_DataVector_3c_xAOD_3a3a_IParticle_3e3e__v1",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e17_lhvlooseAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    1
-                ],
-                "dtype": "Model_ElementLink_3c_DataVector_3c_xAOD_3a3a_IParticle_3e3e__v1",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e17_lhvloose_nod0AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    1
-                ],
-                "dtype": "Model_ElementLink_3c_DataVector_3c_xAOD_3a3a_IParticle_3e3e__v1",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e20_lhvlooseAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    1
-                ],
-                "dtype": "Model_ElementLink_3c_DataVector_3c_xAOD_3a3a_IParticle_3e3e__v1",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e20_lhvloose_nod0AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    1
-                ],
-                "dtype": "Model_ElementLink_3c_DataVector_3c_xAOD_3a3a_IParticle_3e3e__v1",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e24_lhvloose_nod0_L1EM18VHAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    1
-                ],
-                "dtype": "Model_ElementLink_3c_DataVector_3c_xAOD_3a3a_IParticle_3e3e__v1",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e26_lhtight_nod0_ivarlooseAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    1
-                ],
-                "dtype": "Model_ElementLink_3c_DataVector_3c_xAOD_3a3a_IParticle_3e3e__v1",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e26_lhtight_smooth_ivarlooseAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    1
-                ],
-                "dtype": "Model_ElementLink_3c_DataVector_3c_xAOD_3a3a_IParticle_3e3e__v1",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e28_lhtight_nod0_ringer_ivarlooseAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    1
-                ],
-                "dtype": "Model_ElementLink_3c_DataVector_3c_xAOD_3a3a_IParticle_3e3e__v1",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e5_lhvlooseAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    1
-                ],
-                "dtype": "Model_ElementLink_3c_DataVector_3c_xAOD_3a3a_IParticle_3e3e__v1",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e5_lhvloose_nod0AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    1
-                ],
-                "dtype": "Model_ElementLink_3c_DataVector_3c_xAOD_3a3a_IParticle_3e3e__v1",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "BTagging_AntiKt4EMPFlowAuxDyn": {
             "DL1dv01_pu": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "DL1dv01_pc": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "DL1dv01_pb": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "GN2v00_pc": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "GN2v00_pb": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "GN2v00_pu": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
@@ -3811,48 +3538,42 @@
         "BTagging_AntiKtVR30Rmax4Rmin02TrackAuxDyn": {
             "DL1dv01_pu": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "DL1dv01_pc": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "DL1dv01_pb": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "GN2v00_pc": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "GN2v00_pb": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "GN2v00_pu": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
@@ -3911,7 +3632,6 @@
             },
             "detDescrTags/EventInfoAuxDyn.detDescrTags.first": {
                 "shape": [
-                    -1,
                     0
                 ],
                 "dtype": "object",
@@ -3919,7 +3639,6 @@
             },
             "detDescrTags/EventInfoAuxDyn.detDescrTags.second": {
                 "shape": [
-                    -1,
                     0
                 ],
                 "dtype": "object",
@@ -4032,7 +3751,6 @@
             },
             "mcEventWeights": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -4106,24 +3824,17 @@
         },
         "GSFTrackParticlesAuxDyn": {
             "definingParametersCovMatrixDiag": {
-                "shape": [
-                    -1,
-                    5
-                ],
-                "dtype": "float32",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "definingParametersCovMatrixOffDiag": {
-                "shape": [
-                    -1,
-                    10
-                ],
-                "dtype": "float32",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "phi": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -4136,7 +3847,6 @@
             },
             "originalTrackParticle/GSFTrackParticlesAuxDyn.originalTrackParticle.m_persKey": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint32",
@@ -4144,7 +3854,6 @@
             },
             "originalTrackParticle/GSFTrackParticlesAuxDyn.originalTrackParticle.m_persIndex": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint32",
@@ -4152,7 +3861,6 @@
             },
             "numberOfPixelHits": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint8",
@@ -4160,7 +3868,6 @@
             },
             "numberOfSCTHits": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint8",
@@ -4168,7 +3875,6 @@
             },
             "qOverP": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -4176,7 +3882,6 @@
             },
             "numberOfInnermostPixelLayerHits": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint8",
@@ -4184,7 +3889,6 @@
             },
             "numberOfNextToInnermostPixelLayerHits": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint8",
@@ -4192,7 +3896,6 @@
             },
             "expectInnermostPixelLayerHit": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint8",
@@ -4200,7 +3903,6 @@
             },
             "expectNextToInnermostPixelLayerHit": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint8",
@@ -4208,7 +3910,6 @@
             },
             "chiSquared": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -4216,7 +3917,6 @@
             },
             "d0": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -4224,7 +3924,6 @@
             },
             "z0": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -4232,7 +3931,6 @@
             },
             "theta": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -4240,7 +3938,6 @@
             },
             "vz": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -4249,185 +3946,154 @@
         },
         "InDetTrackParticlesAuxDyn": {
             "definingParametersCovMatrixDiag": {
-                "shape": [
-                    -1,
-                    5
-                ],
-                "dtype": "float32",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "definingParametersCovMatrixOffDiag": {
-                "shape": [
-                    -1,
-                    10
-                ],
-                "dtype": "float32",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "phi": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "numberOfPixelHits": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "numberOfPixelHoles": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "numberOfPixelSharedHits": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "numberOfPixelDeadSensors": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "numberOfSCTHits": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "numberOfSCTHoles": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "numberOfSCTSharedHits": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "numberOfSCTDeadSensors": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "qOverP": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "numberOfInnermostPixelLayerHits": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "TTVA_AMVFVertices": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "TTVA_AMVFWeights": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "chiSquared": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "numberDoF": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "d0": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "z0": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "theta": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "vz": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "numberOfTRTHits": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "numberOfTRTOutliers": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "uint8",
                 "status": "success"
@@ -4442,41 +4108,34 @@
         },
         "MET_Core_AnalysisMETAuxDyn": {
             "name": {
-                "shape": [
-                    -1,
-                    12
-                ],
-                "dtype": "str",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "mpx": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "mpy": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "sumet": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "source": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "uint64",
                 "status": "success"
@@ -4484,49 +4143,39 @@
         },
         "PrimaryVerticesAuxDyn": {
             "trackParticleLinks": {
-                "shape": [
-                    -1,
-                    27
-                ],
-                "dtype": "Model_ElementLink_3c_DataVector_3c_xAOD_3a3a_TrackParticle_5f_v1_3e3e__v1",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "neutralParticleLinks": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "vertexType": {
                 "shape": [
-                    -1,
-                    1
+                    26
                 ],
                 "dtype": "int16",
                 "status": "success"
             },
             "x": {
                 "shape": [
-                    -1,
-                    1
+                    26
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "y": {
                 "shape": [
-                    -1,
-                    1
+                    26
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "z": {
                 "shape": [
-                    -1,
-                    1
+                    26
                 ],
                 "dtype": "float32",
                 "status": "success"
@@ -4535,7 +4184,6 @@
         "TauTracksAuxDyn": {
             "pt": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -4543,7 +4191,6 @@
             },
             "eta": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
@@ -4551,23 +4198,18 @@
             },
             "phi": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "trackLinks": {
-                "shape": [
-                    -1,
-                    1
-                ],
-                "dtype": "Model_ElementLink_3c_DataVector_3c_xAOD_3a3a_TrackParticle_5f_v1_3e3e__v1",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "flagSet": {
                 "shape": [
-                    -1,
                     1
                 ],
                 "dtype": "uint16",
@@ -4577,498 +4219,428 @@
         "egammaClustersAuxDyn": {
             "calE": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "calEta": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "calPhi": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "eta_sampl": {
-                "shape": [
-                    -1,
-                    4
-                ],
-                "dtype": "float32",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "calM": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "e_sampl": {
-                "shape": [
-                    -1,
-                    4
-                ],
-                "dtype": "float32",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "ETA2CALOFRAME": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "ETACALOFRAME": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "PHI2CALOFRAME": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "PHICALOFRAME": {
                 "shape": [
-                    -1,
-                    1
+                    2
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "constituentClusterLinks": {
-                "shape": [
-                    -1,
-                    1
-                ],
-                "dtype": "Model_ElementLink_3c_DataVector_3c_xAOD_3a3a_CaloCluster_5f_v1_3e3e__v1",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisMuonsAuxDyn": {
             "pt": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "eta": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "phi": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "muonSegmentLinks": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "charge": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "ptcone20": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "ptvarcone20": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "ptcone30": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "ptvarcone30": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "topoetcone20": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "topoetcone40": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "EnergyLoss": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "MuonSpectrometerPt": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "InnerDetectorPt": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "momentumBalanceSignificance": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "scatteringNeighbourSignificance": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "segmentDeltaEta": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "CaloMuonScore": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "ptvarcone30_Nonprompt_All_MaxWeightTTVA_pt500": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "neflowisol20": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "ptvarcone30_Nonprompt_All_MaxWeightTTVA_pt1000": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "topoetcone20_CloseByCorr": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "ptvarcone30_Nonprompt_All_MaxWeightTTVA_pt500_CloseByCorr": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "neflowisol20_CloseByCorr": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "ptvarcone30_Nonprompt_All_MaxWeightTTVA_pt1000_CloseByCorr": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "numberOfPrecisionLayers": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "numberOfPrecisionHoleLayers": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "DFCommonMuonPassIDCuts": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "int8",
                 "status": "success"
             },
             "muonType": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint16",
                 "status": "success"
             },
             "allAuthors": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint16",
                 "status": "success"
             },
             "author": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint16",
                 "status": "success"
             },
             "quality": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "energyLossType": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "innerSmallHits": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "innerLargeHits": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "middleSmallHits": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "middleLargeHits": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "outerSmallHits": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "outerLargeHits": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "extendedSmallHits": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "extendedLargeHits": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "innerSmallHoles": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "innerLargeHoles": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "middleSmallHoles": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "middleLargeHoles": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "outerSmallHoles": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "outerLargeHoles": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "extendedSmallHoles": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "extendedLargeHoles": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "cscEtaHits": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "cscUnspoiledEtaHits": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
@@ -5080,7 +4652,6 @@
             },
             "inDetTrackParticleLink/AnalysisMuonsAuxDyn.inDetTrackParticleLink.m_persKey": {
                 "shape": [
-                    -1,
                     0
                 ],
                 "dtype": "uint32",
@@ -5088,7 +4659,6 @@
             },
             "inDetTrackParticleLink/AnalysisMuonsAuxDyn.inDetTrackParticleLink.m_persIndex": {
                 "shape": [
-                    -1,
                     0
                 ],
                 "dtype": "uint32",
@@ -5101,7 +4671,6 @@
             },
             "muonSpectrometerTrackParticleLink/AnalysisMuonsAuxDyn.muonSpectrometerTrackParticleLink.m_persKey": {
                 "shape": [
-                    -1,
                     0
                 ],
                 "dtype": "uint32",
@@ -5109,7 +4678,6 @@
             },
             "muonSpectrometerTrackParticleLink/AnalysisMuonsAuxDyn.muonSpectrometerTrackParticleLink.m_persIndex": {
                 "shape": [
-                    -1,
                     0
                 ],
                 "dtype": "uint32",
@@ -5122,7 +4690,6 @@
             },
             "extrapolatedMuonSpectrometerTrackParticleLink/AnalysisMuonsAuxDyn.extrapolatedMuonSpectrometerTrackParticleLink.m_persKey": {
                 "shape": [
-                    -1,
                     0
                 ],
                 "dtype": "uint32",
@@ -5130,7 +4697,6 @@
             },
             "extrapolatedMuonSpectrometerTrackParticleLink/AnalysisMuonsAuxDyn.extrapolatedMuonSpectrometerTrackParticleLink.m_persIndex": {
                 "shape": [
-                    -1,
                     0
                 ],
                 "dtype": "uint32",
@@ -5143,7 +4709,6 @@
             },
             "msOnlyExtrapolatedMuonSpectrometerTrackParticleLink/AnalysisMuonsAuxDyn.msOnlyExtrapolatedMuonSpectrometerTrackParticleLink.m_persKey": {
                 "shape": [
-                    -1,
                     0
                 ],
                 "dtype": "uint32",
@@ -5151,7 +4716,6 @@
             },
             "msOnlyExtrapolatedMuonSpectrometerTrackParticleLink/AnalysisMuonsAuxDyn.msOnlyExtrapolatedMuonSpectrometerTrackParticleLink.m_persIndex": {
                 "shape": [
-                    -1,
                     0
                 ],
                 "dtype": "uint32",
@@ -5164,7 +4728,6 @@
             },
             "combinedTrackParticleLink/AnalysisMuonsAuxDyn.combinedTrackParticleLink.m_persKey": {
                 "shape": [
-                    -1,
                     0
                 ],
                 "dtype": "uint32",
@@ -5172,7 +4735,6 @@
             },
             "combinedTrackParticleLink/AnalysisMuonsAuxDyn.combinedTrackParticleLink.m_persIndex": {
                 "shape": [
-                    -1,
                     0
                 ],
                 "dtype": "uint32",
@@ -5185,7 +4747,6 @@
             },
             "clusterLink/AnalysisMuonsAuxDyn.clusterLink.m_persKey": {
                 "shape": [
-                    -1,
                     0
                 ],
                 "dtype": "uint32",
@@ -5193,7 +4754,6 @@
             },
             "clusterLink/AnalysisMuonsAuxDyn.clusterLink.m_persIndex": {
                 "shape": [
-                    -1,
                     0
                 ],
                 "dtype": "uint32",
@@ -5201,184 +4761,161 @@
             },
             "spectrometerFieldIntegral": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "scatteringCurvatureSignificance": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "CaloLRLikelihood": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "CaloMuonIDTag": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "int32",
                 "status": "success"
             },
             "combinedTrackOutBoundsPrecisionHits": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "extendedClosePrecisionHits": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "extendedOutBoundsPrecisionHits": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "innerClosePrecisionHits": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "innerOutBoundsPrecisionHits": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "isEndcapGoodLayers": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "isSmallGoodSectors": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "middleClosePrecisionHits": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "middleOutBoundsPrecisionHits": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "numberOfGoodPrecisionLayers": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "outerClosePrecisionHits": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "outerOutBoundsPrecisionHits": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "ptcone40": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "ptvarcone40": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "topoetcone30": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "DFCommonMuonPassPreselection": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "int8",
                 "status": "success"
             },
             "ptcone20_Nonprompt_All_MaxWeightTTVA_pt500": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "ptcone20_Nonprompt_All_MaxWeightTTVA_pt1000": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "DFCommonJetDr": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
@@ -5386,155 +4923,130 @@
         },
         "AntiKt10UFOCSSKJetsAuxDyn": {
             "GhostAntiKtVR30Rmax4Rmin02PV0TrackJets": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "CombinedMuonTrackParticlesAuxDyn": {
             "definingParametersCovMatrixDiag": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "definingParametersCovMatrixOffDiag": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "phi": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "numberOfPixelHits": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "numberOfPixelHoles": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "numberOfPixelDeadSensors": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "numberOfSCTHits": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "numberOfSCTHoles": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "numberOfSCTDeadSensors": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "qOverP": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "chiSquared": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "numberDoF": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "d0": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "z0": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "theta": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "vz": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "numberOfTRTHits": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
             },
             "numberOfTRTOutliers": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint8",
                 "status": "success"
@@ -5542,65 +5054,53 @@
         },
         "ExtrapolatedMuonTrackParticlesAuxDyn": {
             "definingParametersCovMatrixDiag": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "definingParametersCovMatrixOffDiag": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "phi": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "qOverP": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "d0": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "z0": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "theta": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "vz": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
@@ -5608,65 +5108,53 @@
         },
         "MuonSpectrometerTrackParticlesAuxDyn": {
             "definingParametersCovMatrixDiag": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "definingParametersCovMatrixOffDiag": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "phi": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "qOverP": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "d0": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "z0": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "theta": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "vz": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
@@ -5675,136 +5163,117 @@
         "AnalysisLargeRJetsAuxDyn": {
             "pt": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "eta": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "phi": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "m": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "constituentLinks": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "JetConstitScaleMomentum_pt": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "JetConstitScaleMomentum_eta": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "JetConstitScaleMomentum_phi": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "JetConstitScaleMomentum_m": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "GN2Xv01_phbb": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "GN2Xv01_ptop": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "GN2Xv01_pqcd": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "DetectorEta": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "D2": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "ECF1": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "ECF2": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "ECF3": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
@@ -5816,7 +5285,6 @@
             },
             "Parent/AnalysisLargeRJetsAuxDyn.Parent.m_persKey": {
                 "shape": [
-                    -1,
                     0
                 ],
                 "dtype": "uint32",
@@ -5824,7 +5292,6 @@
             },
             "Parent/AnalysisLargeRJetsAuxDyn.Parent.m_persIndex": {
                 "shape": [
-                    -1,
                     0
                 ],
                 "dtype": "uint32",
@@ -5832,64 +5299,56 @@
             },
             "Tau1_wta": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "Tau2_wta": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "Tau3_wta": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "C2": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "GN2Xv01_phcc": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "Split12": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "Split23": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "Qw": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
@@ -5897,89 +5356,74 @@
         },
         "GSFConversionVerticesAuxDyn": {
             "trackParticleLinks": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "neutralParticleLinks": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "px": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "py": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "pz": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "x": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "y": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "z": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "minRfirstHit": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "pt1": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "pt2": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
@@ -5987,221 +5431,176 @@
         },
         "AnalysisTrigMatch_HLT_mu10AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu14AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu18AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu20AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu22AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu24AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu26_ivarmediumAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu4AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu6AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu6_idperfAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisSiHitElectronsAuxDyn": {
             "pt": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "eta": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "phi": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "m": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "charge": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "ptvarcone30_Nonprompt_All_MaxWeightTTVALooseCone_pt1000_CloseByCorr": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "topoetcone20_CloseByCorr": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "z0stheta": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "d0Normalized": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "nInnerExpPix": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "int32",
                 "status": "success"
             },
             "clEta": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "clPhi": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "author": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint16",
                 "status": "success"
             },
             "OQ": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "uint32",
                 "status": "success"
             },
             "DFCommonElectronsLHVeryLoose": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "int8",
                 "status": "success"
@@ -6209,707 +5608,503 @@
         },
         "AnalysisTrigMatch_HLT_3mu4AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu6_nomucomb_2mu4_nomucomb_delayed_L1MU6_3MU4AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e7_lhmedium_nod0_mu24AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu50AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu6_j85_bperf_split_dr05_dz02AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e60_lhmedium_nod0AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e60_mediumAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu20_nomucomb_mu6noL1_nscan03AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu60_0eta105_msonlyAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e70_lhvloose_nod0AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_2e17_lhvloose_nod0AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e26_lhtight_nod0_e15_etcut_L1EM7_ZeeAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e60_lhvloose_nod0AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_2mu6_bJpsimumu_delayedAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_g120_looseAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_g140_looseAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_g35_loose_g25_looseAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_2mu14AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_2mu14_nomucombAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_2mu20_L12MU20_OVERLAYAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu13_mu13_idperf_ZmumuAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e17_lhloose_nod0_mu14AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu11_nomucomb_mu6noL1_nscan03_L1MU11_2MU6_bTauAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu11_nomucomb_mu6noL1_nscan03_L1MU11_2MU6_bTau_delayedAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu6_mu4_bUpsimumuAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu4_bJpsi_TrklooseAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu14_ivarloose_tau35_medium1_tracktwoAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu11_nomucomb_2mu4noL1_nscan03_L1MU11_2MU6AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e80_lhvloose_nod0AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu6_iloose_mu6_11invm24_noosAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu22_mu8noL1AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e100_lhvloose_nod0AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e120_lhvloose_nod0AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e300_etcutAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_g300_etcutAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu4_j55_bperf_split_dr05_dz02AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_2g22_tightAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu6_j110_bperf_split_dr05_dz02AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_2mu6_bJpsimumuAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu20_2mu4_JpsimumuL2AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_2mu6_bUpsimumuAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_2mu6_bUpsimumu_delayedAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e28_lhvloose_nod0_L1EM20VHAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu6_bJpsi_TrklooseAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_3mu6AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_3mu6_msonlyAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu6_mu4_bJpsimumu_delayedAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_g200_etcutAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu4_mu4_idperf_bJpsimumu_noidAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu20_msonly_mu15noL1_msonly_nscan05_noCombAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e200_etcutAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu10_bJpsi_TrklooseAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu6_2mu4AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e26_lhvloose_nod0_L1EM20VHAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu6_mu4_bJpsimumuAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e140_lhloose_nod0AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu20_2mu4noL1AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu4_j15_bperf_split_dr05_dz02AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu4_j25_bperf_split_dr05_dz02AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu4_j35_bperf_split_dr05_dz02AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu20_2mu0noL1_JpsimumuFSAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_e140_lhvloose_nod0AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_2e12_lhloose_nod0_mu10AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu6_j150_bperf_split_dr05_dz02AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu6_j175_bperf_split_dr05_dz02AuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "FourLeptonVerticesAuxDyn": {
             "trackParticleLinks": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             },
             "vertexType": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "int16",
                 "status": "success"
             },
             "chiSquared": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "numberDoF": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "x": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "y": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
             },
             "z": {
                 "shape": [
-                    -1,
-                    1
+                    0
                 ],
                 "dtype": "float32",
                 "status": "success"
@@ -6917,31 +6112,22 @@
         },
         "AnalysisTrigMatch_HLT_mu6_mu4_bUpsimumu_delayedAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_mu11_nomucomb_2mu4noL1_nscan03_L1MU11_2MU6_bTauAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         },
         "AnalysisTrigMatch_HLT_3g20_looseAuxDyn": {
             "TrigMatchedObjects": {
-                "shape": [
-                    -1,
-                    0
-                ],
-                "dtype": "std::vector",
+                "shape": [],
+                "dtype": "STLVector",
                 "status": "success"
             }
         }

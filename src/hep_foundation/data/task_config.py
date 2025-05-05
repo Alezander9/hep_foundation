@@ -219,51 +219,91 @@ class TaskConfig:
 
         # Create feature array aggregators
         feature_array_aggregators = []
-        for agg_dict in config_dict.get("feature_array_aggregators", []):
+        for i, agg_dict in enumerate(config_dict.get("feature_array_aggregators", [])):
             # Create input branch selectors
             input_branches = []
-            for input_dict in agg_dict.get("input_branches", []):
-                branch = PhysliteBranch(input_dict["branch_name"])
-                if branch.is_feature_array:
-                    input_branches.append(PhysliteFeatureArraySelector(branch=branch))
+            for branch_name in agg_dict.get("input_branches", []):
+                # Directly create and validate branch
+                branch = PhysliteBranch(branch_name) # Raises ValueError if name invalid
+                if not branch.is_feature_array:
+                    # Raise error if not a feature array
+                    raise ValueError(
+                        f"Branch '{branch_name}' provided in 'input_branches' for aggregator #{i} "
+                        f"is not a feature array (type: {branch.branch_type.value}). Aggregators require feature arrays."
+                    )
+                selector = PhysliteFeatureArraySelector(branch=branch) # This constructor also validates type
+                input_branches.append(selector)
+
+            logger.debug(f"Processed input_branches for dict #{i}: {[str(b) for b in input_branches]}")
 
             # Create filter branch filters
             filter_branches = []
             for filter_dict in agg_dict.get("filter_branches", []):
-                branch = PhysliteBranch(filter_dict["branch_name"])
-                if branch.is_feature_array:
-                    filter_branches.append(
-                        PhysliteFeatureArrayFilter(
-                            branch=branch,
-                            min_value=filter_dict.get("min"),
-                            max_value=filter_dict.get("max"),
-                        )
+                branch_name = filter_dict.get("branch")
+                if not branch_name:
+                    raise ValueError(f"Missing 'branch' key in filter_dict for aggregator #{i}: {filter_dict}")
+
+                # Directly create and validate branch
+                branch = PhysliteBranch(branch_name) # Raises ValueError if name invalid
+                if not branch.is_feature_array:
+                    # Raise error if not a feature array
+                    raise ValueError(
+                        f"Branch '{branch_name}' provided in 'filter_branches' for aggregator #{i} "
+                        f"is not a feature array (type: {branch.branch_type.value}). Aggregator filters require feature arrays."
                     )
+                filter_obj = PhysliteFeatureArrayFilter(
+                    branch=branch,
+                    min_value=filter_dict.get("min"),
+                    max_value=filter_dict.get("max"),
+                ) # This constructor also validates type
+                filter_branches.append(filter_obj)
 
-            # Create sort by branch filter
-            sort_dict = agg_dict.get("sort_by_branch", {})
+            logger.debug(f"Processed filter_branches for dict #{i}: {[str(f) for f in filter_branches]}")
 
+            # Create sort by branch selector
+            sort_branch_dict = agg_dict.get("sort_by_branch")
             sort_by_branch = None
-            if sort_dict and "branch" in sort_dict:
-                branch_name = sort_dict.get("branch")
-                branch = PhysliteBranch(branch_name)
-                if branch.is_feature_array:
-                    sort_by_branch = PhysliteFeatureArraySelector(branch=branch)
+            if sort_branch_dict:
+                branch_name = sort_branch_dict.get("branch")
+                if not branch_name:
+                     raise ValueError(f"Missing 'branch' key in sort_by_branch for aggregator #{i}: {sort_branch_dict}")
+
+                # Directly create and validate branch
+                branch = PhysliteBranch(branch_name) # Raises ValueError if name invalid
+                if not branch.is_feature_array:
+                    # Raise error if not a feature array
+                    raise ValueError(
+                        f"Branch '{branch_name}' provided in 'sort_by_branch' for aggregator #{i} "
+                        f"is not a feature array (type: {branch.branch_type.value}). Aggregator sorting requires a feature array."
+                    )
+                sort_by_branch = PhysliteFeatureArraySelector(branch=branch) # This constructor also validates type
+
+            logger.debug(f"Processed sort_by_branch for dict #{i}: {str(sort_by_branch)}")
 
             # Create aggregator if we have input branches
+            # The check for empty input_branches is still relevant - an aggregator needs inputs.
+            logger.debug(f"Checking condition for dict #{i}: len(input_branches) = {len(input_branches)}")
             if input_branches:
-                try:
-                    aggregator = PhysliteFeatureArrayAggregator(
-                        input_branches=input_branches,
-                        filter_branches=filter_branches,
-                        sort_by_branch=sort_by_branch,
-                        min_length=agg_dict.get("min_length", 1),
-                        max_length=agg_dict.get("max_length", 100),
-                    )
-                    feature_array_aggregators.append(aggregator)
-                except Exception:
-                    continue
+                # No need for try-except here anymore, PhysliteFeatureArrayAggregator constructor handles validation
+                logger.debug(f"Attempting to create aggregator for dict #{i}...")
+                aggregator = PhysliteFeatureArrayAggregator(
+                    input_branches=input_branches,
+                    filter_branches=filter_branches,
+                    sort_by_branch=sort_by_branch,
+                    min_length=agg_dict.get("min_length", 1),
+                    max_length=agg_dict.get("max_length", 100),
+                )
+                feature_array_aggregators.append(aggregator)
+                logger.debug(f"Successfully created and added aggregator for dict #{i}")
+            else:
+                # This case might still be valid if the user intended an aggregator with 0 inputs (though unlikely)
+                # We could raise an error here too, or just log a warning.
+                # Let's log a warning instead of raising an error for empty input_branches,
+                # as the immediate cause (wrong branch type) is handled above.
+                logger.warning(f"Skipping aggregator creation for dict #{i} due to empty input_branches. "
+                               f"This might be due to invalid branch names or types being filtered out earlier.")
 
+        logger.debug(f"after processing feature_array_aggregators length: {len(feature_array_aggregators)}")
         # Create the selection config
         try:
             return PhysliteSelectionConfig(
@@ -402,65 +442,94 @@ class TaskConfig:
 
         # Create feature array aggregators
         feature_array_aggregators = []
-        for agg_dict in aggregator_list:
-            try:
-                # Create input branch selectors
-                input_branches = []
-                for branch_name in agg_dict.get("input_branches", []):
-                    try:
-                        branch = PhysliteBranch(branch_name)
-                        if branch.is_feature_array:
-                            selector = PhysliteFeatureArraySelector(branch=branch)
-                            input_branches.append(selector)
-                    except Exception:
-                        continue
+        logger.debug(f"aggregator_list length: {len(aggregator_list)}")
+        for i, agg_dict in enumerate(aggregator_list):
+            logger.debug(f"Processing aggregator dict #{i}: {agg_dict}")
 
-                # Create filter branch filters
-                filter_branches = []
-                for filter_dict in agg_dict.get("filter_branches", []):
-                    try:
-                        branch_name = filter_dict.get("branch")
-                        branch = PhysliteBranch(branch_name)
-                        if branch.is_feature_array:
-                            filter_branches.append(
-                                PhysliteFeatureArrayFilter(
-                                    branch=branch,
-                                    min_value=filter_dict.get("min"),
-                                    max_value=filter_dict.get("max"),
-                                )
-                            )
-                    except Exception:
-                        continue
+            # Create input branch selectors
+            input_branches = []
+            for branch_name in agg_dict.get("input_branches", []):
+                # Directly create and validate branch
+                branch = PhysliteBranch(branch_name) # Raises ValueError if name invalid
+                if not branch.is_feature_array:
+                    # Raise error if not a feature array
+                    raise ValueError(
+                        f"Branch '{branch_name}' provided in 'input_branches' for aggregator #{i} "
+                        f"is not a feature array (type: {branch.branch_type.value}). Aggregators require feature arrays."
+                    )
+                selector = PhysliteFeatureArraySelector(branch=branch) # This constructor also validates type
+                input_branches.append(selector)
 
-                # Create sort by branch selector
-                sort_branch_dict = agg_dict.get("sort_by_branch")
-                sort_by_branch = None
-                if sort_branch_dict:
-                    try:
-                        branch_name = sort_branch_dict.get("branch")
-                        branch = PhysliteBranch(branch_name)
-                        if branch.is_feature_array:
-                            sort_by_branch = PhysliteFeatureArraySelector(branch=branch)
-                    except Exception:
-                        pass
+            logger.debug(f"Processed input_branches for dict #{i}: {[str(b) for b in input_branches]}")
 
-                # Create aggregator if we have input branches
-                if input_branches:
-                    try:
-                        aggregator = PhysliteFeatureArrayAggregator(
-                            input_branches=input_branches,
-                            filter_branches=filter_branches,
-                            sort_by_branch=sort_by_branch,
-                            min_length=agg_dict.get("min_length", 1),
-                            max_length=agg_dict.get("max_length", 100),
-                        )
-                        feature_array_aggregators.append(aggregator)
-                    except Exception:
-                        continue
+            # Create filter branch filters
+            filter_branches = []
+            for filter_dict in agg_dict.get("filter_branches", []):
+                branch_name = filter_dict.get("branch")
+                if not branch_name:
+                    raise ValueError(f"Missing 'branch' key in filter_dict for aggregator #{i}: {filter_dict}")
 
-            except Exception:
-                continue
+                # Directly create and validate branch
+                branch = PhysliteBranch(branch_name) # Raises ValueError if name invalid
+                if not branch.is_feature_array:
+                    # Raise error if not a feature array
+                    raise ValueError(
+                        f"Branch '{branch_name}' provided in 'filter_branches' for aggregator #{i} "
+                        f"is not a feature array (type: {branch.branch_type.value}). Aggregator filters require feature arrays."
+                    )
+                filter_obj = PhysliteFeatureArrayFilter(
+                    branch=branch,
+                    min_value=filter_dict.get("min"),
+                    max_value=filter_dict.get("max"),
+                ) # This constructor also validates type
+                filter_branches.append(filter_obj)
 
+            logger.debug(f"Processed filter_branches for dict #{i}: {[str(f) for f in filter_branches]}")
+
+            # Create sort by branch selector
+            sort_branch_dict = agg_dict.get("sort_by_branch")
+            sort_by_branch = None
+            if sort_branch_dict:
+                branch_name = sort_branch_dict.get("branch")
+                if not branch_name:
+                     raise ValueError(f"Missing 'branch' key in sort_by_branch for aggregator #{i}: {sort_branch_dict}")
+
+                # Directly create and validate branch
+                branch = PhysliteBranch(branch_name) # Raises ValueError if name invalid
+                if not branch.is_feature_array:
+                    # Raise error if not a feature array
+                    raise ValueError(
+                        f"Branch '{branch_name}' provided in 'sort_by_branch' for aggregator #{i} "
+                        f"is not a feature array (type: {branch.branch_type.value}). Aggregator sorting requires a feature array."
+                    )
+                sort_by_branch = PhysliteFeatureArraySelector(branch=branch) # This constructor also validates type
+
+            logger.debug(f"Processed sort_by_branch for dict #{i}: {str(sort_by_branch)}")
+
+            # Create aggregator if we have input branches
+            # The check for empty input_branches is still relevant - an aggregator needs inputs.
+            logger.debug(f"Checking condition for dict #{i}: len(input_branches) = {len(input_branches)}")
+            if input_branches:
+                # No need for try-except here anymore, PhysliteFeatureArrayAggregator constructor handles validation
+                logger.debug(f"Attempting to create aggregator for dict #{i}...")
+                aggregator = PhysliteFeatureArrayAggregator(
+                    input_branches=input_branches,
+                    filter_branches=filter_branches,
+                    sort_by_branch=sort_by_branch,
+                    min_length=agg_dict.get("min_length", 1),
+                    max_length=agg_dict.get("max_length", 100),
+                )
+                feature_array_aggregators.append(aggregator)
+                logger.debug(f"Successfully created and added aggregator for dict #{i}")
+            else:
+                # This case might still be valid if the user intended an aggregator with 0 inputs (though unlikely)
+                # We could raise an error here too, or just log a warning.
+                # Let's log a warning instead of raising an error for empty input_branches,
+                # as the immediate cause (wrong branch type) is handled above.
+                logger.warning(f"Skipping aggregator creation for dict #{i} due to empty input_branches. "
+                               f"This might be due to invalid branch names or types being filtered out earlier.")
+
+        logger.debug(f"after processing feature_array_aggregators length: {len(feature_array_aggregators)}")
         # Create the selection config
         try:
             return PhysliteSelectionConfig(

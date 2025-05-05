@@ -92,6 +92,18 @@ def calculate_pt(qOverP: np.ndarray, theta: np.ndarray) -> np.ndarray:
     pt_GeV = p_GeV * np.sin(theta)
     return pt_GeV
 
+def calculate_reduced_chi_squared(chi_squared: np.ndarray, num_dof: np.ndarray) -> np.ndarray:
+    """Calculate chi-squared per degree of freedom."""
+    # Avoid division by zero: return inf where num_dof is zero or less
+    # and chi_squared is non-zero. Return 0 if both are zero.
+    result = np.full_like(chi_squared, fill_value=np.inf, dtype=np.float32)
+    valid_dof_mask = num_dof > 0
+    result[valid_dof_mask] = chi_squared[valid_dof_mask] / num_dof[valid_dof_mask]
+    # Handle the case where chi_squared is 0 and num_dof is 0 (or less) -> result should be 0
+    zero_chi_zero_dof_mask = (chi_squared == 0) & ~valid_dof_mask
+    result[zero_chi_zero_dof_mask] = 0
+    return result
+
 # --- Registry ---
 # Central dictionary mapping derived feature names to their definitions.
 # Convention: All derived feature names should start with "derived."
@@ -108,6 +120,16 @@ DERIVED_FEATURE_REGISTRY: Dict[str, DerivedFeature] = {
         function=calculate_pt,
         dependencies=["InDetTrackParticlesAuxDyn.qOverP", "InDetTrackParticlesAuxDyn.theta"],
         shape=[2],
+        dtype="float32"
+    ),
+    "derived.InDetTrackParticlesAuxDyn.reducedChiSquared": DerivedFeature(
+        name="derived.InDetTrackParticlesAuxDyn.reducedChiSquared",
+        function=calculate_reduced_chi_squared,
+        dependencies=[
+            "InDetTrackParticlesAuxDyn.chiSquared",
+            "InDetTrackParticlesAuxDyn.numberDoF",
+        ],
+        shape=[2],  # Assuming shape follows the pattern of other track features
         dtype="float32"
     ),
     # Add other derived features here following the same pattern

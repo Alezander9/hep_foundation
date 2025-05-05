@@ -1,7 +1,7 @@
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 from collections import defaultdict
 import math # Import math for ceil
 
@@ -10,6 +10,7 @@ import numpy as np
 import tensorflow as tf
 import uproot
 import matplotlib.pyplot as plt
+import awkward as ak # Add awkward import
 
 # Import plotting utilities
 from hep_foundation.utils import plot_utils
@@ -56,6 +57,15 @@ class PhysliteFeatureProcessor:
         # For now, keeping it simple as the class is primarily stateless
         self.atlas_manager = atlas_manager or ATLASFileManager()
 
+        if uproot is None:
+            raise ImportError(
+                "Uproot is required for PhysliteFeatureProcessor. Please install it."
+            )
+        if ak is None: # Check awkward import
+             raise ImportError(
+                "Awkward Array is required for PhysliteFeatureProcessor. Please install it."
+            )
+
     def get_required_branches(self, task_config: TaskConfig) -> set:
         """
         Get set of all required branch names for a given task configuration.
@@ -81,6 +91,7 @@ class PhysliteFeatureProcessor:
 
             # Add aggregator branches
             for aggregator in selection_config.feature_array_aggregators:
+                self.logger.info(f"[debug] Adding aggregator branches: {aggregator.input_branches}")
                 # Add input branches
                 for selector in aggregator.input_branches:
                     required_branches.add(selector.branch.name)
@@ -256,35 +267,97 @@ class PhysliteFeatureProcessor:
 
         # Check if we meet minimum length requirement
         if n_valid < aggregator.min_length:
+            self.logger.debug(f"Skipping aggregator: n_valid ({n_valid}) < min_length ({aggregator.min_length})")
             return None
 
-        # Extract arrays for each input branch
-        feature_list = []
+        # Extract arrays for each input branch, applying mask but NO reshape yet
+        processed_feature_segments = []
+        expected_rows = n_valid # Number of rows should match valid tracks
+
         for selector in aggregator.input_branches:
-            values = feature_arrays.get(selector.branch.name)
+            branch_name = selector.branch.name
+            values = feature_arrays.get(branch_name)
             if values is None:
-                return None
-            # Apply mask and reshape to column
-            filtered_values = values[valid_mask].reshape(-1, 1)
-            feature_list.append(filtered_values)
+                self.logger.warning(f"Input branch '{branch_name}' not found in feature_arrays for aggregator. Skipping event.")
+                return None # Or handle differently if partial data is ok
 
-        # Stack features horizontally
-        features = np.hstack(feature_list)  # Shape: (n_valid, n_features)
+            # Apply mask to select valid track data
+            filtered_values = values[valid_mask]
 
-        # Apply sorting using provided indices
-        sorted_features = features[sort_indices]
+            # Ensure the first dimension matches n_valid
+            if filtered_values.shape[0] != expected_rows:
+                 # This check might be redundant if the raw length check passed, but good sanity check
+                 self.logger.warning(f"Filtered array shape mismatch for '{branch_name}'. Expected {expected_rows} rows, got {filtered_values.shape[0]}. Skipping.")
+                 return None
 
-        # Handle length requirements
-        if len(sorted_features) > aggregator.max_length:
-            # Truncate
-            final_features = sorted_features[: aggregator.max_length]
-        else:
-            # Pad with zeros
-            padding = np.zeros(
-                (aggregator.max_length - len(sorted_features), features.shape[1])
-            )
+            # If it's a 1D array (scalar per track), reshape to (n_valid, 1) for hstack
+            if filtered_values.ndim == 1:
+                 filtered_values = filtered_values.reshape(-1, 1)
+            elif filtered_values.ndim != 2:
+                 # We expect either (n_valid,) or (n_valid, k) after filtering
+                 self.logger.warning(f"Unexpected array dimension ({filtered_values.ndim}) for '{branch_name}' after filtering. Expected 1 or 2. Skipping.")
+                 return None
+            # If it's 2D, shape is already (n_valid, k) - leave as is
+
+            processed_feature_segments.append(filtered_values)
+
+        # Check if we collected any features
+        if not processed_feature_segments:
+             self.logger.warning("No feature segments collected for aggregator. Skipping.")
+             return None
+
+        # Stack features horizontally - now shapes should be compatible
+        # e.g., [(n_valid, 1), (n_valid, 1), ..., (n_valid, 5), (n_valid, 10)]
+        try:
+             features = np.hstack(processed_feature_segments)
+             # Expected shape: (n_valid, total_num_features) e.g., (n_valid, 21)
+             self.logger.debug(f"Aggregator: Hstacked features shape: {features.shape}")
+        except ValueError as e:
+             self.logger.error(f"Error during np.hstack in aggregator: {e}")
+             # Log shapes for debugging
+             for i, seg in enumerate(processed_feature_segments):
+                  self.logger.error(f"  Segment {i} shape: {seg.shape}, dtype: {seg.dtype}")
+             return None # Cannot proceed if hstack fails
+
+        # Apply sorting using provided indices (indices are relative to the n_valid tracks)
+        # Ensure sort_indices are within bounds
+        if len(sort_indices) != n_valid:
+             self.logger.warning(f"Length of sort_indices ({len(sort_indices)}) does not match n_valid ({n_valid}). Skipping.")
+             return None
+        # Apply sorting safely
+        try:
+            # Ensure sort_indices are integers if they aren't already
+            sort_indices = np.asarray(sort_indices, dtype=int)
+            sorted_features = features[sort_indices]
+        except IndexError as e:
+            self.logger.error(f"Error applying sort_indices: {e}. sort_indices length: {len(sort_indices)}, max index: {np.max(sort_indices) if len(sort_indices)>0 else 'N/A'}, features rows: {features.shape[0]}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Unexpected error during sorting: {e}")
+            return None
+
+
+        # Handle length requirements (padding/truncation based on number of TRACKS)
+        num_selected_tracks = sorted_features.shape[0] # This is n_valid
+        num_features_per_track = sorted_features.shape[1] # This should be 21 in your example
+
+        if num_selected_tracks > aggregator.max_length:
+            # Truncate tracks
+            final_features = sorted_features[: aggregator.max_length, :]
+            self.logger.debug(f"Aggregator: Truncated tracks from {num_selected_tracks} to {aggregator.max_length}")
+        elif num_selected_tracks < aggregator.max_length:
+            # Pad tracks with zeros
+            num_padding_tracks = aggregator.max_length - num_selected_tracks
+            padding = np.zeros((num_padding_tracks, num_features_per_track), dtype=features.dtype)
             final_features = np.vstack([sorted_features, padding])
+            self.logger.debug(f"Aggregator: Padded tracks from {num_selected_tracks} to {aggregator.max_length}")
+        else:
+            # Length is already correct
+            final_features = sorted_features
+            self.logger.debug(f"Aggregator: Final track length {num_selected_tracks} matches max_length {aggregator.max_length}")
 
+        # Final shape should be (max_length, total_num_features)
+        self.logger.debug(f"Aggregator: Final output shape: {final_features.shape}")
         return final_features
 
     def _extract_selected_features(
@@ -417,6 +490,88 @@ class PhysliteFeatureProcessor:
 
         return final_result
 
+    def _convert_stl_vector_array(self, branch_name: str, data: Any) -> np.ndarray:
+        """
+        Converts input data (NumPy array potentially containing STLVector objects,
+        or a single STLVector object) into a numerical NumPy array using awkward-array,
+        preserving dimensions where possible.
+
+        Args:
+            branch_name: Name of the branch (for logging)
+            data: Input data (np.ndarray or potentially STLVector object)
+
+        Returns:
+            Converted numerical NumPy array (e.g., float32) or the original data if no conversion needed/possible.
+            Returns an empty float32 array if the input represents an empty structure.
+        """
+        try:
+            is_numpy = isinstance(data, np.ndarray)
+
+            # --- Handle NumPy Array Input ---
+            if is_numpy:
+                if data.ndim == 0:
+                    # Handle 0-dimensional array (likely containing a single object)
+                    item = data.item()
+                    if 'STLVector' in str(type(item)):
+                        self.logger.debug(f"Converting 0-D array item for '{branch_name}'...")
+                        # Convert the single item
+                        ak_array = ak.Array([item]) # Wrap item for awkward conversion
+                        np_array = ak.to_numpy(ak_array) # REMOVED .flatten()
+                    else:
+                        # 0-D array but not STLVector, return as is (or wrap if needed?)
+                        # If downstream expects at least 1D, wrap it.
+                        return np.atleast_1d(data)
+                elif data.dtype == object:
+                    # Handle N-dimensional object array
+                    if data.size == 0:
+                         return np.array([], dtype=np.float32) # Handle empty object array
+                    # Check first element to guess if it contains STL Vectors
+                    first_element = data.flat[0]
+                    if 'STLVector' in str(type(first_element)):
+                        self.logger.debug(f"Converting N-D object array for '{branch_name}'...")
+                        # Use awkward-array for robust conversion
+                        ak_array = ak.from_iter(data)
+                        np_array = ak.to_numpy(ak_array) # REMOVED .flatten()
+                    else:
+                        # N-D object array, but doesn't seem to contain STL Vectors
+                        self.logger.warning(f"Branch '{branch_name}' is N-D object array but doesn't appear to be STLVector. Returning as is.")
+                        return data # Return original object array
+                else:
+                    # Standard numerical NumPy array, return as is
+                    return data
+
+            # --- Handle Non-NumPy Input (e.g., direct STLVector) ---
+            elif 'STLVector' in str(type(data)):
+                self.logger.debug(f"Converting direct STLVector object for '{branch_name}'...")
+                # Convert the single STLVector object
+                ak_array = ak.Array([data]) # Wrap object for awkward conversion
+                np_array = ak.to_numpy(ak_array)[0] # Convert and get the single resulting array
+
+            # --- Handle Other Non-NumPy Input Types ---
+            else:
+                # E.g., could be a standard Python scalar (int, float) - ensure it's a numpy array
+                if isinstance(data, (int, float, bool)):
+                    return np.array([data]) # Return as 1-element array
+                else:
+                    # Unexpected type
+                    self.logger.warning(f"Branch '{branch_name}' has unexpected type '{type(data)}'. Returning as is.")
+                    return data # Return original data if type is unexpected
+
+            # --- Post-Conversion Processing (applies if conversion happened) ---
+            # Check if the result of conversion is numeric and cast
+            if np.issubdtype(np_array.dtype, np.number):
+                converted_array = np_array.astype(np.float32)
+                self.logger.debug(f"Successfully converted '{branch_name}' from object dtype to {converted_array.dtype}, shape {converted_array.shape}") # Updated log
+                return converted_array
+            else:
+                self.logger.warning(f"Branch '{branch_name}' converted, but result is not numeric ({np_array.dtype}). Returning non-flattened array.") # Updated log
+                return np_array
+
+        except Exception as e:
+            self.logger.error(f"Failed to convert data for branch '{branch_name}' (type: {type(data)}): {e}", exc_info=True)
+            # Return original array or raise error depending on desired handling
+            raise # Re-raise the exception to stop processing if conversion fails
+
     def _process_selection_config(
         self,
         event_data: dict[str, np.ndarray],
@@ -459,59 +614,109 @@ class PhysliteFeatureProcessor:
 
                 if not all(branch_name in event_data for branch_name in required_for_agg):
                      missing = required_for_agg - set(event_data.keys())
-                     self.logger.debug(f"Skipping aggregator {idx} due to missing branches in event data: {missing}")
+                     self.logger.debug(f"Missing required branches for aggregator {idx}: {missing}. Skipping event.") # Debug log
                      return None
 
+                # --- Check length consistency on RAW arrays (number of tracks/entries) ---
                 initial_length = -1
-                for selector in aggregator.input_branches:
-                    branch_name = selector.branch.name
+                raw_array_features = {} # Store raw arrays
+                for branch_name in required_for_agg:
                     current_array = event_data[branch_name]
-                    array_features[branch_name] = current_array
-                    current_length = len(current_array)
-                    if current_length == 0:
-                        self.logger.debug(f"Skipping aggregator {idx} because required input branch '{branch_name}' is empty.")
+                    raw_array_features[branch_name] = current_array # Store raw
+
+                    # Use __len__ which works for numpy arrays and STL Vectors from uproot >= 4
+                    try:
+                        current_length = len(current_array)
+                    except TypeError:
+                        self.logger.warning(f"Could not get length of raw data for branch '{branch_name}' (type {type(current_array)}) in aggregator {idx}. Skipping event.")
                         return None
+
                     if initial_length == -1:
                         initial_length = current_length
                     elif initial_length != current_length:
-                         self.logger.warning(f"Input array length mismatch in aggregator {idx} ('{branch_name}' has {current_length}, expected {initial_length}). Skipping event.")
-                         return None # Lengths of input arrays must be consistent
+                         self.logger.warning(f"RAW input/filter/sort array length mismatch in aggregator {idx} ('{branch_name}' has {current_length}, expected {initial_length}). Skipping event.")
+                         return None
 
+                # If after checking all required, we didn't find any length (e.g., all were empty)
                 if initial_length == -1:
-                     # This happens if there were no input branches, should not occur if TaskConfig validation is correct
-                     self.logger.warning(f"Aggregator {idx} has no input branches defined. Skipping.")
+                    self.logger.warning(f"Could not determine initial length for aggregator {idx} (required branches might be empty?). Skipping.")
+                    return None
+                # If length is 0, we can skip this aggregator for this event
+                if initial_length == 0:
+                    self.logger.debug(f"Initial length is zero for aggregator {idx}. Skipping processing for this event.")
+                    # We don't return None for the whole event, just skip this aggregator
+                    continue # Continue to the next aggregator
+
+                # --- Convert STL Vectors and prepare arrays for filtering/aggregation ---
+                array_features = {}       # For input branches used in aggregation
+                filter_arrays = {}        # For branches used only for filtering
+                sort_value = None         # For the sort branch
+                post_conversion_length = -1 # Track length *after* conversion for mask/sort
+
+                for branch_name in required_for_agg:
+                     # Convert only once
+                     converted_array = self._convert_stl_vector_array(branch_name, raw_array_features[branch_name])
+
+                     # --- Store converted array based on its role --- 
+                     is_input_branch = branch_name in (s.branch.name for s in aggregator.input_branches)
+                     is_filter_branch = branch_name in filter_branch_names
+                     is_sort_branch = aggregator.sort_by_branch and branch_name == aggregator.sort_by_branch.branch.name
+
+                     if is_input_branch:
+                          array_features[branch_name] = converted_array
+                     if is_filter_branch:
+                          filter_arrays[branch_name] = converted_array
+                     if is_sort_branch:
+                          sort_value = converted_array
+
+                     # --- Use the length of the FIRST relevant converted array for mask/sort --- 
+                     # Prioritize sort > filter > input branch for determining the reference length
+                     if post_conversion_length == -1:
+                          if is_sort_branch or is_filter_branch or is_input_branch:
+                               post_conversion_length = len(converted_array)
+
+                # Ensure we determined a post-conversion length if inputs/filters/sort exist
+                if post_conversion_length == -1 and required_for_agg:
+                     self.logger.error(f"Internal error: Could not determine post-conversion length for aggregator {idx} despite having required branches. Skipping event.")
                      return None
+                elif post_conversion_length <= 0 and required_for_agg:
+                     # This can happen if conversion leads to empty arrays (e.g. vector<vector<float>> where inner is empty)
+                     self.logger.debug(f"Post-conversion length is zero for aggregator {idx}. Skipping processing for this event.")
+                     continue # Skip this aggregator
 
-
-                # --- Prepare and Apply Filters ---
-                valid_mask = np.ones(initial_length, dtype=bool) # Start with all true mask
+                # --- Prepare and Apply Filters --- 
+                valid_mask = np.ones(post_conversion_length, dtype=bool) # Mask based on post-conversion length
                 if aggregator.filter_branches:
-                     filter_arrays = {}
-                     for filter_branch_name in filter_branch_names:
-                         filter_array = event_data[filter_branch_name]
-                         if len(filter_array) != initial_length:
-                              self.logger.warning(f"Filter array length mismatch in aggregator {idx} ('{filter_branch_name}' has {len(filter_array)}, expected {initial_length}). Skipping event.")
-                              return None
-                         filter_arrays[filter_branch_name] = filter_array
+                     # filter_arrays should already be populated and converted above
+                     if not filter_arrays:
+                          self.logger.error(f"Filter branches defined for aggregator {idx} but filter_arrays dictionary is empty. Skipping event.")
+                          return None
 
-                     # Only call if filters exist and filter_arrays is populated
-                     if filter_arrays:
-                          filter_mask = self._apply_feature_array_filters(
-                               filter_arrays, aggregator.filter_branches
-                          )
-                          if len(filter_mask) != initial_length:
-                               self.logger.warning(f"Filter mask length ({len(filter_mask)}) mismatch vs expected ({initial_length}) for aggregator {idx}. Skipping event.")
+                     # Check consistency of filter array lengths *after conversion*
+                     for f_name, f_arr in filter_arrays.items():
+                          if len(f_arr) != post_conversion_length:
+                               self.logger.warning(f"Post-conversion FILTER array length mismatch in aggregator {idx} ('{f_name}' has {len(f_arr)}, expected {post_conversion_length}). Skipping event.")
                                return None
-                          valid_mask &= filter_mask
 
+                     # Apply filters using the consistent post-conversion length mask
+                     filter_mask = self._apply_feature_array_filters(
+                          filter_arrays, aggregator.filter_branches
+                     )
+                     if len(filter_mask) != post_conversion_length: # Check mask length against post-conversion length
+                          self.logger.warning(f"Filter mask length ({len(filter_mask)}) mismatch vs expected post-conversion length ({post_conversion_length}) for aggregator {idx}. Skipping event.")
+                          return None
+                     valid_mask &= filter_mask
 
-                # --- Prepare and Apply Sorting ---
+                # --- Prepare and Apply Sorting --- 
                 if aggregator.sort_by_branch:
-                    sort_branch_name = aggregator.sort_by_branch.branch.name
-                    sort_value = event_data[sort_branch_name]
-                    if len(sort_value) != initial_length:
-                        self.logger.warning(f"Sort array length mismatch in aggregator {idx} ('{sort_branch_name}' has {len(sort_value)}, expected {initial_length}). Skipping event.")
-                        return None
+                    # sort_value should be populated and converted above
+                    if sort_value is None: # Should not happen if required check passed, but safety check
+                         self.logger.error(f"Sort branch '{aggregator.sort_by_branch.branch.name}' not found after conversion for aggregator {idx}. Skipping event.")
+                         return None
+                    # Check sort value length against post-conversion length
+                    if len(sort_value) != post_conversion_length:
+                         self.logger.warning(f"Post-conversion SORT array length mismatch in aggregator {idx} ('{aggregator.sort_by_branch.branch.name}' has {len(sort_value)}, expected {post_conversion_length}). Skipping event.")
+                         return None
 
                     masked_sort_value = sort_value[valid_mask]
                     if len(masked_sort_value) == 0:
@@ -523,10 +728,12 @@ class PhysliteFeatureProcessor:
 
 
                 # --- Apply Aggregator ---
+                # Pass the CONVERTED array_features
                 result = self._apply_feature_array_aggregator(
                     array_features, aggregator, valid_mask, sort_indices
                 )
                 if result is None:
+                    self.logger.debug(f"Aggregator {idx} returned None. Skipping event.") # Debug log
                     return None
 
                 aggregated_features[f"aggregator_{idx}"] = result
@@ -551,6 +758,7 @@ class PhysliteFeatureProcessor:
         plot_distributions: bool = False,
         delete_catalogs: bool = True,
         plot_output: Optional[Path] = None,
+        first_event_logged: bool = True,
     ) -> tuple[list[dict[str, np.ndarray]], list[dict[str, np.ndarray]], dict]:
         """
         Process either ATLAS or signal data using task configuration.
@@ -599,7 +807,7 @@ class PhysliteFeatureProcessor:
 
         # Collect all initially required branch names (including derived ones)
         initially_required_branches = self.get_required_branches(task_config)
-        self.logger.debug(f"Initially required branches (incl. derived): {initially_required_branches}")
+        self.logger.info(f"[debug] Initially required branches (incl. derived): {initially_required_branches}")
 
         # Separate derived features and identify their dependencies
         derived_features_requested = set()
@@ -730,6 +938,9 @@ class PhysliteFeatureProcessor:
                                 if not raw_event_data:
                                     continue
 
+                                # Log raw data only for the very first event encountered overall
+                                if not first_event_logged and evt_idx == 0:
+                                    self.logger.info(f"First event raw data (Catalog {catalog_idx+1}, Batch Event {evt_idx}): {raw_event_data}")
                                 # --- Calculate Derived Features ---
                                 processed_event_data = raw_event_data.copy() # Start with real data
                                 calculation_failed = False
@@ -790,6 +1001,13 @@ class PhysliteFeatureProcessor:
 
                                     processed_inputs.append(input_features_for_dataset)
                                     processed_labels.append(label_features_for_dataset)
+
+                                    # Log processed data only for the very first event and set the flag
+                                    if not first_event_logged and evt_idx == 0:
+                                        self.logger.info(f"First event processed input_features_for_dataset: {input_features_for_dataset}")
+                                        self.logger.info(f"First event processed label_features_for_dataset: {label_features_for_dataset}")
+                                        first_event_logged = True # Set flag after logging the first processed event
+
                                     catalog_stats["processed"] += 1
 
 

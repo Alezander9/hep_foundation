@@ -882,7 +882,7 @@ class FoundationModelPipeline:
                     comparison_plot_path = (
                         Path(foundation_model_path)
                         / "testing"
-                        / "regression_training_comparison.pdf"
+                        / "regression_training_comparison.png"
                     )
                     plot_combined_training_histories(
                         histories={

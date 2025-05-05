@@ -248,5 +248,5 @@ def test_evaluate_foundation_model_regression(pipeline, test_configs, experiment
         foundation_model_path=foundation_model_path,
     )
     assert result is True
-    regression_plot = Path(foundation_model_path) / "testing" / "regression_training_comparison.pdf"
+    regression_plot = Path(foundation_model_path) / "testing" / "regression_training_comparison.png"
     assert regression_plot.exists(), f"Regression plot {regression_plot} not found"

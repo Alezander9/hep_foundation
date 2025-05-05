@@ -236,7 +236,7 @@ class DNNPredictor(BaseModel):
         # Plot model architecture
         tf.keras.utils.plot_model(
             self.model,
-            to_file=str(plots_dir / "model_architecture.pdf"),
+            to_file=str(plots_dir / "model_architecture.png"),
             show_shapes=True,
             show_layer_names=True,
         )
