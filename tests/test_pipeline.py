@@ -27,8 +27,8 @@ def create_test_configs():
                 ],
                 "filter_branches": [],
                 "sort_by_branch": None,
-                "min_length": 2,
-                "max_length": 2,
+                "min_length": 3,
+                "max_length": 10,
             }
         ],
         label_features=[[]],
@@ -52,12 +52,12 @@ def create_test_configs():
 
     dataset_config = DatasetConfig(
         run_numbers=run_numbers,
-        signal_keys=["zprime"],  # Use a single signal for speed
+        signal_keys=["zprime_tt"],  # Use a single signal for speed
         catalog_limit=2,
         validation_fraction=0.1,
         test_fraction=0.1,
         shuffle_buffer=100,
-        plot_distributions=False,
+        plot_distributions=True,
         include_labels=True,
         task_config=task_config,
     )
@@ -195,7 +195,7 @@ def setup_logging(experiment_dir):
 def test_train_foundation_model(pipeline, test_configs, experiment_dir):
     """Test foundation model training"""
     logger = logging.getLogger(__name__)
-    experiment_name = "001_Foundation VAE Model"
+    experiment_name = "001_Foundation_VAE_Model"
     
     logger.info("Starting foundation model training test")
     try:
@@ -204,9 +204,7 @@ def test_train_foundation_model(pipeline, test_configs, experiment_dir):
             model_config=test_configs["vae_model_config"],
             training_config=test_configs["vae_training_config"],
             task_config=test_configs["task_config"],
-            experiment_name=experiment_name,
-            experiment_description="pytest train test",
-            delete_catalogs=True,
+            delete_catalogs=False,
         )
         experiment_path = Path(experiment_dir) / experiment_name
         
@@ -219,14 +217,12 @@ def test_train_foundation_model(pipeline, test_configs, experiment_dir):
         raise
 
 def test_evaluate_foundation_model_anomaly_detection(pipeline, test_configs, experiment_dir):
-    experiment_name = "001_Foundation VAE Model"
+    experiment_name = "001_Foundation_VAE_Model"
     foundation_model_path = str(Path(experiment_dir) / experiment_name)
     result = pipeline.evaluate_foundation_model_anomaly_detection(
         dataset_config=test_configs["dataset_config"],
         task_config=test_configs["task_config"],
-        experiment_name="pytest_anomaly",
-        experiment_description="pytest anomaly test",
-        delete_catalogs=True,
+        delete_catalogs=False,
         foundation_model_path=foundation_model_path,
         vae_training_config=test_configs["vae_training_config"],
     )
@@ -235,16 +231,14 @@ def test_evaluate_foundation_model_anomaly_detection(pipeline, test_configs, exp
     assert anomaly_dir.exists(), f"Anomaly detection dir {anomaly_dir} not found"
 
 def test_evaluate_foundation_model_regression(pipeline, test_configs, experiment_dir):
-    experiment_name = "001_Foundation VAE Model"
+    experiment_name = "001_Foundation_VAE_Model"
     foundation_model_path = str(Path(experiment_dir) / experiment_name)
     result = pipeline.evaluate_foundation_model_regression(
         dataset_config=test_configs["dataset_config"],
         dnn_model_config=test_configs["dnn_model_config"],
         dnn_training_config=test_configs["dnn_training_config"],
         task_config=test_configs["task_config"],
-        experiment_name="pytest_regression",
-        experiment_description="pytest regression test",
-        delete_catalogs=True,
+        delete_catalogs=False,
         foundation_model_path=foundation_model_path,
     )
     assert result is True

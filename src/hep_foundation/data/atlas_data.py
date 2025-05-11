@@ -73,7 +73,7 @@ def get_signal_catalog(signal_key: str) -> str:
     """Get the catalog file name for a signal key.
     
     Args:
-        signal_key (str): The signal key (e.g., 'zprime', 'wprime_qq').
+        signal_key (str): The signal key (e.g., 'zprime_tt', 'wprime_qq').
         
     Returns:
         str: The catalog file name.

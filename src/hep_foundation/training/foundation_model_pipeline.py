@@ -57,8 +57,6 @@ class FoundationModelPipeline:
         vae_training_config: TrainingConfig,
         dnn_training_config: TrainingConfig,
         task_config: TaskConfig,
-        experiment_name: str = None,
-        experiment_description: str = None,
         delete_catalogs: bool = True,
         foundation_model_path: str = None,
     ) -> bool:
@@ -73,8 +71,6 @@ class FoundationModelPipeline:
             vae_training_config: Configuration for VAE training
             dnn_training_config: Configuration for DNN training
             task_config: Configuration for task processing
-            experiment_name: Optional name for the experiment
-            experiment_description: Optional description for the experiment
             delete_catalogs: Whether to delete catalogs after processing
             foundation_model_path: Path to the foundation model encoder to use for encoding
         """
@@ -91,16 +87,12 @@ class FoundationModelPipeline:
                 model_config=vae_model_config,
                 training_config=vae_training_config,
                 task_config=task_config,
-                experiment_name=experiment_name,
-                experiment_description=experiment_description,
                 delete_catalogs=delete_catalogs,
             )
         elif process_name == "anomaly":
             return self.evaluate_foundation_model_anomaly_detection(
                 dataset_config=dataset_config,
                 task_config=task_config,
-                experiment_name=experiment_name,
-                experiment_description=experiment_description,
                 delete_catalogs=delete_catalogs,
                 foundation_model_path=foundation_model_path,
                 vae_training_config=vae_training_config,
@@ -111,8 +103,6 @@ class FoundationModelPipeline:
                 dnn_model_config=dnn_model_config,
                 dnn_training_config=dnn_training_config,
                 task_config=task_config,
-                experiment_name=experiment_name,
-                experiment_description=experiment_description,
                 delete_catalogs=delete_catalogs,
                 foundation_model_path=foundation_model_path,
             )
@@ -126,8 +116,6 @@ class FoundationModelPipeline:
         model_config: dict,
         training_config: TrainingConfig,
         task_config: TaskConfig,
-        experiment_name: str = None,
-        experiment_description: str = None,
         delete_catalogs: bool = True,
     ) -> bool:
         """
@@ -188,8 +176,8 @@ class FoundationModelPipeline:
                 batch_size=training_config.batch_size,
                 shuffle_buffer=dataset_config.shuffle_buffer,
                 include_labels=dataset_config.include_labels,
-                delete_catalogs=True,
-                plot_distributions=True,
+                delete_catalogs=delete_catalogs,
+                plot_distributions=dataset_config.plot_distributions,
             )
             
             # Add logging to inspect dataset structure
@@ -249,7 +237,7 @@ class FoundationModelPipeline:
                 "early_stopping": training_config.early_stopping,
             }
             experiment_id = registry.register_experiment(
-                name="Foundation VAE Model",
+                name="Foundation_VAE_Model",
                 dataset_id=dataset_id,
                 model_config=model_config_dict,
                 training_config=training_config_dict,
@@ -411,8 +399,6 @@ class FoundationModelPipeline:
         self,
         dataset_config: DatasetConfig,
         task_config: TaskConfig,
-        experiment_name: str = None,
-        experiment_description: str = None,
         delete_catalogs: bool = True,
         foundation_model_path: str = None,
         vae_training_config: TrainingConfig = None,
@@ -511,7 +497,6 @@ class FoundationModelPipeline:
                     dataset_config=dataset_config,
                     batch_size=batch_size,
                     include_labels=False,
-                    plot_distributions=True,
                 )
                 self.logger.info(f"Loaded {len(signal_datasets)} signal datasets.")
             else:
@@ -646,8 +631,6 @@ class FoundationModelPipeline:
         dnn_model_config: dict,
         dnn_training_config: TrainingConfig,
         task_config: TaskConfig,
-        experiment_name: str = None,
-        experiment_description: str = None,
         delete_catalogs: bool = True,
         foundation_model_path: str = None,
     ) -> bool:

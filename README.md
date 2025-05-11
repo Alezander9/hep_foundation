@@ -53,13 +53,13 @@ config={
 ```
 For full training pipeline example, see scripts/model_pipeline.py
 ```bash
-Run full pipeline test
+Run full pipeline
 python scripts/model_pipeline.py
 ```
 
 ## Project Structure
 - `src/hep_foundation/`: Core package code
-- `scripts/`: Example scripts and tests
+- `scripts/`: Example scripts
 - `experiments/`: Output directory for model registry and results
 - `processed_datasets/`: Storage for processed datasets
 

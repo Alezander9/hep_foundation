@@ -687,7 +687,6 @@ class DatasetManager:
         dataset_config: DatasetConfig,
         batch_size: int = 1000,
         include_labels: bool = False,
-        plot_distributions: bool = False,
     ) -> dict[str, tf.data.Dataset]:
         """Load signal datasets for evaluation."""
         self.logger.info("Loading signal datasets")
@@ -702,7 +701,7 @@ class DatasetManager:
                 self.current_dataset_id, self.current_dataset_path = (
                     self._create_signal_dataset(
                         dataset_config,
-                        plot_distributions=plot_distributions,
+                        plot_distributions=dataset_config.plot_distributions,
                     )
                 )
 

@@ -1,9 +1,10 @@
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Any
+from typing import Optional, Any, Union
 from collections import defaultdict
 import math # Import math for ceil
+import json # Add json
 
 import h5py
 import numpy as np
@@ -44,18 +45,32 @@ class PhysliteFeatureProcessor:
     - Loading features and labels from HDF5 files
     """
 
-    def __init__(self, atlas_manager=None):
+    def __init__(self, atlas_manager=None, custom_label_map_path: Optional[str] = "src/hep_foundation/data/plot_labels.json"):
         """
         Initialize the PhysliteFeatureProcessor.
 
         Args:
             atlas_manager: Optional ATLASFileManager instance
+            custom_label_map_path: Optional path to a JSON file for custom plot labels.
         """
         self.logger = get_logger(__name__)
 
         # Could add configuration parameters here if needed in the future
         # For now, keeping it simple as the class is primarily stateless
         self.atlas_manager = atlas_manager or ATLASFileManager()
+
+        self.custom_label_map = {}
+        if custom_label_map_path:
+            try:
+                map_path = Path(custom_label_map_path)
+                if map_path.exists():
+                    with open(map_path, 'r') as f:
+                        self.custom_label_map = json.load(f)
+                    self.logger.info(f"Loaded custom plot label map from {custom_label_map_path}")
+                else:
+                    self.logger.info(f"Custom plot label map file not found: {custom_label_map_path}. Using default labels.")
+            except Exception as e:
+                self.logger.error(f"Error loading custom plot label map from {custom_label_map_path}: {e}")
 
         if uproot is None:
             raise ImportError(
@@ -248,7 +263,7 @@ class PhysliteFeatureProcessor:
         aggregator: PhysliteFeatureArrayAggregator,
         valid_mask: np.ndarray,
         sort_indices: np.ndarray,
-    ) -> Optional[np.ndarray]:
+    ) -> Optional[tuple[Optional[np.ndarray], Optional[list[int]], Optional[int]]]:
         """
         Apply feature array aggregator to combine and sort multiple array features.
 
@@ -259,8 +274,10 @@ class PhysliteFeatureProcessor:
             sort_indices: Indices to use for sorting the filtered arrays
 
         Returns:
-            np.ndarray: Aggregated and sorted array of shape (max_length, n_features)
-                       or None if requirements not met
+            Tuple[Optional[np.ndarray], Optional[list[int]], Optional[int]]: 
+                - Aggregated and sorted array of shape (max_length, n_features) or None
+                - List of integers representing num_cols per input branch or None
+                - Number of valid elements (tracks) before padding/truncation by aggregator
         """
         # Get the number of valid elements after filtering
         n_valid = np.sum(valid_mask)
@@ -268,7 +285,7 @@ class PhysliteFeatureProcessor:
         # Check if we meet minimum length requirement
         if n_valid < aggregator.min_length:
             self.logger.debug(f"Skipping aggregator: n_valid ({n_valid}) < min_length ({aggregator.min_length})")
-            return None
+            return None, None, None
 
         # Extract arrays for each input branch, applying mask but NO reshape yet
         processed_feature_segments = []
@@ -279,7 +296,7 @@ class PhysliteFeatureProcessor:
             values = feature_arrays.get(branch_name)
             if values is None:
                 self.logger.warning(f"Input branch '{branch_name}' not found in feature_arrays for aggregator. Skipping event.")
-                return None # Or handle differently if partial data is ok
+                return None, None, None
 
             # Apply mask to select valid track data
             filtered_values = values[valid_mask]
@@ -288,7 +305,7 @@ class PhysliteFeatureProcessor:
             if filtered_values.shape[0] != expected_rows:
                  # This check might be redundant if the raw length check passed, but good sanity check
                  self.logger.warning(f"Filtered array shape mismatch for '{branch_name}'. Expected {expected_rows} rows, got {filtered_values.shape[0]}. Skipping.")
-                 return None
+                 return None, None, None
 
             # If it's a 1D array (scalar per track), reshape to (n_valid, 1) for hstack
             if filtered_values.ndim == 1:
@@ -296,7 +313,7 @@ class PhysliteFeatureProcessor:
             elif filtered_values.ndim != 2:
                  # We expect either (n_valid,) or (n_valid, k) after filtering
                  self.logger.warning(f"Unexpected array dimension ({filtered_values.ndim}) for '{branch_name}' after filtering. Expected 1 or 2. Skipping.")
-                 return None
+                 return None, None, None
             # If it's 2D, shape is already (n_valid, k) - leave as is
 
             processed_feature_segments.append(filtered_values)
@@ -304,7 +321,10 @@ class PhysliteFeatureProcessor:
         # Check if we collected any features
         if not processed_feature_segments:
              self.logger.warning("No feature segments collected for aggregator. Skipping.")
-             return None
+             return None, None, None
+
+        # Get num_cols per segment *before* hstack
+        num_cols_per_segment = [seg.shape[1] if seg.ndim == 2 else 1 for seg in processed_feature_segments]
 
         # Stack features horizontally - now shapes should be compatible
         # e.g., [(n_valid, 1), (n_valid, 1), ..., (n_valid, 5), (n_valid, 10)]
@@ -317,13 +337,12 @@ class PhysliteFeatureProcessor:
              # Log shapes for debugging
              for i, seg in enumerate(processed_feature_segments):
                   self.logger.error(f"  Segment {i} shape: {seg.shape}, dtype: {seg.dtype}")
-             return None # Cannot proceed if hstack fails
+             return None, None, None # Cannot proceed if hstack fails
 
         # Apply sorting using provided indices (indices are relative to the n_valid tracks)
-        # Ensure sort_indices are within bounds
         if len(sort_indices) != n_valid:
              self.logger.warning(f"Length of sort_indices ({len(sort_indices)}) does not match n_valid ({n_valid}). Skipping.")
-             return None
+             return None, None, None
         # Apply sorting safely
         try:
             # Ensure sort_indices are integers if they aren't already
@@ -331,10 +350,10 @@ class PhysliteFeatureProcessor:
             sorted_features = features[sort_indices]
         except IndexError as e:
             self.logger.error(f"Error applying sort_indices: {e}. sort_indices length: {len(sort_indices)}, max index: {np.max(sort_indices) if len(sort_indices)>0 else 'N/A'}, features rows: {features.shape[0]}")
-            return None
+            return None, None, None
         except Exception as e:
             self.logger.error(f"Unexpected error during sorting: {e}")
-            return None
+            return None, None, None
 
 
         # Handle length requirements (padding/truncation based on number of TRACKS)
@@ -358,7 +377,7 @@ class PhysliteFeatureProcessor:
 
         # Final shape should be (max_length, total_num_features)
         self.logger.debug(f"Aggregator: Final output shape: {final_features.shape}")
-        return final_features
+        return final_features, num_cols_per_segment, n_valid
 
     def _extract_selected_features(
         self,
@@ -411,13 +430,14 @@ class PhysliteFeatureProcessor:
                 "aggregated_features": {
                      aggregator_key: { # e.g., "aggregator_0"
                           "array": aggregated_array,
-                          "branch_names": [original_branch_name1, ...]
+                          "plot_feature_names": [list_of_final_plot_names_for_each_column],
+                          "n_valid_elements": int # Add this for track counting
                      }, ...
                 },
                 "label_features": [ # List for multiple label sets
                      {
                           "scalar_features": {branch_name: value, ...},
-                          "aggregated_features": {agg_key: {"array": ..., "branch_names": [...]}}
+                          "aggregated_features": {agg_key: {"array": ..., "plot_feature_names": [...]}}
                      }, ...
                 ]
             }
@@ -445,47 +465,82 @@ class PhysliteFeatureProcessor:
         final_result = {
             "scalar_features": input_result["scalar_features"],
             "aggregated_features": {},
-            "label_features": []
+            "label_features": [],
+            "num_tracks_for_plot": None # Initialize
         }
 
-        # Add input aggregators with branch names
-        for agg_key, agg_array in input_result["aggregated_features"].items():
-             agg_index = int(agg_key.split("_")[1])
-             original_branches = [
-                 sel.branch.name for sel in task_config.input.feature_array_aggregators[agg_index].input_branches
-             ]
-             final_result["aggregated_features"][agg_key] = {
-                 "array": agg_array,
-                 "branch_names": original_branches
-             }
+        # Add input aggregators with branch names and n_valid_elements
+        first_input_agg_key = None
+        for agg_key, agg_data_dict in input_result["aggregated_features"].items():
+            if first_input_agg_key is None: # Capture the key of the first input aggregator
+                first_input_agg_key = agg_key
+            
+            agg_array = agg_data_dict["array"]
+            input_branch_details = agg_data_dict["input_branch_details"] # name, num_output_cols
+            n_valid_elements = agg_data_dict.get("n_valid_elements") # Get from selection_config processing
+
+            plot_feature_names = []
+            for detail in input_branch_details:
+                branch_name = detail["name"]
+                num_output_cols = detail["num_output_cols"]
+                custom_titles = self.custom_label_map.get(branch_name)
+
+                if isinstance(custom_titles, list) and len(custom_titles) == num_output_cols:
+                    plot_feature_names.extend(custom_titles)
+                elif isinstance(custom_titles, str) and num_output_cols == 1:
+                    plot_feature_names.append(custom_titles)
+                else: # Fallback
+                    if num_output_cols == 1:
+                        plot_feature_names.append(branch_name)
+                    else:
+                        plot_feature_names.extend([f"{branch_name}_comp{j}" for j in range(num_output_cols)])
+            
+            final_result["aggregated_features"][agg_key] = {
+                "array": agg_array,
+                "plot_feature_names": plot_feature_names,
+                "n_valid_elements": n_valid_elements
+            }
+        
+        # Set num_tracks_for_plot from the first input aggregator if available
+        if first_input_agg_key and first_input_agg_key in final_result["aggregated_features"]:
+            final_result["num_tracks_for_plot"] = final_result["aggregated_features"][first_input_agg_key].get("n_valid_elements")
 
         # Add label results with branch names
         for i, label_res in enumerate(label_results):
-             processed_label = {
-                 "scalar_features": label_res["scalar_features"],
-                 "aggregated_features": {}
-             }
-             for agg_key, agg_array in label_res["aggregated_features"].items():
-                  # Assuming label aggregators follow the same index structure
-                  agg_index = int(agg_key.split("_")[1])
-                  # Ensure the label config exists and has aggregators
-                  if i < len(task_config.labels) and agg_index < len(task_config.labels[i].feature_array_aggregators):
-                      original_branches = [
-                          sel.branch.name for sel in task_config.labels[i].feature_array_aggregators[agg_index].input_branches
-                      ]
-                      processed_label["aggregated_features"][agg_key] = {
-                           "array": agg_array,
-                           "branch_names": original_branches
-                      }
-                  else:
-                       self.logger.warning(f"Could not map label aggregator key '{agg_key}' back to TaskConfig definition for label set {i}.")
-                       # Fallback: store without branch names
-                       processed_label["aggregated_features"][agg_key] = {
-                           "array": agg_array,
-                           "branch_names": []
-                       }
+            processed_label = {
+                "scalar_features": label_res["scalar_features"],
+                "aggregated_features": {}
+            }
+            for agg_key, agg_data_dict in label_res["aggregated_features"].items():
+                agg_array = agg_data_dict["array"]
+                input_branch_details = agg_data_dict["input_branch_details"]
+                n_valid_elements = agg_data_dict.get("n_valid_elements")
 
-             final_result["label_features"].append(processed_label)
+                plot_feature_names = []
+                # Ensure the label config exists and has aggregators for details
+                # agg_index = int(agg_key.split("_")[1]) # Not needed if details are passed up
+                
+                for detail in input_branch_details:
+                    branch_name = detail["name"]
+                    num_output_cols = detail["num_output_cols"]
+                    custom_titles = self.custom_label_map.get(branch_name)
+
+                    if isinstance(custom_titles, list) and len(custom_titles) == num_output_cols:
+                        plot_feature_names.extend(custom_titles)
+                    elif isinstance(custom_titles, str) and num_output_cols == 1:
+                        plot_feature_names.append(custom_titles)
+                    else: # Fallback
+                        if num_output_cols == 1:
+                            plot_feature_names.append(branch_name)
+                        else:
+                            plot_feature_names.extend([f"{branch_name}_comp{j}" for j in range(num_output_cols)])
+                
+                processed_label["aggregated_features"][agg_key] = {
+                    "array": agg_array,
+                    "plot_feature_names": plot_feature_names,
+                    "n_valid_elements": n_valid_elements
+                }
+            final_result["label_features"].append(processed_label)
 
 
         return final_result
@@ -588,7 +643,11 @@ class PhysliteFeatureProcessor:
         Returns:
             Dictionary containing:
                 - 'scalar_features': Dict of selected scalar features {branch_name: value}
-                - 'aggregated_features': Dict of aggregated array features {aggregator_key: array}
+                - 'aggregated_features': Dict of aggregated array features 
+                                         {aggregator_key: {"array": array, 
+                                                           "input_branch_details": [{"name": str, "num_output_cols": int}, ...],
+                                                           "n_valid_elements": int}
+                                         }
             Returns None if any required features are missing or aggregation fails
         """
         # Extract scalar features
@@ -729,14 +788,26 @@ class PhysliteFeatureProcessor:
 
                 # --- Apply Aggregator ---
                 # Pass the CONVERTED array_features
-                result = self._apply_feature_array_aggregator(
+                result_array, num_cols_per_segment, n_valid_elements_for_agg = self._apply_feature_array_aggregator(
                     array_features, aggregator, valid_mask, sort_indices
                 )
-                if result is None:
+                if result_array is None:
                     self.logger.debug(f"Aggregator {idx} returned None. Skipping event.") # Debug log
                     return None
 
-                aggregated_features[f"aggregator_{idx}"] = result
+                input_branch_details = []
+                if num_cols_per_segment: # Check if num_cols_per_segment is not None
+                    for i, selector in enumerate(aggregator.input_branches):
+                        input_branch_details.append({
+                            "name": selector.branch.name,
+                            "num_output_cols": num_cols_per_segment[i]
+                        })
+                
+                aggregated_features[f"aggregator_{idx}"] = {
+                    "array": result_array,
+                    "input_branch_details": input_branch_details,
+                    "n_valid_elements": n_valid_elements_for_agg
+                }
 
 
         # Return results if we have anything
@@ -866,6 +937,8 @@ class PhysliteFeatureProcessor:
         # Data accumulators for plotting (only if enabled)
         sampled_scalar_features = defaultdict(list) if plotting_enabled else None
         sampled_aggregated_features = defaultdict(list) if plotting_enabled else None
+        sampled_event_n_tracks_list = [] if plotting_enabled else None # For track multiplicity
+        raw_histogram_data_for_file = {} if plotting_enabled else None # To store hist data for saving
         # --- End Plotting Setup ---
 
         # --- Main Processing Loop ---
@@ -978,11 +1051,11 @@ class PhysliteFeatureProcessor:
                                 result = self._process_event(processed_event_data, task_config)
                                 if result is not None:
                                     # Store the result for dataset creation
-                                    # We only store the arrays for the final dataset, not the metadata like branch names
+                                    # Correctly extract only the arrays for the dataset
                                     input_features_for_dataset = {
                                          "scalar_features": result["scalar_features"],
                                          "aggregated_features": {
-                                              agg_key: agg_data["array"]
+                                              agg_key: agg_data["array"] # Ensure only array is stored for dataset
                                               for agg_key, agg_data in result["aggregated_features"].items()
                                          }
                                     }
@@ -992,7 +1065,7 @@ class PhysliteFeatureProcessor:
                                          label_set_for_dataset = {
                                               "scalar_features": label_set["scalar_features"],
                                               "aggregated_features": {
-                                                   agg_key: agg_data["array"]
+                                                   agg_key: agg_data["array"] # Ensure only array is stored for dataset
                                                    for agg_key, agg_data in label_set["aggregated_features"].items()
                                               }
                                          }
@@ -1016,9 +1089,15 @@ class PhysliteFeatureProcessor:
                                         # Append scalar features
                                         for name, value in result["scalar_features"].items():
                                             sampled_scalar_features[name].append(value)
-                                        # Append aggregated features (dict with array + names)
-                                        for agg_key, agg_data in result["aggregated_features"].items():
-                                            sampled_aggregated_features[agg_key].append(agg_data)
+                                        
+                                        # Append aggregated features (dict with array + names + n_valid_elements)
+                                        for agg_key, agg_data_with_plot_names in result["aggregated_features"].items():
+                                            sampled_aggregated_features[agg_key].append(agg_data_with_plot_names)
+                                        
+                                        # Append num_tracks_for_plot if available
+                                        num_tracks = result.get("num_tracks_for_plot")
+                                        if num_tracks is not None:
+                                            sampled_event_n_tracks_list.append(num_tracks)
 
                                         current_catalog_samples_count += 1 # Increment count for THIS catalog
                                         overall_plot_samples_count += 1   # Increment overall count
@@ -1097,28 +1176,38 @@ class PhysliteFeatureProcessor:
             num_scalar_plots = len(sampled_scalar_features)
             num_agg_features = 0
             agg_feature_details = [] # Store details: (agg_key, feature_index, feature_name)
+            num_track_count_plots = 1 if sampled_event_n_tracks_list else 0 # Will be 0 or 1
 
             for agg_key, arrays_data_list in sampled_aggregated_features.items():
                 if arrays_data_list:
-                    branch_names = arrays_data_list[0].get("branch_names", [])
+                    # The "plot_feature_names" should have been prepared in _process_event
+                    # and stored in the items of arrays_data_list
+                    # All items in arrays_data_list for the same agg_key should have the same plot_feature_names structure
+                    plot_feature_names = arrays_data_list[0].get("plot_feature_names", []) 
+                    
                     if "array" in arrays_data_list[0] and arrays_data_list[0]["array"] is not None:
                          try:
                               n_features_in_agg = arrays_data_list[0]["array"].shape[1]
-                              if len(branch_names) != n_features_in_agg:
-                                   plot_branch_names = [f"Feature_{k}" for k in range(n_features_in_agg)]
+                              
+                              # If plot_feature_names is empty or mismatch, fall back
+                              if not plot_feature_names or len(plot_feature_names) != n_features_in_agg:
+                                   self.logger.warning(f"Mismatch or missing plot_feature_names for aggregator '{agg_key}'. Expected {n_features_in_agg}, got {len(plot_feature_names) if plot_feature_names else 'None'}. Falling back to generic names.")
+                                   effective_plot_names = [f"Feature_{k}" for k in range(n_features_in_agg)]
                               else:
-                                   plot_branch_names = branch_names
-                              num_agg_features += n_features_in_agg
+                                   effective_plot_names = plot_feature_names
+                              
+                              num_agg_features += n_features_in_agg # This seems to be for total plot count only
                               for k in range(n_features_in_agg):
-                                   agg_feature_details.append((agg_key, k, plot_branch_names[k]))
+                                   # agg_feature_details stores: (agg_key, feature_index_in_agg_array, display_name)
+                                   agg_feature_details.append((agg_key, k, effective_plot_names[k]))
                          except IndexError:
-                              self.logger.warning(f"Aggregator '{agg_key}' data seems malformed (expected 2D array). Skipping its plots.")
+                              self.logger.warning(f"Aggregator '{agg_key}' data seems malformed (expected 2D array for shape[1]). Skipping its plots.")
                          except Exception as e:
                               self.logger.error(f"Error processing aggregator '{agg_key}' details: {e}. Skipping its plots.")
                     else:
                          self.logger.warning(f"Aggregator '{agg_key}' data list item missing 'array' key or array is None. Skipping its plots.")
 
-            total_plots = num_scalar_plots + num_agg_features
+            total_plots = num_scalar_plots + num_agg_features + num_track_count_plots
             if total_plots == 0:
                  self.logger.warning("No features found to plot.")
             else:
@@ -1152,20 +1241,23 @@ class PhysliteFeatureProcessor:
                          values_arr = np.array(values_list)
                          if values_arr.size == 0:
                               ax.set_title(f"{name}\n(No Data)", fontsize=plot_utils.FONT_SIZES["small"])
-                              ax.tick_params(axis='both', which='major', labelsize=plot_utils.FONT_SIZES['tiny'])
-                              ax.grid(True, linestyle='--', alpha=0.6)
-                              plot_idx += 1
-                              continue
-                         p1, p99 = np.percentile(values_arr, [1, 99])
-                         if p1 == p99:
-                             p1 -= 0.5
-                             p99 += 0.5
-                         plot_range = (p1, p99)
-                         ax.hist(values_arr, bins='auto', range=plot_range, histtype='stepfilled', density=True, color=colors[plot_idx % len(colors)], alpha=0.7)
-                         ax.set_ylabel("Density")
-                         ax.set_title(f"{name}", fontsize=plot_utils.FONT_SIZES["small"])
+                              # Store empty data if needed, or skip
+                              if raw_histogram_data_for_file is not None:
+                                  raw_histogram_data_for_file[name] = {"counts": [], "bin_edges": []}
+                         else:
+                             p1, p99 = np.percentile(values_arr, [1, 99])
+                             if p1 == p99:
+                                 p1 -= 0.5
+                                 p99 += 0.5
+                             plot_range = (p1, p99)
+                             counts, bin_edges, _ = ax.hist(values_arr, bins='auto', range=plot_range, histtype='stepfilled', density=True, color=colors[plot_idx % len(colors)], alpha=0.7)
+                             if raw_histogram_data_for_file is not None:
+                                 raw_histogram_data_for_file[name] = {"counts": counts.tolist(), "bin_edges": bin_edges.tolist()}
+                             ax.set_ylabel("Density")
+                             ax.set_title(f"{name}", fontsize=plot_utils.FONT_SIZES["small"])
                          ax.grid(True, linestyle='--', alpha=0.6)
                          ax.tick_params(axis='both', which='major', labelsize=plot_utils.FONT_SIZES['tiny'])
+                         ax.set_yscale('log') # Add log scale for y-axis
                          plot_idx += 1
                      except Exception as plot_e:
                           self.logger.error(f"Failed to plot scalar feature '{name}': {plot_e}", exc_info=True)
@@ -1173,26 +1265,83 @@ class PhysliteFeatureProcessor:
                           plot_idx += 1
 
 
+                 # --- Plot Number of Tracks per Event --- 
+                 if sampled_event_n_tracks_list:
+                    if plot_idx >= len(axes): 
+                        self.logger.warning("Not enough subplot axes for track multiplicity plot.")
+                    else:
+                        ax = axes[plot_idx]
+                        try:
+                            counts_arr = np.array(sampled_event_n_tracks_list)
+                            if counts_arr.size == 0:
+                                ax.set_title("N Tracks per Event\n(No Data)", fontsize=plot_utils.FONT_SIZES["small"])
+                                if raw_histogram_data_for_file is not None:
+                                    raw_histogram_data_for_file["N_Tracks_per_Event"] = {"counts": [], "bin_edges": []}
+                            else:
+                                # Integer bins for track counts
+                                min_val = int(np.min(counts_arr))
+                                max_val = int(np.max(counts_arr))
+                                if min_val == max_val: # Handle case with only one unique count
+                                    bins = np.array([min_val - 0.5, min_val + 0.5])
+                                else:
+                                    bins = np.arange(min_val - 0.5, max_val + 1.5, 1)
+                                
+                                counts, bin_edges, _ = ax.hist(counts_arr, bins=bins, histtype='stepfilled', density=True, color=colors[plot_idx % len(colors)], alpha=0.7)
+                                if raw_histogram_data_for_file is not None:
+                                    raw_histogram_data_for_file["N_Tracks_per_Event"] = {"counts": counts.tolist(), "bin_edges": bin_edges.tolist()}
+                                ax.set_title("N Tracks per Event", fontsize=plot_utils.FONT_SIZES["small"])
+                                ax.set_xlabel("Number of Selected Tracks")
+                                ax.set_ylabel("Density of Events")
+                            ax.grid(True, linestyle='--', alpha=0.6)
+                            ax.tick_params(axis='both', which='major', labelsize=plot_utils.FONT_SIZES['tiny'])
+                            ax.set_yscale('log')
+                            plot_idx += 1
+                        except Exception as plot_e:
+                            self.logger.error(f"Failed to plot N Tracks per Event: {plot_e}", exc_info=True)
+                            ax.set_title("Error N Tracks")
+                            plot_idx += 1
+
                  # --- Plot Aggregated Features ---
                  self.logger.info("Plotting sampled aggregated features...")
-                 agg_data_cache = {}
-                 for agg_key, k, feature_name in agg_feature_details:
+                 agg_data_cache = {} # Caches stacked arrays for each agg_key
+                 for agg_key, k, feature_name in agg_feature_details: # feature_name is now the rich name
                       if plot_idx >= len(axes): break
                       ax = axes[plot_idx]
                       try:
                            if agg_key not in agg_data_cache:
                                 arrays_data_list = sampled_aggregated_features.get(agg_key, [])
                                 if not arrays_data_list: continue
-                                arrays_list = [item["array"] for item in arrays_data_list if item.get("array") is not None]
-                                if not arrays_list: continue
-                                first_shape = arrays_list[0].shape
-                                if not all(a.shape == first_shape for a in arrays_list):
-                                     self.logger.warning(f"Inconsistent array shapes found within aggregator '{agg_key}'. Skipping plot for this aggregator.")
+                                # stacked_array = np.stack(arrays_list, axis=0)
+                                # arrays_list now contains dicts {"array": ..., "plot_feature_names": ...}
+                                # We need to stack only the "array" part
+                                actual_arrays_to_stack = [item["array"] for item in arrays_data_list if "array" in item and item["array"] is not None]
+                                if not actual_arrays_to_stack:
+                                    self.logger.warning(f"No valid arrays to stack for aggregator '{agg_key}'. Skipping plot.")
+                                    agg_data_cache[agg_key] = None # Mark as processed but failed
+                                    # Increment plot_idx correctly based on how many features this agg_key *would* have had
+                                    # This requires knowing the number of features for agg_key even if stacking fails.
+                                    # The 'k' here is for the current feature, but if we skip the whole agg_key,
+                                    # we need to advance plot_idx by the number of features for this agg_key.
+                                    # This part is tricky if an aggregator completely fails to stack.
+                                    # For now, assume if arrays_data_list was not empty, plot_feature_names is available.
+                                    num_expected_features_for_agg = len(arrays_data_list[0].get("plot_feature_names", []))
+                                    # Advance plot_idx for all features of this failed aggregator
+                                    # This assumes agg_feature_details are processed in order of agg_key then k.
+                                    # This loop structure might need rethinking if an entire agg_key fails early.
+                                    # A simpler way: if an agg_key fails to cache, subsequent `k` for that `agg_key` will also fail.
+                                    ax.set_title(f"Error Stacking {agg_key}")
+                                    plot_idx +=1 # Just advance for this one feature, others for this agg_key will also show error.
+                                    continue
+
+                                first_shape = actual_arrays_to_stack[0].shape
+                                if not all(a.shape == first_shape for a in actual_arrays_to_stack):
+                                     self.logger.warning(f"Inconsistent array shapes found within aggregator '{agg_key}' for stacking. Skipping plot for this aggregator.")
                                      agg_data_cache[agg_key] = None
                                      ax.set_title(f"Error: Inconsistent shapes in {agg_key}")
-                                     plot_idx += (first_shape[1] - k)
+                                     # Same problem as above for advancing plot_idx correctly.
+                                     plot_idx += 1 
                                      continue
-                                stacked_array = np.stack(arrays_list, axis=0)
+                                stacked_array = np.stack(actual_arrays_to_stack, axis=0)
                                 agg_data_cache[agg_key] = stacked_array
                            else:
                                 stacked_array = agg_data_cache[agg_key]
@@ -1210,20 +1359,22 @@ class PhysliteFeatureProcessor:
                            if valid_data.size == 0:
                                 self.logger.info(f"No non-zero data for aggregated feature '{feature_name}' in {agg_key}. Skipping plot.")
                                 ax.set_title(f"{feature_name}\n(No Data)", fontsize=plot_utils.FONT_SIZES["small"])
-                                ax.tick_params(axis='both', which='major', labelsize=plot_utils.FONT_SIZES['tiny'])
-                                ax.grid(True, linestyle='--', alpha=0.6)
-                                plot_idx += 1
-                                continue
-                           p1, p99 = np.percentile(valid_data, [1, 99])
-                           if p1 == p99:
-                               p1 -= 0.5
-                               p99 += 0.5
-                           plot_range = (p1, p99)
-                           ax.hist(valid_data, bins='auto', range=plot_range, histtype='stepfilled', density=True, color=colors[plot_idx % len(colors)], alpha=0.7)
-                           ax.set_ylabel("Density")
-                           ax.set_title(f"{feature_name}", fontsize=plot_utils.FONT_SIZES["small"])
+                                if raw_histogram_data_for_file is not None:
+                                    raw_histogram_data_for_file[feature_name] = {"counts": [], "bin_edges": []}
+                           else:
+                               p1, p99 = np.percentile(valid_data, [1, 99])
+                               if p1 == p99:
+                                   p1 -= 0.5
+                                   p99 += 0.5
+                               plot_range = (p1, p99)
+                               counts, bin_edges, _ = ax.hist(valid_data, bins='auto', range=plot_range, histtype='stepfilled', density=True, color=colors[plot_idx % len(colors)], alpha=0.7)
+                               if raw_histogram_data_for_file is not None:
+                                   raw_histogram_data_for_file[feature_name] = {"counts": counts.tolist(), "bin_edges": bin_edges.tolist()}
+                               ax.set_ylabel("Density")
+                               ax.set_title(f"{feature_name}", fontsize=plot_utils.FONT_SIZES["small"])
                            ax.grid(True, linestyle='--', alpha=0.6)
                            ax.tick_params(axis='both', which='major', labelsize=plot_utils.FONT_SIZES['tiny'])
+                           ax.set_yscale('log') # Add log scale for y-axis
                            plot_idx += 1
                       except Exception as outer_plot_e:
                            self.logger.error(f"Failed to process or plot feature '{feature_name}' for aggregator '{agg_key}': {outer_plot_e}", exc_info=True)
@@ -1240,16 +1391,155 @@ class PhysliteFeatureProcessor:
                  plt.close(fig)
                  self.logger.info(f"Saved combined distribution plot to {plot_output}")
 
+                 # Save the raw histogram data
+                 if raw_histogram_data_for_file and plot_output:
+                    data_file_path = None # Initialize to ensure it's defined for the recreation step
+                    try:
+                        # Construct filename for the histogram data
+                        data_file_path = plot_output.with_name(plot_output.stem + "_hist_data.json")
+                        with open(data_file_path, 'w') as f_json:
+                            json.dump(raw_histogram_data_for_file, f_json, indent=4)
+                        self.logger.info(f"Saved raw histogram data to {data_file_path}")
+
+                        # --- Immediately recreate the plot for testing ---
+                        if data_file_path and data_file_path.exists():
+                            recreated_plot_output_path = plot_output.with_name(plot_output.stem + "_recreated.png")
+                            self.logger.info(f"Attempting to recreate plot from {data_file_path} to {recreated_plot_output_path} for testing.")
+                            self.recreate_plot_from_hist_data(
+                                hist_data_path=data_file_path,
+                                output_plot_path=recreated_plot_output_path,
+                                title_prefix="Recreated (Test)"
+                            )
+                        # --- End of immediate recreation for testing ---
+
+                    except Exception as e_save:
+                        self.logger.error(f"Failed to save raw histogram data or recreate plot: {e_save}")
+
 
         # Convert stats to native Python types
         stats = {
             "total_events": int(stats["total_events"]),
             "processed_events": int(stats["processed_events"]),
-            "total_features": int(stats["total_features"]), # Note: feature counting might need adjustment for derived
+            "total_features": int(stats["total_features"]),
             "processing_time": float(stats["processing_time"]),
         }
 
         return processed_inputs, processed_labels, stats
+
+    def recreate_plot_from_hist_data(
+        self,
+        hist_data_path: Union[str, Path],
+        output_plot_path: Union[str, Path],
+        title_prefix: str = "Recreated",
+    ):
+        """
+        Recreates a feature distribution plot from saved histogram data.
+
+        Args:
+            hist_data_path: Path to the JSON file containing histogram data.
+            output_plot_path: Path to save the recreated PNG plot.
+            title_prefix: Prefix for the main plot title.
+        """
+        hist_data_path = Path(hist_data_path)
+        output_plot_path = Path(output_plot_path)
+
+        if not hist_data_path.exists():
+            self.logger.error(f"Histogram data file not found: {hist_data_path}")
+            return
+
+        try:
+            with open(hist_data_path, 'r') as f_json:
+                loaded_hist_data = json.load(f_json)
+        except Exception as e:
+            self.logger.error(f"Failed to load histogram data from {hist_data_path}: {e}")
+            return
+
+        if not loaded_hist_data:
+            self.logger.warning(f"No histogram data found in {hist_data_path}. Cannot create plot.")
+            return
+
+        self.logger.info(f"Recreating plot from {hist_data_path} to {output_plot_path}")
+        plot_utils.set_science_style(use_tex=False)
+
+        # Determine order: N_Tracks_per_Event first, then others sorted for consistency
+        feature_names_ordered = []
+        if "N_Tracks_per_Event" in loaded_hist_data:
+            feature_names_ordered.append("N_Tracks_per_Event")
+        
+        # Add other features, sorted, excluding N_Tracks if already added
+        other_features = sorted([name for name in loaded_hist_data if name != "N_Tracks_per_Event"])
+        feature_names_ordered.extend(other_features)
+        
+        total_plots = len(feature_names_ordered)
+        if total_plots == 0:
+            self.logger.warning("No features to plot from loaded data.")
+            return
+
+        ncols = max(1, int(math.ceil(math.sqrt(total_plots))))
+        nrows = max(1, int(math.ceil(total_plots / ncols)))
+
+        target_ratio = 16 / 9
+        fig_width, fig_height = plot_utils.get_figure_size(width="double", ratio=target_ratio)
+        if nrows > 3:
+            fig_height *= (nrows / 3.0)**0.5
+
+        fig, axes = plt.subplots(nrows, ncols, figsize=(fig_width, fig_height), squeeze=False)
+        axes = axes.flatten()
+        plot_idx = 0
+        colors = plot_utils.get_color_cycle(palette="high_contrast", n=total_plots)
+
+        for feature_name in feature_names_ordered:
+            if plot_idx >= len(axes): break
+            ax = axes[plot_idx]
+            data = loaded_hist_data.get(feature_name)
+
+            if not data or not data.get("counts") or not data.get("bin_edges"):
+                self.logger.warning(f"Missing counts or bin_edges for feature '{feature_name}'. Skipping.")
+                ax.set_title(f"{feature_name}\n(Data Missing)", fontsize=plot_utils.FONT_SIZES["small"])
+                plot_idx += 1
+                continue
+            
+            counts = np.array(data["counts"])
+            bin_edges = np.array(data["bin_edges"])
+
+            if counts.size == 0 or bin_edges.size == 0:
+                ax.set_title(f"{feature_name}\n(No Data in file)", fontsize=plot_utils.FONT_SIZES["small"])
+            else:
+                # plt.stairs expects edges to be len(values)+1. Counts are values.
+                # The `density=True` from original hist means counts are already normalized.
+                ax.stairs(counts, bin_edges, fill=True, color=colors[plot_idx % len(colors)], alpha=0.7, linewidth=0) # linewidth=0 mimics stepfilled
+                
+                if feature_name == "N_Tracks_per_Event":
+                    ax.set_title("N Tracks per Event", fontsize=plot_utils.FONT_SIZES["small"])
+                    ax.set_xlabel("Number of Selected Tracks")
+                    ax.set_ylabel("Density of Events")
+                else:
+                    ax.set_title(feature_name, fontsize=plot_utils.FONT_SIZES["small"])
+                    ax.set_ylabel("Density") # Default for others
+
+            ax.grid(True, linestyle='--', alpha=0.6)
+            ax.tick_params(axis='both', which='major', labelsize=plot_utils.FONT_SIZES['tiny'])
+            ax.set_yscale('log')
+            plot_idx += 1
+
+        for i in range(plot_idx, len(axes)):
+            axes[i].axis('off')
+        
+        main_title = f"{title_prefix} Feature Distributions from Saved Data"
+        if hist_data_path.name:
+             main_title += f"\n(Source: {hist_data_path.name})"
+
+        fig.suptitle(main_title, fontsize=plot_utils.FONT_SIZES['large'])
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjusted rect for potentially longer title
+        
+        try:
+            output_plot_path.parent.mkdir(parents=True, exist_ok=True)
+            fig.savefig(output_plot_path, dpi=300, bbox_inches='tight')
+            plt.close(fig)
+            self.logger.info(f"Successfully recreated plot and saved to {output_plot_path}")
+        except Exception as e_save:
+            self.logger.error(f"Failed to save recreated plot to {output_plot_path}: {e_save}")
+            plt.close(fig) # Ensure figure is closed even if save fails
 
     def _compute_dataset_normalization(
         self,

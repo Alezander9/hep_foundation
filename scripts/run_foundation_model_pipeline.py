@@ -27,9 +27,9 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
                     # "InDetTrackParticlesAuxDyn.theta",
                     "derived.InDetTrackParticlesAuxDyn.pt",
                     # "InDetTrackParticlesAuxDyn.qOverP",
+                    "derived.InDetTrackParticlesAuxDyn.reducedChiSquared",
                     # "InDetTrackParticlesAuxDyn.chiSquared",
                     # "InDetTrackParticlesAuxDyn.numberDoF",
-                    "derived.InDetTrackParticlesAuxDyn.reducedChiSquared",
 
                     "InDetTrackParticlesAuxDyn.definingParametersCovMatrixDiag",
                     "InDetTrackParticlesAuxDyn.definingParametersCovMatrixOffDiag",
@@ -72,11 +72,11 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
     
     dataset_config = DatasetConfig(
         
-        # run_numbers=run_numbers[-3:],
-        run_numbers=run_numbers[-1:],
-        signal_keys=["zprime", "wprime_qq", "zprime_bb"],
-        catalog_limit=2,
-        # catalog_limit=20,
+        run_numbers=run_numbers[-3:],
+        # run_numbers=run_numbers[-1:],
+        signal_keys=["zprime_tt", "wprime_qq", "zprime_bb"],
+        # catalog_limit=2,
+        catalog_limit=10,
         validation_fraction=0.15,
         test_fraction=0.15,
         shuffle_buffer=50000,
@@ -128,8 +128,8 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
     vae_training_config = TrainingConfig(
         batch_size=1024,
         learning_rate=0.001,
-        # epochs=30,
-        epochs=3,
+        epochs=50,
+        # epochs=3,
         early_stopping_patience=10,
         early_stopping_min_delta=1e-4,
         plot_training=True,
@@ -138,8 +138,8 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
     dnn_training_config = TrainingConfig(
         batch_size=1024,
         learning_rate=0.001,
-        # epochs=20,
-        epochs=2,
+        epochs=20,
+        # epochs=2,
         early_stopping_patience=100,
         early_stopping_min_delta=1e-4,
         plot_training=True,

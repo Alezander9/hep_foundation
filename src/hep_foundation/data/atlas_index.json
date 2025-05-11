@@ -188,7 +188,7 @@
     "00311481": 552
   },
   "signal_catalogs": {
-    "zprime": "mc20_13TeV_MC_Pythia8EvtGen_A14NNPDF23LO_zprime3000_tt",
+    "zprime_tt": "mc20_13TeV_MC_Pythia8EvtGen_A14NNPDF23LO_zprime3000_tt",
     "wprime_qq": "mc20_13TeV_MC_Pythia8EvtGen_A14NNPDF23LO_Wprime_qq_3000",
     "zprime_bb": "mc20_13TeV_MC_Pythia8EvtGen_A14NNPDF23LO_Zprimebb3000"
   }
