@@ -31,6 +31,7 @@ from hep_foundation.data.task_config import (
     PhysliteSelectionConfig,
     TaskConfig,
 )
+from hep_foundation.data.dataset_visualizer import create_plot_from_hist_data
 
 
 class PhysliteFeatureProcessor:
@@ -1166,254 +1167,114 @@ class PhysliteFeatureProcessor:
                    except OSError as delete_e:
                        self.logger.error(f"Error deleting catalog file {catalog_path}: {delete_e}")
 
-        # --- Plotting Section (Uses sampled data) ---
-        if plotting_enabled and overall_plot_samples_count > 0:
-            self.logger.info(f"Plotting feature distributions from {overall_plot_samples_count} sampled events (distributed across catalogs) to {plot_output}")
+        # --- Generate and Save Histogram Data (No direct plotting here) ---
+        if plotting_enabled and overall_plot_samples_count > 0 and raw_histogram_data_for_file is not None:
+            self.logger.info(f"Preparing histogram data from {overall_plot_samples_count} sampled events for {plot_output}")
 
-            plot_utils.set_science_style(use_tex=False)
+            # Details for N_Tracks_per_Event
+            if sampled_event_n_tracks_list:
+                counts_arr = np.array(sampled_event_n_tracks_list)
+                if counts_arr.size > 0:
+                    min_val = int(np.min(counts_arr))
+                    max_val = int(np.max(counts_arr))
+                    if min_val == max_val:
+                        bins = np.array([min_val - 0.5, min_val + 0.5])
+                    else:
+                        bins = np.arange(min_val - 0.5, max_val + 1.5, 1)
+                    counts, bin_edges = np.histogram(counts_arr, bins=bins, density=True)
+                    raw_histogram_data_for_file["N_Tracks_per_Event"] = {"counts": counts.tolist(), "bin_edges": bin_edges.tolist()}
+                else:
+                    raw_histogram_data_for_file["N_Tracks_per_Event"] = {"counts": [], "bin_edges": []}
 
-            # --- Prepare Subplots ---
-            num_scalar_plots = len(sampled_scalar_features)
-            num_agg_features = 0
-            agg_feature_details = [] # Store details: (agg_key, feature_index, feature_name)
-            num_track_count_plots = 1 if sampled_event_n_tracks_list else 0 # Will be 0 or 1
-
+            # Details for Scalar Features
+            for name, values_list in sampled_scalar_features.items():
+                values_arr = np.array(values_list)
+                if values_arr.size > 0:
+                    p1, p99 = np.percentile(values_arr, [1, 99])
+                    if p1 == p99:
+                        p1 -= 0.5
+                        p99 += 0.5
+                    plot_range = (p1, p99)
+                    counts, bin_edges = np.histogram(values_arr, bins='auto', range=plot_range, density=True)
+                    raw_histogram_data_for_file[name] = {"counts": counts.tolist(), "bin_edges": bin_edges.tolist()}
+                else:
+                    raw_histogram_data_for_file[name] = {"counts": [], "bin_edges": []}
+            
+            # Details for Aggregated Features
+            agg_data_cache = {} # Using this primarily for stacking, not caching for plotting here
             for agg_key, arrays_data_list in sampled_aggregated_features.items():
                 if arrays_data_list:
-                    # The "plot_feature_names" should have been prepared in _process_event
-                    # and stored in the items of arrays_data_list
-                    # All items in arrays_data_list for the same agg_key should have the same plot_feature_names structure
-                    plot_feature_names = arrays_data_list[0].get("plot_feature_names", []) 
+                    plot_feature_names = arrays_data_list[0].get("plot_feature_names", [])
+                    actual_arrays_to_stack = [item["array"] for item in arrays_data_list if "array" in item and item["array"] is not None]
                     
-                    if "array" in arrays_data_list[0] and arrays_data_list[0]["array"] is not None:
-                         try:
-                              n_features_in_agg = arrays_data_list[0]["array"].shape[1]
-                              
-                              # If plot_feature_names is empty or mismatch, fall back
-                              if not plot_feature_names or len(plot_feature_names) != n_features_in_agg:
-                                   self.logger.warning(f"Mismatch or missing plot_feature_names for aggregator '{agg_key}'. Expected {n_features_in_agg}, got {len(plot_feature_names) if plot_feature_names else 'None'}. Falling back to generic names.")
-                                   effective_plot_names = [f"Feature_{k}" for k in range(n_features_in_agg)]
-                              else:
-                                   effective_plot_names = plot_feature_names
-                              
-                              num_agg_features += n_features_in_agg # This seems to be for total plot count only
-                              for k in range(n_features_in_agg):
-                                   # agg_feature_details stores: (agg_key, feature_index_in_agg_array, display_name)
-                                   agg_feature_details.append((agg_key, k, effective_plot_names[k]))
-                         except IndexError:
-                              self.logger.warning(f"Aggregator '{agg_key}' data seems malformed (expected 2D array for shape[1]). Skipping its plots.")
-                         except Exception as e:
-                              self.logger.error(f"Error processing aggregator '{agg_key}' details: {e}. Skipping its plots.")
-                    else:
-                         self.logger.warning(f"Aggregator '{agg_key}' data list item missing 'array' key or array is None. Skipping its plots.")
+                    if not actual_arrays_to_stack:
+                        # If no arrays, store empty for all expected features
+                        for k_idx, feature_name_val in enumerate(plot_feature_names):
+                             raw_histogram_data_for_file[feature_name_val] = {"counts": [], "bin_edges": []}
+                        continue
 
-            total_plots = num_scalar_plots + num_agg_features + num_track_count_plots
-            if total_plots == 0:
-                 self.logger.warning("No features found to plot.")
-            else:
-                 ncols = max(1, int(math.ceil(math.sqrt(total_plots))))
-                 nrows = max(1, int(math.ceil(total_plots / ncols)))
-
-                 # Get figure size with a fixed 16:9 aspect ratio
-                 target_ratio = 16 / 9
-                 fig_width, fig_height = plot_utils.get_figure_size(
-                     width="double",  # Use wider figure for subplots
-                     ratio=target_ratio # Set fixed aspect ratio
-                 )
-                 # Adjust height slightly based on rows to prevent crowding if many rows
-                 # Heuristic: increase height slightly for > 3 rows
-                 if nrows > 3:
-                      fig_height *= (nrows / 3.0)**0.5 # Increase height gently with more rows
-
-
-                 fig, axes = plt.subplots(nrows, ncols, figsize=(fig_width, fig_height), squeeze=False)
-                 axes = axes.flatten()
-                 plot_idx = 0
-                 colors = plot_utils.get_color_cycle(palette="high_contrast", n=total_plots)
-
-
-                 # --- Plot Scalar Features ---
-                 self.logger.info("Plotting sampled scalar features...")
-                 for name, values_list in sampled_scalar_features.items():
-                     if plot_idx >= len(axes): break
-                     ax = axes[plot_idx]
-                     try:
-                         values_arr = np.array(values_list)
-                         if values_arr.size == 0:
-                              ax.set_title(f"{name}\n(No Data)", fontsize=plot_utils.FONT_SIZES["small"])
-                              # Store empty data if needed, or skip
-                              if raw_histogram_data_for_file is not None:
-                                  raw_histogram_data_for_file[name] = {"counts": [], "bin_edges": []}
-                         else:
-                             p1, p99 = np.percentile(values_arr, [1, 99])
-                             if p1 == p99:
-                                 p1 -= 0.5
-                                 p99 += 0.5
-                             plot_range = (p1, p99)
-                             counts, bin_edges, _ = ax.hist(values_arr, bins='auto', range=plot_range, histtype='stepfilled', density=True, color=colors[plot_idx % len(colors)], alpha=0.7)
-                             if raw_histogram_data_for_file is not None:
-                                 raw_histogram_data_for_file[name] = {"counts": counts.tolist(), "bin_edges": bin_edges.tolist()}
-                             ax.set_ylabel("Density")
-                             ax.set_title(f"{name}", fontsize=plot_utils.FONT_SIZES["small"])
-                         ax.grid(True, linestyle='--', alpha=0.6)
-                         ax.tick_params(axis='both', which='major', labelsize=plot_utils.FONT_SIZES['tiny'])
-                         ax.set_yscale('log') # Add log scale for y-axis
-                         plot_idx += 1
-                     except Exception as plot_e:
-                          self.logger.error(f"Failed to plot scalar feature '{name}': {plot_e}", exc_info=True)
-                          ax.set_title(f"Error plotting {name}")
-                          plot_idx += 1
-
-
-                 # --- Plot Number of Tracks per Event --- 
-                 if sampled_event_n_tracks_list:
-                    if plot_idx >= len(axes): 
-                        self.logger.warning("Not enough subplot axes for track multiplicity plot.")
-                    else:
-                        ax = axes[plot_idx]
-                        try:
-                            counts_arr = np.array(sampled_event_n_tracks_list)
-                            if counts_arr.size == 0:
-                                ax.set_title("N Tracks per Event\n(No Data)", fontsize=plot_utils.FONT_SIZES["small"])
-                                if raw_histogram_data_for_file is not None:
-                                    raw_histogram_data_for_file["N_Tracks_per_Event"] = {"counts": [], "bin_edges": []}
-                            else:
-                                # Integer bins for track counts
-                                min_val = int(np.min(counts_arr))
-                                max_val = int(np.max(counts_arr))
-                                if min_val == max_val: # Handle case with only one unique count
-                                    bins = np.array([min_val - 0.5, min_val + 0.5])
-                                else:
-                                    bins = np.arange(min_val - 0.5, max_val + 1.5, 1)
-                                
-                                counts, bin_edges, _ = ax.hist(counts_arr, bins=bins, histtype='stepfilled', density=True, color=colors[plot_idx % len(colors)], alpha=0.7)
-                                if raw_histogram_data_for_file is not None:
-                                    raw_histogram_data_for_file["N_Tracks_per_Event"] = {"counts": counts.tolist(), "bin_edges": bin_edges.tolist()}
-                                ax.set_title("N Tracks per Event", fontsize=plot_utils.FONT_SIZES["small"])
-                                ax.set_xlabel("Number of Selected Tracks")
-                                ax.set_ylabel("Density of Events")
-                            ax.grid(True, linestyle='--', alpha=0.6)
-                            ax.tick_params(axis='both', which='major', labelsize=plot_utils.FONT_SIZES['tiny'])
-                            ax.set_yscale('log')
-                            plot_idx += 1
-                        except Exception as plot_e:
-                            self.logger.error(f"Failed to plot N Tracks per Event: {plot_e}", exc_info=True)
-                            ax.set_title("Error N Tracks")
-                            plot_idx += 1
-
-                 # --- Plot Aggregated Features ---
-                 self.logger.info("Plotting sampled aggregated features...")
-                 agg_data_cache = {} # Caches stacked arrays for each agg_key
-                 for agg_key, k, feature_name in agg_feature_details: # feature_name is now the rich name
-                      if plot_idx >= len(axes): break
-                      ax = axes[plot_idx]
-                      try:
-                           if agg_key not in agg_data_cache:
-                                arrays_data_list = sampled_aggregated_features.get(agg_key, [])
-                                if not arrays_data_list: continue
-                                # stacked_array = np.stack(arrays_list, axis=0)
-                                # arrays_list now contains dicts {"array": ..., "plot_feature_names": ...}
-                                # We need to stack only the "array" part
-                                actual_arrays_to_stack = [item["array"] for item in arrays_data_list if "array" in item and item["array"] is not None]
-                                if not actual_arrays_to_stack:
-                                    self.logger.warning(f"No valid arrays to stack for aggregator '{agg_key}'. Skipping plot.")
-                                    agg_data_cache[agg_key] = None # Mark as processed but failed
-                                    # Increment plot_idx correctly based on how many features this agg_key *would* have had
-                                    # This requires knowing the number of features for agg_key even if stacking fails.
-                                    # The 'k' here is for the current feature, but if we skip the whole agg_key,
-                                    # we need to advance plot_idx by the number of features for this agg_key.
-                                    # This part is tricky if an aggregator completely fails to stack.
-                                    # For now, assume if arrays_data_list was not empty, plot_feature_names is available.
-                                    num_expected_features_for_agg = len(arrays_data_list[0].get("plot_feature_names", []))
-                                    # Advance plot_idx for all features of this failed aggregator
-                                    # This assumes agg_feature_details are processed in order of agg_key then k.
-                                    # This loop structure might need rethinking if an entire agg_key fails early.
-                                    # A simpler way: if an agg_key fails to cache, subsequent `k` for that `agg_key` will also fail.
-                                    ax.set_title(f"Error Stacking {agg_key}")
-                                    plot_idx +=1 # Just advance for this one feature, others for this agg_key will also show error.
-                                    continue
-
-                                first_shape = actual_arrays_to_stack[0].shape
-                                if not all(a.shape == first_shape for a in actual_arrays_to_stack):
-                                     self.logger.warning(f"Inconsistent array shapes found within aggregator '{agg_key}' for stacking. Skipping plot for this aggregator.")
-                                     agg_data_cache[agg_key] = None
-                                     ax.set_title(f"Error: Inconsistent shapes in {agg_key}")
-                                     # Same problem as above for advancing plot_idx correctly.
-                                     plot_idx += 1 
-                                     continue
-                                stacked_array = np.stack(actual_arrays_to_stack, axis=0)
-                                agg_data_cache[agg_key] = stacked_array
-                           else:
-                                stacked_array = agg_data_cache[agg_key]
-                                if stacked_array is None:
-                                     ax.set_title(f"Error: Skipped due to shape inconsistency")
-                                     plot_idx += 1
-                                     continue
-                           if stacked_array.size == 0: continue
-                           if k >= stacked_array.shape[2]:
-                                self.logger.warning(f"Feature index {k} out of bounds for {agg_key}")
-                                continue
-                           data_slice = stacked_array[:, :, k]
-                           mask = data_slice != 0
-                           valid_data = data_slice[mask]
-                           if valid_data.size == 0:
-                                self.logger.info(f"No non-zero data for aggregated feature '{feature_name}' in {agg_key}. Skipping plot.")
-                                ax.set_title(f"{feature_name}\n(No Data)", fontsize=plot_utils.FONT_SIZES["small"])
-                                if raw_histogram_data_for_file is not None:
-                                    raw_histogram_data_for_file[feature_name] = {"counts": [], "bin_edges": []}
-                           else:
-                               p1, p99 = np.percentile(valid_data, [1, 99])
-                               if p1 == p99:
-                                   p1 -= 0.5
-                                   p99 += 0.5
-                               plot_range = (p1, p99)
-                               counts, bin_edges, _ = ax.hist(valid_data, bins='auto', range=plot_range, histtype='stepfilled', density=True, color=colors[plot_idx % len(colors)], alpha=0.7)
-                               if raw_histogram_data_for_file is not None:
-                                   raw_histogram_data_for_file[feature_name] = {"counts": counts.tolist(), "bin_edges": bin_edges.tolist()}
-                               ax.set_ylabel("Density")
-                               ax.set_title(f"{feature_name}", fontsize=plot_utils.FONT_SIZES["small"])
-                           ax.grid(True, linestyle='--', alpha=0.6)
-                           ax.tick_params(axis='both', which='major', labelsize=plot_utils.FONT_SIZES['tiny'])
-                           ax.set_yscale('log') # Add log scale for y-axis
-                           plot_idx += 1
-                      except Exception as outer_plot_e:
-                           self.logger.error(f"Failed to process or plot feature '{feature_name}' for aggregator '{agg_key}': {outer_plot_e}", exc_info=True)
-                           ax.set_title(f"Error plotting {feature_name}")
-                           plot_idx += 1
-
-
-                 # --- Finalize Figure ---
-                 for i in range(plot_idx, len(axes)):
-                     axes[i].axis('off')
-                 fig.suptitle(f"Sampled Feature Distributions ({overall_plot_samples_count} Events)", fontsize=plot_utils.FONT_SIZES['large'])
-                 plt.tight_layout(rect=[0, 0.03, 1, 0.97])
-                 fig.savefig(plot_output, dpi=300, bbox_inches='tight')
-                 plt.close(fig)
-                 self.logger.info(f"Saved combined distribution plot to {plot_output}")
-
-                 # Save the raw histogram data
-                 if raw_histogram_data_for_file and plot_output:
-                    data_file_path = None # Initialize to ensure it's defined for the recreation step
                     try:
-                        # Construct filename for the histogram data
-                        data_file_path = plot_output.with_name(plot_output.stem + "_hist_data.json")
-                        with open(data_file_path, 'w') as f_json:
-                            json.dump(raw_histogram_data_for_file, f_json, indent=4)
-                        self.logger.info(f"Saved raw histogram data to {data_file_path}")
+                        first_shape = actual_arrays_to_stack[0].shape
+                        if not all(a.shape == first_shape for a in actual_arrays_to_stack):
+                            self.logger.warning(f"Inconsistent array shapes for aggregator '{agg_key}' during hist data gen. Storing empty.")
+                            for k_idx, feature_name_val in enumerate(plot_feature_names):
+                                raw_histogram_data_for_file[feature_name_val] = {"counts": [], "bin_edges": []}
+                            continue
+                        
+                        stacked_array = np.stack(actual_arrays_to_stack, axis=0)
+                        
+                        n_features_in_agg = stacked_array.shape[2] # Features are along the 3rd axis now after stacking events
+                        
+                        # Ensure plot_feature_names matches n_features_in_agg
+                        if len(plot_feature_names) != n_features_in_agg:
+                            self.logger.warning(f"Mismatch plot_feature_names for agg '{agg_key}' ({len(plot_feature_names)}) vs actual features ({n_features_in_agg}). Using generic.")
+                            effective_plot_names = [f"{agg_key}_Feature_{k}" for k in range(n_features_in_agg)]
+                        else:
+                            effective_plot_names = plot_feature_names
 
-                        # --- Immediately recreate the plot for testing ---
-                        if data_file_path and data_file_path.exists():
-                            recreated_plot_output_path = plot_output.with_name(plot_output.stem + "_recreated.png")
-                            self.logger.info(f"Attempting to recreate plot from {data_file_path} to {recreated_plot_output_path} for testing.")
-                            self.recreate_plot_from_hist_data(
-                                hist_data_path=data_file_path,
-                                output_plot_path=recreated_plot_output_path,
-                                title_prefix="Recreated (Test)"
-                            )
-                        # --- End of immediate recreation for testing ---
+                        for k in range(n_features_in_agg):
+                            feature_name = effective_plot_names[k]
+                            data_slice = stacked_array[:, :, k] # All events, all tracks for feature k
+                            mask = data_slice != 0 # Considering 0 as padding
+                            valid_data = data_slice[mask]
 
-                    except Exception as e_save:
-                        self.logger.error(f"Failed to save raw histogram data or recreate plot: {e_save}")
+                            if valid_data.size > 0:
+                                p1, p99 = np.percentile(valid_data, [1, 99])
+                                if p1 == p99:
+                                    p1 -= 0.5
+                                    p99 += 0.5
+                                plot_range = (p1, p99)
+                                counts, bin_edges = np.histogram(valid_data, bins='auto', range=plot_range, density=True)
+                                raw_histogram_data_for_file[feature_name] = {"counts": counts.tolist(), "bin_edges": bin_edges.tolist()}
+                            else:
+                                raw_histogram_data_for_file[feature_name] = {"counts": [], "bin_edges": []}
+                    except Exception as e_agg_hist:
+                        self.logger.error(f"Error generating histogram data for aggregated feature in {agg_key}: {e_agg_hist}")
+                        # Store empty for all features of this problematic aggregator
+                        for k_idx, feature_name_val in enumerate(plot_feature_names):
+                            raw_histogram_data_for_file[feature_name_val] = {"counts": [], "bin_edges": []}
+
+
+            # Save the raw histogram data
+            if raw_histogram_data_for_file and plot_output:
+                data_file_path = None 
+                try:
+                    data_file_path = plot_output.with_name(plot_output.stem + "_hist_data.json")
+                    with open(data_file_path, 'w') as f_json:
+                        json.dump(raw_histogram_data_for_file, f_json, indent=4)
+                    self.logger.info(f"Saved raw histogram data to {data_file_path}")
+
+                    # --- Create the plot from the saved JSON data ---
+                    if data_file_path and data_file_path.exists():
+                        self.logger.info(f"Creating plot from {data_file_path} to {plot_output}.")
+                        create_plot_from_hist_data(
+                            hist_data_paths=data_file_path,
+                            output_plot_path=plot_output, # Original plot output path
+                            title_prefix="Feature" # Simplified title
+                        )
+                except Exception as e_save_or_plot:
+                    self.logger.error(f"Failed to save histogram data or create plot from it: {e_save_or_plot}")
+        # --- End of Histogram Data Generation and Plotting from JSON ---
 
 
         # Convert stats to native Python types
@@ -1426,120 +1287,6 @@ class PhysliteFeatureProcessor:
 
         return processed_inputs, processed_labels, stats
 
-    def recreate_plot_from_hist_data(
-        self,
-        hist_data_path: Union[str, Path],
-        output_plot_path: Union[str, Path],
-        title_prefix: str = "Recreated",
-    ):
-        """
-        Recreates a feature distribution plot from saved histogram data.
-
-        Args:
-            hist_data_path: Path to the JSON file containing histogram data.
-            output_plot_path: Path to save the recreated PNG plot.
-            title_prefix: Prefix for the main plot title.
-        """
-        hist_data_path = Path(hist_data_path)
-        output_plot_path = Path(output_plot_path)
-
-        if not hist_data_path.exists():
-            self.logger.error(f"Histogram data file not found: {hist_data_path}")
-            return
-
-        try:
-            with open(hist_data_path, 'r') as f_json:
-                loaded_hist_data = json.load(f_json)
-        except Exception as e:
-            self.logger.error(f"Failed to load histogram data from {hist_data_path}: {e}")
-            return
-
-        if not loaded_hist_data:
-            self.logger.warning(f"No histogram data found in {hist_data_path}. Cannot create plot.")
-            return
-
-        self.logger.info(f"Recreating plot from {hist_data_path} to {output_plot_path}")
-        plot_utils.set_science_style(use_tex=False)
-
-        # Determine order: N_Tracks_per_Event first, then others sorted for consistency
-        feature_names_ordered = []
-        if "N_Tracks_per_Event" in loaded_hist_data:
-            feature_names_ordered.append("N_Tracks_per_Event")
-        
-        # Add other features, sorted, excluding N_Tracks if already added
-        other_features = sorted([name for name in loaded_hist_data if name != "N_Tracks_per_Event"])
-        feature_names_ordered.extend(other_features)
-        
-        total_plots = len(feature_names_ordered)
-        if total_plots == 0:
-            self.logger.warning("No features to plot from loaded data.")
-            return
-
-        ncols = max(1, int(math.ceil(math.sqrt(total_plots))))
-        nrows = max(1, int(math.ceil(total_plots / ncols)))
-
-        target_ratio = 16 / 9
-        fig_width, fig_height = plot_utils.get_figure_size(width="double", ratio=target_ratio)
-        if nrows > 3:
-            fig_height *= (nrows / 3.0)**0.5
-
-        fig, axes = plt.subplots(nrows, ncols, figsize=(fig_width, fig_height), squeeze=False)
-        axes = axes.flatten()
-        plot_idx = 0
-        colors = plot_utils.get_color_cycle(palette="high_contrast", n=total_plots)
-
-        for feature_name in feature_names_ordered:
-            if plot_idx >= len(axes): break
-            ax = axes[plot_idx]
-            data = loaded_hist_data.get(feature_name)
-
-            if not data or not data.get("counts") or not data.get("bin_edges"):
-                self.logger.warning(f"Missing counts or bin_edges for feature '{feature_name}'. Skipping.")
-                ax.set_title(f"{feature_name}\n(Data Missing)", fontsize=plot_utils.FONT_SIZES["small"])
-                plot_idx += 1
-                continue
-            
-            counts = np.array(data["counts"])
-            bin_edges = np.array(data["bin_edges"])
-
-            if counts.size == 0 or bin_edges.size == 0:
-                ax.set_title(f"{feature_name}\n(No Data in file)", fontsize=plot_utils.FONT_SIZES["small"])
-            else:
-                # plt.stairs expects edges to be len(values)+1. Counts are values.
-                # The `density=True` from original hist means counts are already normalized.
-                ax.stairs(counts, bin_edges, fill=True, color=colors[plot_idx % len(colors)], alpha=0.7, linewidth=0) # linewidth=0 mimics stepfilled
-                
-                if feature_name == "N_Tracks_per_Event":
-                    ax.set_title("N Tracks per Event", fontsize=plot_utils.FONT_SIZES["small"])
-                    ax.set_xlabel("Number of Selected Tracks")
-                    ax.set_ylabel("Density of Events")
-                else:
-                    ax.set_title(feature_name, fontsize=plot_utils.FONT_SIZES["small"])
-                    ax.set_ylabel("Density") # Default for others
-
-            ax.grid(True, linestyle='--', alpha=0.6)
-            ax.tick_params(axis='both', which='major', labelsize=plot_utils.FONT_SIZES['tiny'])
-            ax.set_yscale('log')
-            plot_idx += 1
-
-        for i in range(plot_idx, len(axes)):
-            axes[i].axis('off')
-        
-        main_title = f"{title_prefix} Feature Distributions from Saved Data"
-        if hist_data_path.name:
-             main_title += f"\n(Source: {hist_data_path.name})"
-
-        fig.suptitle(main_title, fontsize=plot_utils.FONT_SIZES['large'])
-        plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjusted rect for potentially longer title
-        
-        try:
-            output_plot_path.parent.mkdir(parents=True, exist_ok=True)
-            fig.savefig(output_plot_path, dpi=300, bbox_inches='tight')
-            plt.close(fig)
-            self.logger.info(f"Successfully recreated plot and saved to {output_plot_path}")
-        except Exception as e_save:
-            self.logger.error(f"Failed to save recreated plot to {output_plot_path}: {e_save}")
-            plt.close(fig) # Ensure figure is closed even if save fails
 
     def _compute_dataset_normalization(
         self,

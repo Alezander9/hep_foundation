@@ -196,7 +196,6 @@ class DatasetManager:
     def _create_atlas_dataset(
         self,
         dataset_config: DatasetConfig,
-        plot_distributions: bool = False,
         delete_catalogs: bool = True,
         plot_output: Optional[Path] = None,
     ) -> tuple[str, Path]:
@@ -205,7 +204,6 @@ class DatasetManager:
 
         Args:
             dataset_config: Configuration defining event filters, input features, and labels
-            plot_distributions: Whether to generate distribution plots
             delete_catalogs: Whether to delete catalogs after processing
             plot_output: Optional path to directory for saving plots
 
@@ -248,7 +246,7 @@ class DatasetManager:
                         run_number=run_number,
                         catalog_limit=dataset_config.catalog_limit,
                         delete_catalogs=delete_catalogs,
-                        plot_distributions=plot_distributions,
+                        plot_distributions=dataset_config.plot_distributions,
                         plot_output=plot_output,
                         first_event_logged=first_event_logged,
                     )
@@ -403,14 +401,12 @@ class DatasetManager:
     def _create_signal_dataset(
         self, 
         dataset_config: DatasetConfig, 
-        plot_distributions: bool = False,
     ) -> tuple[str, Path]:
         """
         Create new processed dataset from signal data.
 
         Args:
             dataset_config: Configuration defining event filters, input features, and labels
-            plot_distributions: Whether to generate distribution plots
 
         Returns:
             Tuple containing:
@@ -439,7 +435,7 @@ class DatasetManager:
                     self.logger.info(f"[Debug] Processing signal type: {signal_key}")
 
                     # Create plot directory if needed
-                    if plot_distributions:
+                    if dataset_config.plot_distributions:
                         plots_dir = dataset_dir / "plots"
                         plots_dir.mkdir(parents=True, exist_ok=True)
                         plot_output = plots_dir / f"{signal_key}_dataset_features.png"
@@ -452,7 +448,7 @@ class DatasetManager:
                         task_config=dataset_config.task_config,
                         signal_key=signal_key,
                         delete_catalogs=False,  # Always keep signal catalogs
-                        plot_distributions=plot_distributions,
+                        plot_distributions=dataset_config.plot_distributions,
                         plot_output=plot_output,
                         first_event_logged=first_event_logged,
                     )
@@ -608,7 +604,6 @@ class DatasetManager:
         shuffle_buffer: int = 10000,
         include_labels: bool = False,
         delete_catalogs: bool = True,
-        plot_distributions: bool = False,
     ) -> tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
         """Load and split dataset into train/val/test."""
         self.logger.info("Loading datasets")
@@ -625,7 +620,6 @@ class DatasetManager:
                     self._create_atlas_dataset(
                         dataset_config,
                         delete_catalogs=delete_catalogs,
-                        plot_distributions=plot_distributions,
                         plot_output=plot_output,
                     )
                 )
@@ -701,7 +695,6 @@ class DatasetManager:
                 self.current_dataset_id, self.current_dataset_path = (
                     self._create_signal_dataset(
                         dataset_config,
-                        plot_distributions=dataset_config.plot_distributions,
                     )
                 )
 
@@ -864,216 +857,3 @@ class DatasetManager:
 
         except Exception as e:
             raise Exception(f"Failed to load and encode dataset: {str(e)}")
-
-    # NO LONGER USED
-    def _plot_distributions(
-        self,
-        pre_selection_stats: dict[str, list],
-        post_selection_stats: dict[str, list],
-        output_dir: Path,
-    ):
-        """Create distribution plots and print statistical summaries for track and event features"""
-        self.logger.info(f"Generating plots in: {output_dir}")
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Print track multiplicity statistics
-        self.logger.info("=== Track Multiplicity Statistics ===")
-        self.logger.info("Before Selection:")
-        self.logger.info(
-            f"  Total events: {len(pre_selection_stats['tracks_per_event']):,}"
-        )
-        self.logger.info(
-            f"  Average tracks/event: {np.mean(pre_selection_stats['tracks_per_event']):.2f}"
-        )
-        self.logger.info(
-            f"  Median tracks/event: {np.median(pre_selection_stats['tracks_per_event']):.2f}"
-        )
-        self.logger.info(f"  Min tracks: {min(pre_selection_stats['tracks_per_event'])}")
-        self.logger.info(f"  Max tracks: {max(pre_selection_stats['tracks_per_event'])}")
-
-        self.logger.info("After Selection:")
-        self.logger.info(
-            f"  Total events: {len(post_selection_stats['tracks_per_event']):,}"
-        )
-        self.logger.info(
-            f"  Average tracks/event: {np.mean(post_selection_stats['tracks_per_event']):.2f}"
-        )
-        self.logger.info(
-            f"  Median tracks/event: {np.median(post_selection_stats['tracks_per_event']):.2f}"
-        )
-        self.logger.info(f"  Min tracks: {min(post_selection_stats['tracks_per_event'])}")
-        self.logger.info(f"  Max tracks: {max(post_selection_stats['tracks_per_event'])}")
-        self.logger.info(
-            f"  Selection efficiency: {100 * len(post_selection_stats['tracks_per_event']) / len(pre_selection_stats['tracks_per_event']):.1f}%"
-        )
-
-        # Use matplotlib style
-        plt.style.use("seaborn-v0_8")
-
-        self.logger.info("Creating track multiplicity plot...")
-        plt.figure(figsize=(12, 6))
-
-        # Calculate integer bin edges with percentile limits
-        min_tracks = max(
-            1, int(np.percentile(pre_selection_stats["tracks_per_event"], 1))
-        )
-        max_tracks = int(np.percentile(pre_selection_stats["tracks_per_event"], 99))
-
-        # Create integer bins between these limits
-        bins = np.arange(
-            min_tracks - 0.5, max_tracks + 1.5, 1
-        )  # +/- 0.5 centers bins on integers
-
-        plt.hist(
-            pre_selection_stats["tracks_per_event"],
-            bins=bins,
-            alpha=0.5,
-            label="Before Selection",
-            density=True,
-        )
-        plt.hist(
-            post_selection_stats["tracks_per_event"],
-            bins=bins,
-            alpha=0.5,
-            label="After Selection",
-            density=True,
-        )
-
-        plt.xlabel("Number of Tracks per Event")
-        plt.ylabel("Density")
-        plt.title("Track Multiplicity Distribution")
-        plt.legend()
-        plt.grid(True)
-
-        # Set x-axis limits to show the main distribution
-        plt.xlim(min_tracks - 1, max_tracks + 1)
-
-        plt.savefig(output_dir / "track_multiplicity.png")
-        plt.close()
-
-        self.logger.info("Creating track features plot...")
-        # 2. Track features distributions (6x2 subplot grid)
-        fig, axes = plt.subplots(3, 2, figsize=(15, 18))
-        fig.suptitle("Track Feature Distributions (Before vs After Selection)")
-
-        features = ["pt", "eta", "phi", "d0", "z0", "chi2_per_ndof"]
-        for feature, ax in zip(features, axes.flat):
-            if feature == "pt":
-                ax.set_xlabel("pT [GeV]")
-                ax.set_xscale("log")
-                # Use log-spaced bins for pT
-                log_bins = np.logspace(
-                    np.log10(
-                        max(0.1, np.percentile(pre_selection_stats[feature], 0.1))
-                    ),  # min
-                    np.log10(np.percentile(pre_selection_stats[feature], 99.9)),  # max
-                    50,  # number of bins
-                )
-                ax.hist(
-                    pre_selection_stats[feature],
-                    bins=log_bins,
-                    alpha=0.5,
-                    label="Before Selection",
-                    density=True,
-                )
-                ax.hist(
-                    post_selection_stats[feature],
-                    bins=log_bins,
-                    alpha=0.5,
-                    label="After Selection",
-                    density=True,
-                )
-            else:
-                # For other features, use percentile-based limits
-                x_min = np.percentile(pre_selection_stats[feature], 0.1)
-                x_max = np.percentile(pre_selection_stats[feature], 99.9)
-                ax.set_xlim(x_min, x_max)
-                ax.hist(
-                    pre_selection_stats[feature],
-                    bins=50,
-                    alpha=0.5,
-                    label="Before Selection",
-                    density=True,
-                    range=(x_min, x_max),
-                )
-                ax.hist(
-                    post_selection_stats[feature],
-                    bins=50,
-                    alpha=0.5,
-                    label="After Selection",
-                    density=True,
-                    range=(x_min, x_max),
-                )
-            ax.set_ylabel("Density")
-            ax.legend()
-            ax.grid(True)
-
-            # Add specific axis labels and ranges
-            if feature == "pt":
-                ax.set_xlabel("pT [GeV]")
-                ax.set_xscale("log")
-            elif feature == "eta":
-                ax.set_xlabel("η")
-            elif feature == "phi":
-                ax.set_xlabel("φ")
-                ax.set_xlim(-3.5, 3.5)
-            elif feature == "d0":
-                ax.set_xlabel("d0 [mm]")
-            elif feature == "z0":
-                ax.set_xlabel("z0 [mm]")
-
-        plt.tight_layout()
-        plt.savefig(output_dir / "track_features.png")
-        plt.close()
-
-        self.logger.info("=== Track Feature Statistics ===")
-        features = ["pt", "eta", "phi", "d0", "z0", "chi2_per_ndof"]
-        labels = {
-            "pt": "pT [GeV]",
-            "eta": "η",
-            "phi": "φ",
-            "d0": "d0 [mm]",
-            "z0": "z0 [mm]",
-            "chi2_per_ndof": "χ²/ndof",
-        }
-
-        for feature in features:
-            self.logger.info(f"{labels[feature]}:")
-            self.logger.info("  Before Selection:")
-            self.logger.info(f"    Mean: {np.mean(pre_selection_stats[feature]):.3f}")
-            self.logger.info(f"    Std:  {np.std(pre_selection_stats[feature]):.3f}")
-            self.logger.info(f"    Min:  {np.min(pre_selection_stats[feature]):.3f}")
-            self.logger.info(f"    Max:  {np.max(pre_selection_stats[feature]):.3f}")
-            self.logger.info(f"    Tracks: {len(pre_selection_stats[feature]):,}")
-
-            self.logger.info("  After Selection:")
-            self.logger.info(f"    Mean: {np.mean(post_selection_stats[feature]):.3f}")
-            self.logger.info(f"    Std:  {np.std(post_selection_stats[feature]):.3f}")
-            self.logger.info(f"    Min:  {np.min(post_selection_stats[feature]):.3f}")
-            self.logger.info(f"    Max:  {np.max(post_selection_stats[feature]):.3f}")
-            self.logger.info(f"    Tracks: {len(post_selection_stats[feature]):,}")
-
-        # Print correlation information
-        self.logger.info("=== Feature Correlations ===")
-        df = pd.DataFrame(
-            {feature: post_selection_stats[feature] for feature in features}
-        )
-        corr_matrix = df.corr()
-
-        self.logger.info("Correlation Matrix (after selection):")
-        pd.set_option("display.float_format", "{:.3f}".format)
-        self.logger.info(corr_matrix)
-
-        self.logger.info("Creating correlation plot...")
-        # 3. 2D correlation plots
-        plt.figure(figsize=(12, 10))
-        feature_data = {feature: post_selection_stats[feature] for feature in features}
-        df = pd.DataFrame(feature_data)
-        sns.heatmap(df.corr(), annot=True, cmap="coolwarm", center=0)
-        plt.title("Track Feature Correlations (After Selection)")
-        plt.tight_layout()
-        plt.savefig(output_dir / "feature_correlations.png")
-        plt.close()
-
-        self.logger.info("Plotting complete!")
