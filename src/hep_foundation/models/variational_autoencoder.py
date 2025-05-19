@@ -420,6 +420,14 @@ class VariationalAutoEncoder(BaseModel):
                     label="KL Loss",
                     linewidth=LINE_WIDTHS["thick"],
                 )
+                if "total_loss" in self._history:
+                    ax1.plot(
+                        epochs,
+                        self._history["total_loss"],
+                        color=get_color_cycle("bright", 4)[3],
+                        label="Total Loss",
+                        linewidth=LINE_WIDTHS["thick"],
+                    )
 
                 betas = self._calculate_beta_schedule(len(epochs))
                 ax2.plot(

@@ -283,7 +283,7 @@ class FoundationModelPipeline:
                     validation_data=val_dataset,
                     callbacks=callbacks,
                     plot_training=True,
-                    plots_dir=Path(f"{self.experiment_dir}/{experiment_id}/plots"),
+                    plots_dir=Path(f"{self.experiment_dir}/{experiment_id}/training"),
                 )
 
                 # Evaluate Model

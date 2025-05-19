@@ -400,13 +400,15 @@ class DatasetManager:
 
     def _create_signal_dataset(
         self, 
-        dataset_config: DatasetConfig, 
+        dataset_config: DatasetConfig,
+        background_hist_data_path: Optional[Path] = None,
     ) -> tuple[str, Path]:
         """
         Create new processed dataset from signal data.
 
         Args:
             dataset_config: Configuration defining event filters, input features, and labels
+            background_hist_data_path: Optional path to background histogram data for comparison plot
 
         Returns:
             Tuple containing:
@@ -426,30 +428,34 @@ class DatasetManager:
         self.logger.info(f"[Debug] Signal keys to process: {dataset_config.signal_keys}")
         self.logger.info(f"[Debug] Will create dataset at: {dataset_path}")
         
-        try:
+        collected_signal_hist_data_paths = []
+        collected_signal_legend_labels = []
 
+        try:
             with h5py.File(dataset_path, "w") as f:
                 self.logger.info("[Debug] Created HDF5 file, processing signal types...")
                 first_event_logged = False
                 for signal_key in dataset_config.signal_keys:
                     self.logger.info(f"[Debug] Processing signal type: {signal_key}")
 
-                    # Create plot directory if needed
+                    plot_output_for_signal_json = None
                     if dataset_config.plot_distributions:
                         plots_dir = dataset_dir / "plots"
                         plots_dir.mkdir(parents=True, exist_ok=True)
-                        plot_output = plots_dir / f"{signal_key}_dataset_features.png"
-                        self.logger.info(f"[Debug] in signal dataset plots output: {plot_output}")
-                    else:
-                        plot_output = None
-
+                        # This plot_output is for _process_data to know where to save the JSON.
+                        # _process_data itself won't make the PNG for signals.
+                        plot_output_for_signal_json = plots_dir / f"{signal_key}_dataset_features.png" 
+                        self.logger.info(f"[Debug] plot_output for signal JSON data: {plot_output_for_signal_json}")
+                    
                     # Process data for this signal type
+                    # IMPORTANT: Ensure plot_distributions=dataset_config.plot_distributions
+                    # so that _process_data generates the _hist_data.json files.
                     inputs, labels, stats = self.feature_processor._process_data(
                         task_config=dataset_config.task_config,
                         signal_key=signal_key,
                         delete_catalogs=False,  # Always keep signal catalogs
-                        plot_distributions=False, # dataset_config.plot_distributions,
-                        plot_output=plot_output,
+                        plot_distributions=dataset_config.plot_distributions, 
+                        plot_output=plot_output_for_signal_json, # Pass path for JSON saving
                         first_event_logged=first_event_logged,
                     )
                     first_event_logged = True
@@ -479,7 +485,7 @@ class DatasetManager:
                         )
 
                     # Save aggregated features
-                    for agg_name, agg_data in inputs[0]["aggregated_features"].items():
+                    for agg_name, agg_data_val in inputs[0]["aggregated_features"].items(): # Renamed agg_data to agg_data_val
                         stacked_data = np.stack(
                             [
                                 input_data["aggregated_features"][agg_name]
@@ -506,14 +512,14 @@ class DatasetManager:
                             label_data = [label_set[label_idx] for label_set in labels]
 
                             # Save scalar features
-                            scalar_features = {
+                            scalar_features_label = { # Use different var name
                                 name: [] for name in label_data[0]["scalar_features"].keys()
                             }
                             for event_labels in label_data:
                                 for name, value in event_labels["scalar_features"].items():
-                                    scalar_features[name].append(value)
+                                    scalar_features_label[name].append(value) # Use different var name
 
-                            for name, values in scalar_features.items():
+                            for name, values in scalar_features_label.items(): # Use different var name
                                 label_subgroup.create_dataset(
                                     f"scalar/{name}",
                                     data=np.array(values),
@@ -521,16 +527,18 @@ class DatasetManager:
                                 )
 
                             # Save aggregated features if any exist
-                            for agg_name, agg_data in label_data[0]["aggregated_features"].items():
-                                stacked_data = np.stack(
+                            for agg_name_label, agg_data_label_val in label_data[0][ # Renamed vars
+                                "aggregated_features"
+                            ].items():
+                                stacked_data_label = np.stack( # Renamed var
                                     [
-                                        event_labels["aggregated_features"][agg_name]
+                                        event_labels["aggregated_features"][agg_name_label]
                                         for event_labels in label_data
                                     ]
                                 )
                                 label_subgroup.create_dataset(
-                                    f"aggregated/{agg_name}",
-                                    data=stacked_data,
+                                    f"aggregated/{agg_name_label}",
+                                    data=stacked_data_label, # Renamed var
                                     compression="gzip",
                                 )
 
@@ -547,11 +555,51 @@ class DatasetManager:
                             "processing_stats": json.dumps(stats),
                         }
                     )
+                    
+                    # Collect histogram data path for this signal for the combined plot
+                    if dataset_config.plot_distributions and plot_output_for_signal_json:
+                        signal_json_path = plot_output_for_signal_json.with_name(plot_output_for_signal_json.stem + "_hist_data.json")
+                        if signal_json_path.exists():
+                            collected_signal_hist_data_paths.append(signal_json_path)
+                            collected_signal_legend_labels.append(signal_key)
+                        else:
+                            self.logger.warning(f"Signal hist_data.json for {signal_key} not found at {signal_json_path} after processing.")
+
 
                 # Store global attributes
                 f.attrs.update(
                     {"dataset_id": dataset_id, "creation_date": str(datetime.now())}
                 )
+            
+            # --- Create combined comparison plot AFTER all signals are processed ---
+            if dataset_config.plot_distributions and background_hist_data_path and background_hist_data_path.exists() and collected_signal_hist_data_paths:
+                self.logger.info("Creating combined input feature distribution comparison plot for background vs. signals.")
+                hist_data_paths_for_plot = [background_hist_data_path] + collected_signal_hist_data_paths
+                legend_labels_for_plot = ["Background (ATLAS)"] + collected_signal_legend_labels
+                
+                comparison_plot_output_dir = dataset_dir / "plots" # Ensure this dir exists
+                comparison_plot_output_dir.mkdir(parents=True, exist_ok=True)
+                comparison_plot_output_path = comparison_plot_output_dir / "comparison_input_features_background_vs_signals.png"
+
+                try:
+                    from hep_foundation.data.dataset_visualizer import create_plot_from_hist_data 
+                    create_plot_from_hist_data(
+                        hist_data_paths=hist_data_paths_for_plot,
+                        output_plot_path=str(comparison_plot_output_path),
+                        legend_labels=legend_labels_for_plot,
+                        title_prefix="Input Features: Background vs Signals"
+                    )
+                    self.logger.info(f"Saved combined comparison plot to {comparison_plot_output_path}")
+                except ImportError:
+                    self.logger.error("Failed to import create_plot_from_hist_data. Ensure dataset_visualizer is accessible.")
+                except Exception as e_comp_plot:
+                    self.logger.error(f"Failed to create combined comparison plot: {e_comp_plot}")
+            elif dataset_config.plot_distributions:
+                if not background_hist_data_path or not background_hist_data_path.exists():
+                    self.logger.warning("Background histogram data not provided or not found for combined plot in _create_signal_dataset.")
+                if not collected_signal_hist_data_paths:
+                    self.logger.warning("No signal histogram data found for combined plot in _create_signal_dataset.")
+            # --- End of combined plot logic ---
 
             return dataset_id, dataset_path
 
@@ -559,6 +607,7 @@ class DatasetManager:
             # Clean up on failure
             if dataset_path.exists():
                 dataset_path.unlink()
+            # Consider cleaning up config_path and plots_dir contents if necessary
             raise Exception(f"Signal dataset creation failed: {str(e)}")
 
     def _get_catalog_paths(
@@ -694,14 +743,13 @@ class DatasetManager:
             if not self.current_dataset_path.exists():
                 self.current_dataset_id, self.current_dataset_path = (
                     self._create_signal_dataset(
-                        dataset_config,
+                        dataset_config=dataset_config,
+                        background_hist_data_path=background_hist_data_path,
                     )
                 )
 
             # Load datasets
             signal_datasets = {}
-            loaded_signal_hist_data_paths = []
-            loaded_signal_legend_labels = []
 
             with h5py.File(self.current_dataset_path, "r") as f:
                 # Load and process each signal type
@@ -735,46 +783,6 @@ class DatasetManager:
                     # Batch and prefetch
                     dataset = dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
                     signal_datasets[signal_key] = dataset
-
-                    # Collect histogram data for combined plot if available
-                    if dataset_config.plot_distributions:
-                        signal_hist_path = dataset_dir / "plots" / f"{signal_key}_dataset_features_hist_data.json"
-                        if signal_hist_path.exists():
-                            loaded_signal_hist_data_paths.append(signal_hist_path)
-                            loaded_signal_legend_labels.append(signal_key)
-                        else:
-                            self.logger.warning(f"Histogram data for signal {signal_key} not found at {signal_hist_path}")
-            
-            # Create combined comparison plot
-            if dataset_config.plot_distributions and background_hist_data_path and background_hist_data_path.exists() and loaded_signal_hist_data_paths:
-                self.logger.info("Creating combined input feature distribution comparison plot for background vs. signals.")
-                hist_data_paths_for_plot = [background_hist_data_path] + loaded_signal_hist_data_paths
-                legend_labels_for_plot = ["Background (ATLAS)"] + loaded_signal_legend_labels
-                
-                comparison_plot_output_dir = dataset_dir / "plots"
-                comparison_plot_output_dir.mkdir(parents=True, exist_ok=True)
-                comparison_plot_output_path = comparison_plot_output_dir / "comparison_input_features_background_vs_signals.png"
-
-                try:
-                    # Dynamically import here to avoid circular dependency if create_plot_from_hist_data moves to utils
-                    from hep_foundation.data.dataset_visualizer import create_plot_from_hist_data 
-                    create_plot_from_hist_data(
-                        hist_data_paths=hist_data_paths_for_plot,
-                        output_plot_path=str(comparison_plot_output_path), # Ensure path is string
-                        legend_labels=legend_labels_for_plot,
-                        title_prefix="Input Features: Background vs Signals"
-                    )
-                    self.logger.info(f"Saved combined comparison plot to {comparison_plot_output_path}")
-                except ImportError:
-                    self.logger.error("Failed to import create_plot_from_hist_data. Ensure dataset_visualizer is accessible.")
-                except Exception as e_comp_plot:
-                    self.logger.error(f"Failed to create combined comparison plot: {e_comp_plot}")
-            elif dataset_config.plot_distributions:
-                if not background_hist_data_path or not background_hist_data_path.exists():
-                    self.logger.warning("Background histogram data not provided or not found. Skipping combined comparison plot.")
-                if not loaded_signal_hist_data_paths:
-                    self.logger.warning("No signal histogram data found. Skipping combined comparison plot.")
-
 
             self.logger.info(f"Successfully loaded {len(signal_datasets)} signal datasets")
             return signal_datasets
