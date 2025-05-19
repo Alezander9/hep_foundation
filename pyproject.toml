@@ -25,12 +25,6 @@ dependencies = [
 [project.urls]
 "Homepage" = "https://github.com/Alezander9/hep-foundation"
 
-[project.optional-dependencies]
-dev = [
-    "ruff>=0.11.6,<0.12.0",
-    "pytest>=8.3.5",
-    "pytest-cov>=6.1.1",
-]
 
 [tool.ruff]
 # Same as Black.
@@ -53,3 +47,10 @@ quote-style = "double"
 indent-style = "space"
 # Like Black, automatically detect the appropriate line ending.
 line-ending = "auto"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+    "ruff>=0.11.6",
+    "pytest-cov>=6.1.1",
+]
