@@ -128,26 +128,25 @@ def create_test_configs():
 @pytest.fixture(scope="session")
 def experiment_dir():
     """Create a temporary experiment directory for the test run."""
-    # Create a directory in the current working directory instead of system temp
+    # Define a fixed directory for test results
     base_dir = Path.cwd() / "test_results"
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    test_dir = base_dir / f"test_foundation_experiments_{timestamp}"
-    test_dir.mkdir(parents=True, exist_ok=True)
+    test_dir = base_dir / "test_foundation_experiments"
+
+    # Delete the directory if it exists from a previous run
+    if test_dir.exists():
+        shutil.rmtree(test_dir)
     
+    # Create the main test directory and the logs subdirectory
+    test_dir.mkdir(parents=True, exist_ok=True)
     log_dir = test_dir / "test_logs"
     log_dir.mkdir(exist_ok=True)
     
-    print(f"\nTest directory created at: {test_dir.absolute()}\n")  # Print location explicitly
+    print(f"\nTest results will be stored in: {test_dir.absolute()}\n")
     
     yield str(test_dir)  # Convert to string for compatibility
     
-    # Clean up everything except logs
-    for item in Path(test_dir).iterdir():
-        if item.name != "test_logs":
-            if item.is_dir():
-                shutil.rmtree(item)
-            else:
-                item.unlink()
+    # No cleanup here, so results persist after the test run.
+    # The directory will be cleaned up at the start of the next test session.
 
 @pytest.fixture(scope="module")
 def test_configs():

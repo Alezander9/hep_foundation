@@ -156,7 +156,7 @@ class FoundationModelPipeline:
 
             # 1. Initialize managers
             self.logger.info("Initializing managers...")
-            data_manager = DatasetManager()
+            data_manager = DatasetManager(base_dir=self.experiment_dir / "processed_datasets")
 
             # 2. Validate Configs
             dataset_config.validate()
@@ -463,7 +463,7 @@ class FoundationModelPipeline:
 
             # 2. Load Datasets
             self.logger.info("Initializing Dataset Manager...")
-            data_manager = DatasetManager()
+            data_manager = DatasetManager(base_dir=self.experiment_dir / "processed_datasets")
 
             # Use eval_batch_size or derive from vae_training_config if provided
             batch_size = eval_batch_size
@@ -686,7 +686,7 @@ class FoundationModelPipeline:
         try:
             # Initialize registry and data manager
             ModelRegistry(str(self.experiment_dir))
-            data_manager = DatasetManager()
+            data_manager = DatasetManager(base_dir=self.experiment_dir / "processed_datasets")
 
             # 1. Load dataset with regression labels
             self.logger.info("Loading datasets with regression labels...")

@@ -91,8 +91,8 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
         "model_type": "variational_autoencoder",
         "architecture": {
             "latent_dim": 32,
-            "encoder_layers": [192, 128, 96],
-            "decoder_layers": [96, 128, 192],
+            "encoder_layers": [128, 64, 48],
+            "decoder_layers": [48, 64, 128],
             "activation": "relu",
             "name": "variational_autoencoder",
         },
@@ -157,8 +157,6 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
 
 def run_foundation_pipeline(
     process_type: str = "train",
-    experiment_name: str = None,
-    experiment_description: str = None,
     delete_catalogs: bool = True,
     foundation_model_path: str = None,
 ) -> None:
@@ -214,8 +212,6 @@ success = pipeline.run_process(
     vae_training_config=configs['vae_training_config'],
     dnn_training_config=configs['dnn_training_config'],
     task_config=configs['task_config'],
-    experiment_name="{experiment_name}",
-    experiment_description="{experiment_description}",
     delete_catalogs={delete_catalogs},
     foundation_model_path="{foundation_model_path}"
 )
@@ -252,12 +248,7 @@ if __name__ == "__main__":
         choices=["train", "anomaly", "regression"],
         help="Type of process to run (train, anomaly, or regression)",
     )
-    parser.add_argument(
-        "--name", type=str, default=None, help="Name for the experiment"
-    )
-    parser.add_argument(
-        "--description", type=str, default=None, help="Description for the experiment"
-    )
+
     parser.add_argument(
         "--delete-catalogs",
         action="store_true",
@@ -275,8 +266,6 @@ if __name__ == "__main__":
     # Run the pipeline with the specified arguments
     run_foundation_pipeline(
         process_type=args.process,
-        experiment_name=args.name,
-        experiment_description=args.description,
         delete_catalogs=args.delete_catalogs,
         foundation_model_path=args.foundation_model,
     )

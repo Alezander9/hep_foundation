@@ -52,7 +52,7 @@ class DatasetManager:
 
     def __init__(
         self,
-        base_dir: str = "processed_datasets",
+        base_dir: Union[str, Path] = "processed_datasets",
         atlas_manager: Optional[ATLASFileManager] = None,
     ):
         # Setup logging at INFO level

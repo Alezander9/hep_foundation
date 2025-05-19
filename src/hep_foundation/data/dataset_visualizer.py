@@ -116,30 +116,53 @@ def create_plot_from_hist_data(
         else:
             if feature_name == "N_Tracks_per_Event":
                 ax.set_title("N Tracks per Event", fontsize=plot_utils.FONT_SIZES["small"])
-                ax.set_xlabel("Number of Selected Tracks")
-                ax.set_ylabel("Density of Events")
             else:
                 ax.set_title(feature_name, fontsize=plot_utils.FONT_SIZES["small"])
-                ax.set_ylabel("Density")
-            ax.legend(fontsize=plot_utils.FONT_SIZES['tiny'])
 
         ax.grid(True, linestyle='--', alpha=0.6)
         ax.tick_params(axis='both', which='major', labelsize=plot_utils.FONT_SIZES['tiny'])
         ax.set_yscale('log')
+
+        # Control scientific notation rendering and offset text for the x-axis
+        ax.ticklabel_format(style='sci', scilimits=(-3,4), axis='x', useMathText=False)
+        
+        # Ensure offset text (e.g., 1e-5 at the end of an axis) is small for the x-axis
+        offset_text_x = ax.xaxis.get_offset_text()
+        offset_text_x.set_fontsize(plot_utils.FONT_SIZES['tiny'])
+
+        # For the y-axis (log scale), LogFormatter handles its own ticks.
+        # We avoid using ticklabel_format and get_offset_text for it here to prevent conflicts.
+
         plot_idx += 1
 
     for i in range(plot_idx, len(axes)):
         axes[i].axis('off')
     
+    fig.supylabel("Density", fontsize=plot_utils.FONT_SIZES['small'])
+
+    if effective_legend_labels and loaded_hist_data_list:
+        proxy_handles = []
+        for i in range(len(effective_legend_labels)):
+            color_index = i % len(dataset_colors)
+            proxy_handles.append(plt.Rectangle((0, 0), 1, 1, 
+                                               facecolor=dataset_colors[color_index],
+                                               alpha=0.6,
+                                               edgecolor=dataset_colors[color_index],
+                                               linewidth=0.8))
+        
+        fig.legend(proxy_handles, effective_legend_labels, 
+                   loc='lower center', 
+                   bbox_to_anchor=(0.5, 0.01), 
+                   ncol=min(len(effective_legend_labels), 4), 
+                   fontsize=plot_utils.FONT_SIZES['tiny'])
+
     if len(hist_data_paths) > 1:
         main_title = f"{title_prefix} Distributions Comparison"
     else:
         main_title = f"{title_prefix} Distributions"
-        if hist_data_paths and hist_data_paths[0].name:
-             main_title += f"\n(Source: {hist_data_paths[0].name.replace('_hist_data.json', '.png')})"
 
     fig.suptitle(main_title, fontsize=plot_utils.FONT_SIZES['large'])
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.tight_layout(rect=[0.05, 0.08, 1, 0.95])
     
     try:
         output_plot_path.parent.mkdir(parents=True, exist_ok=True)

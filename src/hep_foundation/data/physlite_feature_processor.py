@@ -1195,7 +1195,7 @@ class PhysliteFeatureProcessor:
                         p1 -= 0.5
                         p99 += 0.5
                     plot_range = (p1, p99)
-                    counts, bin_edges = np.histogram(values_arr, bins='auto', range=plot_range, density=True)
+                    counts, bin_edges = np.histogram(values_arr, bins=100, range=plot_range, density=True)
                     raw_histogram_data_for_file[name] = {"counts": counts.tolist(), "bin_edges": bin_edges.tolist()}
                 else:
                     raw_histogram_data_for_file[name] = {"counts": [], "bin_edges": []}
@@ -1244,7 +1244,7 @@ class PhysliteFeatureProcessor:
                                     p1 -= 0.5
                                     p99 += 0.5
                                 plot_range = (p1, p99)
-                                counts, bin_edges = np.histogram(valid_data, bins='auto', range=plot_range, density=True)
+                                counts, bin_edges = np.histogram(valid_data, bins=100, range=plot_range, density=True)
                                 raw_histogram_data_for_file[feature_name] = {"counts": counts.tolist(), "bin_edges": bin_edges.tolist()}
                             else:
                                 raw_histogram_data_for_file[feature_name] = {"counts": [], "bin_edges": []}
