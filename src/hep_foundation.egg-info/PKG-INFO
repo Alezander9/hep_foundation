@@ -17,10 +17,6 @@ Requires-Dist: seaborn>=0.13.2
 Requires-Dist: tensorflow==2.13.1
 Requires-Dist: tqdm>=4.67.1
 Requires-Dist: uproot>=5.6.0
-Provides-Extra: dev
-Requires-Dist: ruff<0.12.0,>=0.11.6; extra == "dev"
-Requires-Dist: pytest>=8.3.5; extra == "dev"
-Requires-Dist: pytest-cov>=6.1.1; extra == "dev"
 Dynamic: author
 Dynamic: home-page
 Dynamic: requires-python
@@ -80,13 +76,13 @@ config={
 ```
 For full training pipeline example, see scripts/model_pipeline.py
 ```bash
-Run full pipeline test
+Run full pipeline
 python scripts/model_pipeline.py
 ```
 
 ## Project Structure
 - `src/hep_foundation/`: Core package code
-- `scripts/`: Example scripts and tests
+- `scripts/`: Example scripts
 - `experiments/`: Output directory for model registry and results
 - `processed_datasets/`: Storage for processed datasets
 
@@ -122,7 +118,16 @@ This project uses [Ruff](https://docs.astral.sh/ruff/) for linting and formattin
   uv run ruff format .
   ```
 
-It's recommended to run these commands after making significant changes and before committing code.
+## Testing
+
+Run the foundation model pipeline tests with:
+```bash
+pytest tests/test_pipeline.py -v
+```
+
+This will execute the test suite with verbose output, showing real-time logging of the training and evaluation processes. Test logs are stored in `./test_results/test_foundation_experiments_<timestamp>/test_logs/`.
+
+It's recommended to run both code quality checks and tests after making significant changes and before committing code.
 
 ## Data Access
 The package automatically handles ATLAS PHYSLITE data download from CERN OpenData.

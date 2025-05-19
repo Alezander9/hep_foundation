@@ -13,6 +13,8 @@ src/hep_foundation/data/__init__.py
 src/hep_foundation/data/atlas_data.py
 src/hep_foundation/data/atlas_file_manager.py
 src/hep_foundation/data/dataset_manager.py
+src/hep_foundation/data/dataset_visualizer.py
+src/hep_foundation/data/physlite_derived_features.py
 src/hep_foundation/data/physlite_feature_processor.py
 src/hep_foundation/data/physlite_utilities.py
 src/hep_foundation/data/task_config.py
