@@ -108,8 +108,15 @@ def create_plot_from_hist_data(
                 continue
             
             has_data_for_feature = True
-            ax.stairs(counts, bin_edges, fill=True, color=dataset_colors[i % len(dataset_colors)], 
-                      alpha=0.6, linewidth=0.8, label=effective_legend_labels[i])
+            color = dataset_colors[i % len(dataset_colors)]
+            label = effective_legend_labels[i]
+
+            if i == 0:  # First dataset (background)
+                ax.stairs(counts, bin_edges, fill=True, color=color, 
+                          alpha=0.7, linewidth=plot_utils.LINE_WIDTHS["normal"], label=label)
+            else:  # Subsequent datasets (signals)
+                ax.stairs(counts, bin_edges, fill=False, color=color,
+                          linewidth=plot_utils.LINE_WIDTHS["thick"], label=label)
 
         if not has_data_for_feature:
             ax.set_title(f"{feature_name}\n(No Data in any file)", fontsize=plot_utils.FONT_SIZES["small"])
@@ -144,11 +151,16 @@ def create_plot_from_hist_data(
         proxy_handles = []
         for i in range(len(effective_legend_labels)):
             color_index = i % len(dataset_colors)
-            proxy_handles.append(plt.Rectangle((0, 0), 1, 1, 
-                                               facecolor=dataset_colors[color_index],
-                                               alpha=0.6,
-                                               edgecolor=dataset_colors[color_index],
-                                               linewidth=0.8))
+            current_color = dataset_colors[color_index]
+            if i == 0: # First dataset legend entry (solid)
+                proxy_handles.append(plt.Rectangle((0, 0), 1, 1, 
+                                                   facecolor=current_color,
+                                                   alpha=0.7,
+                                                   edgecolor=current_color, # Match facecolor for solid look
+                                                   linewidth=plot_utils.LINE_WIDTHS["normal"]))
+            else: # Subsequent dataset legend entries (outline)
+                 proxy_handles.append(plt.Line2D([0], [0], color=current_color, 
+                                                linewidth=plot_utils.LINE_WIDTHS["thick"]))
         
         fig.legend(proxy_handles, effective_legend_labels, 
                    loc='lower center', 

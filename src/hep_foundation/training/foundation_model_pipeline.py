@@ -490,21 +490,38 @@ class FoundationModelPipeline:
             background_dataset_id_for_plots = data_manager.get_current_dataset_id()
             self.logger.info("Loaded background (test) dataset.")
 
-            signal_datasets = {}
-            signal_collection_id_for_plots = None
+            testing_path = foundation_model_path / "testing"
+            testing_path.mkdir(parents=True, exist_ok=True)
+            anomaly_dir = testing_path / "anomaly_detection"
+            anomaly_dir.mkdir(parents=True, exist_ok=True)
+            plots_dir = anomaly_dir / "plots"
+            plots_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Determine background histogram data path to pass to signal dataset loading for comparison plot
+            background_hist_data_path_for_comparison = None
+            if dataset_config.plot_distributions and background_dataset_id_for_plots:
+                background_plot_data_dir = data_manager.get_dataset_dir(background_dataset_id_for_plots) / "plots"
+                potential_background_hist_path = background_plot_data_dir / "atlas_dataset_features_hist_data.json"
+                if potential_background_hist_path.exists():
+                    background_hist_data_path_for_comparison = potential_background_hist_path
+                else:
+                    self.logger.warning(f"Background histogram data for comparison not found at {potential_background_hist_path}. Comparison plot may be skipped by DatasetManager.")
+
+            # Reload signal datasets, now passing the background_hist_data_path for comparison plot generation within DatasetManager
             if dataset_config.signal_keys:
-                self.logger.info("Loading signal datasets...")
+                self.logger.info("Reloading signal datasets for evaluation and comparison plotting...")
                 signal_datasets = data_manager.load_signal_datasets(
                     dataset_config=dataset_config,
                     batch_size=batch_size,
                     include_labels=False,
+                    background_hist_data_path=background_hist_data_path_for_comparison # Pass the path here
                 )
-                signal_collection_id_for_plots = data_manager.get_current_dataset_id()
-                self.logger.info(f"Loaded {len(signal_datasets)} signal datasets.")
+                self.logger.info(f"Reloaded {len(signal_datasets)} signal datasets for evaluation.")
             else:
-                self.logger.warning("No signal keys provided in dataset_config. Anomaly detection evaluation will only use background.")
-
-            # 3. Create and Load Model
+                self.logger.warning("No signal keys provided. Skipping signal dataset reloading for evaluation.")
+                signal_datasets = {} # Ensure signal_datasets is defined
+            
+            # Create and Load Model
             self.logger.info("Instantiating VAE model from loaded configuration...")
 
             # Ensure input_shape is present in the loaded config
@@ -546,65 +563,6 @@ class FoundationModelPipeline:
 
             # 4. Run Anomaly Detection Evaluation directly on the foundation model's directory
             self.logger.info("Running anomaly detection evaluation...")
-            
-            # Create testing/anomaly_detection directory in the foundation model directory
-            testing_path = foundation_model_path / "testing"
-            testing_path.mkdir(parents=True, exist_ok=True)
-            anomaly_dir = testing_path / "anomaly_detection"
-            anomaly_dir.mkdir(parents=True, exist_ok=True)
-            plots_dir = anomaly_dir / "plots"
-            plots_dir.mkdir(parents=True, exist_ok=True)
-            
-            # --- Add comparison plotting here ---
-            if dataset_config.plot_distributions:
-                self.logger.info("Attempting to create comparison plots for input feature distributions...")
-                background_plot_data_dir = data_manager.get_dataset_dir(background_dataset_id_for_plots) / "plots"
-                background_hist_data_path = background_plot_data_dir / "atlas_dataset_features_hist_data.json"
-
-                if not background_hist_data_path.exists():
-                    self.logger.warning(f"Background histogram data not found at {background_hist_data_path}. Skipping input feature comparison plots.")
-                else:
-                    if signal_collection_id_for_plots and signal_datasets:
-                        signal_plot_data_base_dir = data_manager.get_dataset_dir(signal_collection_id_for_plots) / "plots"
-                        for signal_key in signal_datasets.keys():
-                            signal_hist_data_path = signal_plot_data_base_dir / f"{signal_key}_dataset_features_hist_data.json"
-                            if signal_hist_data_path.exists():
-                                comparison_plot_output_path = f"processed_datasets/{data_manager.get_current_dataset_id()}/plots/comparison_input_features_atlas_vs_{signal_key}.png"
-                                self.logger.info(f"Creating comparison plot: {comparison_plot_output_path}")
-                                try:
-                                    create_plot_from_hist_data(
-                                        hist_data_paths=[background_hist_data_path, signal_hist_data_path],
-                                        output_plot_path=comparison_plot_output_path,
-                                        legend_labels=["ATLAS (Background)", signal_key],
-                                        title_prefix=f"Input Features: ATLAS vs {signal_key}"
-                                    )
-                                except Exception as e_comp_plot:
-                                    self.logger.error(f"Failed to create comparison plot for {signal_key}: {e_comp_plot}")
-                            else:
-                                self.logger.warning(f"Signal histogram data for {signal_key} not found at {signal_hist_data_path}. Skipping its comparison plot.")
-                    else:
-                        self.logger.info("No signal datasets/IDs available for comparison plotting.")
-            # --- End of comparison plotting ---
-
-            # Manual implementation similar to AnomalyDetectionEvaluator but using foundation model's directory
-            # First log dataset info
-            self.logger.info("Dataset information before testing:")
-            for batch in test_dataset:
-                if isinstance(batch, tuple):
-                    features, _ = batch
-                    self.logger.info(f"Background test dataset batch shape: {features.shape}")
-                else:
-                    self.logger.info(f"Background test dataset batch shape: {batch.shape}")
-                break
-
-            for signal_name, signal_dataset in signal_datasets.items():
-                for batch in signal_dataset:
-                    if isinstance(batch, tuple):
-                        features, _ = batch
-                        self.logger.info(f"{signal_name} signal dataset batch shape: {features.shape}")
-                    else:
-                        self.logger.info(f"{signal_name} signal dataset batch shape: {batch.shape}")
-                    break
             
             # Create custom evaluator that will use the foundation model's directory
             evaluator = AnomalyDetectionEvaluator(

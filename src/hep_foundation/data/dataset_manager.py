@@ -448,7 +448,7 @@ class DatasetManager:
                         task_config=dataset_config.task_config,
                         signal_key=signal_key,
                         delete_catalogs=False,  # Always keep signal catalogs
-                        plot_distributions=dataset_config.plot_distributions,
+                        plot_distributions=False, # dataset_config.plot_distributions,
                         plot_output=plot_output,
                         first_event_logged=first_event_logged,
                     )
@@ -681,15 +681,15 @@ class DatasetManager:
         dataset_config: DatasetConfig,
         batch_size: int = 1000,
         include_labels: bool = False,
+        background_hist_data_path: Optional[Path] = None,
     ) -> dict[str, tf.data.Dataset]:
         """Load signal datasets for evaluation."""
         self.logger.info("Loading signal datasets")
         try:
             # Generate dataset ID and load/create dataset file
             self.current_dataset_id = self.generate_dataset_id(dataset_config)
-            self.current_dataset_path = (
-                self.get_dataset_dir(self.current_dataset_id) / "signal_dataset.h5"
-            )
+            dataset_dir = self.get_dataset_dir(self.current_dataset_id)
+            self.current_dataset_path = dataset_dir / "signal_dataset.h5"
 
             if not self.current_dataset_path.exists():
                 self.current_dataset_id, self.current_dataset_path = (
@@ -700,6 +700,9 @@ class DatasetManager:
 
             # Load datasets
             signal_datasets = {}
+            loaded_signal_hist_data_paths = []
+            loaded_signal_legend_labels = []
+
             with h5py.File(self.current_dataset_path, "r") as f:
                 # Load and process each signal type
                 for signal_key in f.keys():
@@ -733,8 +736,48 @@ class DatasetManager:
                     dataset = dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
                     signal_datasets[signal_key] = dataset
 
-                self.logger.info(f"Successfully loaded {len(signal_datasets)} signal datasets")
-                return signal_datasets
+                    # Collect histogram data for combined plot if available
+                    if dataset_config.plot_distributions:
+                        signal_hist_path = dataset_dir / "plots" / f"{signal_key}_dataset_features_hist_data.json"
+                        if signal_hist_path.exists():
+                            loaded_signal_hist_data_paths.append(signal_hist_path)
+                            loaded_signal_legend_labels.append(signal_key)
+                        else:
+                            self.logger.warning(f"Histogram data for signal {signal_key} not found at {signal_hist_path}")
+            
+            # Create combined comparison plot
+            if dataset_config.plot_distributions and background_hist_data_path and background_hist_data_path.exists() and loaded_signal_hist_data_paths:
+                self.logger.info("Creating combined input feature distribution comparison plot for background vs. signals.")
+                hist_data_paths_for_plot = [background_hist_data_path] + loaded_signal_hist_data_paths
+                legend_labels_for_plot = ["Background (ATLAS)"] + loaded_signal_legend_labels
+                
+                comparison_plot_output_dir = dataset_dir / "plots"
+                comparison_plot_output_dir.mkdir(parents=True, exist_ok=True)
+                comparison_plot_output_path = comparison_plot_output_dir / "comparison_input_features_background_vs_signals.png"
+
+                try:
+                    # Dynamically import here to avoid circular dependency if create_plot_from_hist_data moves to utils
+                    from hep_foundation.data.dataset_visualizer import create_plot_from_hist_data 
+                    create_plot_from_hist_data(
+                        hist_data_paths=hist_data_paths_for_plot,
+                        output_plot_path=str(comparison_plot_output_path), # Ensure path is string
+                        legend_labels=legend_labels_for_plot,
+                        title_prefix="Input Features: Background vs Signals"
+                    )
+                    self.logger.info(f"Saved combined comparison plot to {comparison_plot_output_path}")
+                except ImportError:
+                    self.logger.error("Failed to import create_plot_from_hist_data. Ensure dataset_visualizer is accessible.")
+                except Exception as e_comp_plot:
+                    self.logger.error(f"Failed to create combined comparison plot: {e_comp_plot}")
+            elif dataset_config.plot_distributions:
+                if not background_hist_data_path or not background_hist_data_path.exists():
+                    self.logger.warning("Background histogram data not provided or not found. Skipping combined comparison plot.")
+                if not loaded_signal_hist_data_paths:
+                    self.logger.warning("No signal histogram data found. Skipping combined comparison plot.")
+
+
+            self.logger.info(f"Successfully loaded {len(signal_datasets)} signal datasets")
+            return signal_datasets
 
         except Exception as e:
             raise Exception(f"Failed to load signal datasets: {str(e)}")

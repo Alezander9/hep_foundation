@@ -52,7 +52,7 @@ def create_test_configs():
 
     dataset_config = DatasetConfig(
         run_numbers=run_numbers,
-        signal_keys=["zprime_tt"],  # Use a single signal for speed
+        signal_keys=["zprime_tt", "zprime_bb"],
         catalog_limit=2,
         validation_fraction=0.1,
         test_fraction=0.1,
