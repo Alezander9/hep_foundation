@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import tensorflow as tf
@@ -18,6 +19,7 @@ from hep_foundation.models.variational_autoencoder import (
 )
 from hep_foundation.training.model_trainer import ModelTrainer, TrainingConfig
 from hep_foundation.utils.plot_utils import plot_combined_training_histories
+from hep_foundation.models.base_model import CustomKerasModelWrapper
 
 
 class FoundationModelPipeline:
@@ -30,23 +32,32 @@ class FoundationModelPipeline:
     3. Evaluating foundation models for regression tasks
     """
 
-    def __init__(self, base_dir: str = "foundation_experiments"):
+    def __init__(self, experiments_output_dir: str = "foundation_experiments", processed_data_parent_dir: Optional[str] = None):
         """
         Initialize the foundation model pipeline.
 
         Args:
-            base_dir: Base directory for storing experiment results
+            experiments_output_dir: Base directory for storing individual experiment results.
+            processed_data_parent_dir: Parent directory for 'processed_datasets'. 
+                                       If None, 'processed_datasets' is at the workspace root.
         """
-        # Setup self.logger
         self.logger = get_logger(__name__)
 
-        # Create experiment directory
-        self.experiment_dir = Path(base_dir)
-        self.experiment_dir.mkdir(parents=True, exist_ok=True)
+        self.experiments_output_dir = Path(experiments_output_dir)
+        self.experiments_output_dir.mkdir(parents=True, exist_ok=True)
 
-        self.logger.info(
-            f"Foundation Model Pipeline initialized with base directory: {self.experiment_dir.absolute()}"
-        )
+        if processed_data_parent_dir is None:
+            # Default for script runs: datasets are at the root level in 'processed_datasets'
+            self.processed_datasets_dir = Path("processed_datasets")
+        else:
+            # For tests or if specified: datasets are relative to this given parent
+            self.processed_datasets_dir = Path(processed_data_parent_dir) / "processed_datasets"
+        
+        self.processed_datasets_dir.mkdir(parents=True, exist_ok=True)
+        
+        self.logger.info("Foundation Model Pipeline initialized.")
+        self.logger.info(f"  Experiment outputs will be in: {self.experiments_output_dir.absolute()}")
+        self.logger.info(f"  Processed datasets will be in: {self.processed_datasets_dir.absolute()}")
         self.logger.info(f"TensorFlow: {tf.__version__} (Eager: {tf.executing_eagerly()})")
 
     def run_process(
@@ -151,12 +162,12 @@ class FoundationModelPipeline:
                 return obj
 
             # Initialize registry
-            registry = ModelRegistry(str(self.experiment_dir))
+            registry = ModelRegistry(str(self.experiments_output_dir))
             self.logger.info(f"Registry initialized at: {registry.db_path}")
 
             # 1. Initialize managers
             self.logger.info("Initializing managers...")
-            data_manager = DatasetManager(base_dir=self.experiment_dir / "processed_datasets")
+            data_manager = DatasetManager(base_dir=self.processed_datasets_dir)
 
             # 2. Validate Configs
             dataset_config.validate()
@@ -283,7 +294,7 @@ class FoundationModelPipeline:
                     validation_data=val_dataset,
                     callbacks=callbacks,
                     plot_training=True,
-                    plots_dir=Path(f"{self.experiment_dir}/{experiment_id}/training"),
+                    plots_dir=self.experiments_output_dir / experiment_id / "training",
                 )
 
                 # Evaluate Model
@@ -437,7 +448,7 @@ class FoundationModelPipeline:
 
         try:
             # Initialize registry
-            registry = ModelRegistry(str(self.experiment_dir))
+            registry = ModelRegistry(str(self.experiments_output_dir))
             self.logger.info(f"Registry initialized at: {registry.db_path}")
 
             # 1. Load original model configuration and experiment ID
@@ -463,7 +474,7 @@ class FoundationModelPipeline:
 
             # 2. Load Datasets
             self.logger.info("Initializing Dataset Manager...")
-            data_manager = DatasetManager(base_dir=self.experiment_dir / "processed_datasets")
+            data_manager = DatasetManager(base_dir=self.processed_datasets_dir)
 
             # Use eval_batch_size or derive from vae_training_config if provided
             batch_size = eval_batch_size
@@ -570,7 +581,7 @@ class FoundationModelPipeline:
                 test_dataset=test_dataset,
                 signal_datasets=signal_datasets,
                 experiment_id=foundation_experiment_id,
-                base_path=self.experiment_dir
+                base_path=self.experiments_output_dir
             )
             
             # Run the evaluation
@@ -626,25 +637,32 @@ class FoundationModelPipeline:
         foundation_model_path: str = None,
     ) -> bool:
         """
-        Evaluate a foundation model for regression tasks.
-
-        This method will:
-        1. Load a dataset with regression labels
-        2. Train a regression model to predict the labels
-        3. Load a trained foundation model
-        4. Encode the dataset with the foundation model
-        5. Train another regression model to predict the labels from the encoded dataset
-        6. Evaluate the model's regression performance compared to the original regression model
-        7. Save the evaluation results
+        Evaluate a foundation model for regression tasks by comparing three approaches:
+        1. "From Scratch": An encoder (matching foundation model's encoder architecture) + regressor, trained end-to-end.
+        2. "Fine-Tuned": The pre-trained foundation model encoder + regressor, trained end-to-end (encoder is fine-tuned).
+        3. "Fixed": The pre-trained foundation model encoder (frozen) + regressor, only regressor is trained.
         """
         self.logger.info("=" * 100)
-        self.logger.info("Evaluating Foundation Model for Regression")
+        self.logger.info("Evaluating Foundation Model for Regression (New Approach)")
         self.logger.info("=" * 100)
 
+        if not foundation_model_path:
+            self.logger.error(
+                "Foundation model path must be provided for regression evaluation."
+            )
+            return False
+        
+        foundation_model_dir = Path(foundation_model_path)
+        # New nested path for regression evaluation outputs
+        regression_eval_dir = foundation_model_dir / "testing" / "regression_evaluation"
+        regression_eval_dir.mkdir(parents=True, exist_ok=True)
+
         try:
-            # Initialize registry and data manager
-            ModelRegistry(str(self.experiment_dir))
-            data_manager = DatasetManager(base_dir=self.experiment_dir / "processed_datasets")
+            # Initialize registry (optional, as per original commenting) and data manager
+            # registry = ModelRegistry(str(self.experiments_output_dir))
+            data_manager = DatasetManager(
+                base_dir=self.processed_datasets_dir
+            )
 
             # 1. Load dataset with regression labels
             self.logger.info("Loading datasets with regression labels...")
@@ -654,292 +672,300 @@ class FoundationModelPipeline:
                 test_fraction=dataset_config.test_fraction,
                 batch_size=dnn_training_config.batch_size,
                 shuffle_buffer=dataset_config.shuffle_buffer,
-                include_labels=True,
+                include_labels=True,  # Ensure labels are included
                 delete_catalogs=delete_catalogs,
             )
 
             dataset_config.validate()
             self.logger.info("Validated dataset config")
-
             dnn_training_config.validate()
             self.logger.info("Validated training config")
 
-            # 2. Train baseline regression model
-            # Add input shape to the model config
-            dnn_model_config_dict = {
-                "model_type": dnn_model_config["model_type"],
-                "architecture": {
-                    **dnn_model_config["architecture"],
-                    "input_shape": (
-                        task_config.input.get_total_feature_size(),
-                    ),  # Must be a tuple
-                    "output_shape": (
-                        task_config.labels[0].get_total_feature_size(),
-                    ),  # For MET prediction (mpx, mpy, sumet)
-                    # Note using first label set always for now
-                },
-                "hyperparameters": dnn_model_config["hyperparameters"],
-            }
-
-            self.logger.info("Training baseline regression model...")
-            baseline_model = ModelFactory.create_model(
-                model_type="dnn_predictor", config=dnn_model_config_dict
-            )
-            baseline_model.build()
-            self.logger.info("Baseline model created")
-            self.logger.info(baseline_model.model.summary())
-
-            dnn_training_config_dict = {
-                "batch_size": dnn_training_config.batch_size,
-                "epochs": dnn_training_config.epochs,
-                "learning_rate": dnn_training_config.learning_rate,
-                "early_stopping": dnn_training_config.early_stopping,
-            }
-
-            self.logger.info("Setting up baseline model trainer...")
-            baseline_trainer = ModelTrainer(
-                model=baseline_model, training_config=dnn_training_config_dict
-            )
-            # Log sizes and shapes of baseline datasets
-            self.logger.info(f"Baseline train dataset size: {train_dataset.cardinality()}")
-            for batch in train_dataset.take(1):
-                if isinstance(batch, tuple):
-                    features, labels = batch
-                    self.logger.info("Baseline training dataset shapes:")
-                    self.logger.info(f"  Features: {features.shape}")
-                    self.logger.info(f"  Labels: {labels.shape}")
-                else:
-                    self.logger.info(f"Baseline training dataset shape: {batch.shape}")
-            self.logger.info("Training baseline regression model...")
-            baseline_results = baseline_trainer.train(
-                dataset=train_dataset,
-                validation_data=val_dataset,
-                callbacks=[
-                    tf.keras.callbacks.EarlyStopping(
-                        patience=dnn_training_config.early_stopping["patience"],
-                        min_delta=dnn_training_config.early_stopping["min_delta"],
-                        restore_best_weights=True,
-                    )
-                ],
-                plot_training=True,
-                plots_dir=Path(f"{foundation_model_path}/baseline_regression/plots"),
+            original_input_shape = (task_config.input.get_total_feature_size(),)
+            regression_output_shape = (
+                task_config.labels[0].get_total_feature_size(),
             )
 
-            # 3. Load foundation model encoder
-            self.logger.info("Loading foundation model...")
-            if foundation_model_path:
-                # Load from specified path
-                foundation_model_path = Path(foundation_model_path)
-                encoder_path = foundation_model_path / "models" / "foundation_model" / "encoder"
-                self.logger.info(
-                    f"Loading foundation model encoder from: {encoder_path}"
-                )
-                foundation_model = tf.keras.models.load_model(encoder_path)
-                # Get the output shape(s) from the loaded encoder
-                encoder_output_shape = foundation_model.output_shape
-                self.logger.info(f"Encoder raw output shape: {encoder_output_shape}")
-
-                # Check if the output shape is a list (multiple outputs) or a single tuple
-                if isinstance(encoder_output_shape, list):
-                    # Assuming the first output is the desired latent representation (e.g., z_mean for VAE)
-                    target_output_shape = encoder_output_shape[0]
-                    self.logger.info(f"Using first output shape from list: {target_output_shape}")
-                elif isinstance(encoder_output_shape, tuple):
-                    # Single output case
-                    target_output_shape = encoder_output_shape
-                else:
-                    raise TypeError(f"Unexpected encoder output shape type: {type(encoder_output_shape)}")
-
-                # The shape might be (None, latent_dim), so we take the last element
-                latent_dim = target_output_shape[-1]
-                if not isinstance(latent_dim, int) or latent_dim <= 0:
-                    raise ValueError(f"Could not determine a valid latent dimension from target output shape: {target_output_shape}")
-                self.logger.info(f"Determined encoder latent dimension: {latent_dim}")
+            # 2. Load Pre-trained Foundation Encoder & its Config
+            self.logger.info(f"Loading foundation model VAE encoder and its configuration from: {foundation_model_dir}")
+            
+            # Load VAE experiment config to get encoder architecture
+            vae_config_path = foundation_model_dir / "experiment_data.json"
+            if not vae_config_path.exists():
+                self.logger.error(f"Foundation model experiment data not found at: {vae_config_path}")
+                return False
+            with open(vae_config_path) as f:
+                vae_experiment_data = json.load(f)
+            
+            if "experiment_info" in vae_experiment_data and "model_config" in vae_experiment_data["experiment_info"]:
+                original_vae_model_config = vae_experiment_data["experiment_info"]["model_config"]
+            elif "model_config" in vae_experiment_data: # Fallback for older structures
+                original_vae_model_config = vae_experiment_data["model_config"]
             else:
-                raise ValueError("No foundation model path provided")
+                self.logger.error(f"Could not find 'model_config' in VAE experiment data: {vae_config_path}")
+                return False
 
-            # 4. Create encoded datasets
-            self.logger.info("Creating encoded datasets...")
+            if not original_vae_model_config or original_vae_model_config.get("model_type") != "variational_autoencoder":
+                self.logger.error(f"Loaded config from {vae_config_path} is not for a variational_autoencoder.")
+                return False
 
-            def encode_batch(
-                batch, *args
-            ):  # *args is for compatibility with the dataset which also comes with an index argument
-                # Get features and labels
-                features = batch
-                labels = args[0] if args else None
+            vae_arch_config = original_vae_model_config["architecture"]
+            latent_dim = vae_arch_config["latent_dim"]
+            encoder_hidden_layers = vae_arch_config.get("encoder_layers", []) # E.g. [128, 64, 48]
+            encoder_activation = vae_arch_config.get("activation", "relu")
 
-                # Encode the features
-                encoded_features = foundation_model(features, training=False) # Use training=False for inference
+            # Load the pre-trained VAE encoder model part
+            # This model typically outputs [z_mean, z_log_var, z]. We need z_mean.
+            pretrained_vae_full_encoder_path = foundation_model_dir / "models" / "foundation_model" / "encoder"
+            if not pretrained_vae_full_encoder_path.exists():
+                self.logger.error(f"Pretrained VAE encoder model not found at {pretrained_vae_full_encoder_path}")
+                return False
+            
+            self.logger.info(f"Loading pre-trained VAE full encoder from: {pretrained_vae_full_encoder_path}")
+            pretrained_vae_full_encoder = tf.keras.models.load_model(pretrained_vae_full_encoder_path)
+            self.logger.info("Pre-trained VAE full encoder loaded.")
 
-                # Handle case where foundation model returns a list (e.g., VAE returning [z_mean, z_log_var, z])
-                # We typically want z_mean or z for downstream tasks. Assuming the first element is the desired latent representation.
-                if isinstance(encoded_features, list):
-                    encoded_features = encoded_features[0] # Using z_mean (first output)
 
-                # Return encoded features and labels
-                if labels is not None:
-                    return encoded_features, labels
-                return encoded_features
-
-            self.logger.info("Encoded datasets")
-
-            # Create encoded datasets
-            self.logger.info("Creating encoded datasets...")
-            encoded_train_dataset = train_dataset.map(encode_batch)
-            encoded_val_dataset = val_dataset.map(encode_batch)
-            encoded_test_dataset = test_dataset.map(encode_batch)
-            self.logger.info("Encoded datasets created")
-            # Log sizes and shapes of encoded datasets
-            self.logger.info(
-                f"Encoded train dataset size: {encoded_train_dataset.cardinality()}"
-            )
-            for batch in encoded_train_dataset.take(1):
-                if isinstance(batch, tuple):
-                    features, labels = batch
-                    self.logger.info("Encoded training dataset shapes:")
-                    self.logger.info(f"  Features: {features.shape}")
-                    self.logger.info(f"  Labels: {labels.shape}")
-
-            # 5. Train regression model on encoded data
-            self.logger.info("Training regression model on encoded data...")
-            # Create a new config for the encoded model with adjusted input shape
-            encoded_model_config = {
-                **dnn_model_config,
-                "architecture": {
-                    **dnn_model_config["architecture"],
-                    "input_shape": (latent_dim,),  # Use determined latent dimension
-                    "output_shape": (
-                        task_config.labels[0].get_total_feature_size(),
-                    ),  # Same as baseline model
-                    "name": "encoded_met_predictor",
-                },
-            }
-
-            self.logger.info("Creating regression model on encoded data...")
-            encoded_model = ModelFactory.create_model(
-                model_type="dnn_predictor", config=encoded_model_config
-            )
-            encoded_model.build()
-            self.logger.info("Regression model on encoded data created")
-            self.logger.info(encoded_model.model.summary())
-
-            self.logger.info("Setting up regression model training on encoded data...")
-            encoded_trainer = ModelTrainer(
-                model=encoded_model, training_config=dnn_training_config_dict
-            )
-            self.logger.info("Training regression model on encoded data...")
-            encoded_results = encoded_trainer.train(
-                dataset=encoded_train_dataset,
-                validation_data=encoded_val_dataset,
-                callbacks=[
-                    tf.keras.callbacks.EarlyStopping(
-                        patience=dnn_training_config.early_stopping["patience"],
-                        min_delta=dnn_training_config.early_stopping["min_delta"],
-                        restore_best_weights=True,
-                    )
-                ],
-                plot_training=True,
-                plots_dir=Path(f"{foundation_model_path}/encoded_regression/plots"),
-            )
-            self.logger.info("Regression model on encoded data trained")
-            # 6. Evaluate and compare models
-            self.logger.info("Evaluating models...")
-
-            # 6a. Generate combined training plot
-            try:
-                baseline_history = baseline_results.get("history", {})
-                encoded_history = encoded_results.get("history", {})
-
-                if (
-                    baseline_history or encoded_history
-                ):  # Only plot if there is history data
-                    comparison_plot_path = (
-                        Path(foundation_model_path)
-                        / "testing"
-                        / "regression_training_comparison.png"
-                    )
-                    plot_combined_training_histories(
-                        histories={
-                            "Baseline": baseline_history,
-                            "Encoded": encoded_history,
-                        },
-                        output_path=comparison_plot_path,
-                        title="Baseline vs Encoded Regression Training",  # More specific title
-                        # metrics_to_plot=['loss', 'val_loss', 'mse', 'val_mse'], # Example: Plot MSE too
-                        # metric_labels={'loss': 'Loss', 'val_loss': 'Val Loss', 'mse': 'MSE', 'val_mse': 'Val MSE'}
-                    )
-                else:
-                    self.logger.warning(
-                        "Skipping combined plot generation: No history data found in results."
-                    )
-            except Exception as plot_error:
-                self.logger.error(
-                    f"Failed to generate combined training plot: {plot_error}"
+            # Helper function to build regressor head
+            def build_regressor_head(name_suffix: str) -> tf.keras.Model:
+                regressor_config = {
+                    "model_type": "dnn_predictor",
+                    "architecture": {
+                        **dnn_model_config["architecture"],
+                        "input_shape": (latent_dim,),
+                        "output_shape": regression_output_shape,
+                        "name": f"{dnn_model_config['architecture'].get('name', 'regressor')}_{name_suffix}",
+                    },
+                    "hyperparameters": dnn_model_config["hyperparameters"],
+                }
+                regressor_model_wrapper = ModelFactory.create_model(
+                    model_type="dnn_predictor", config=regressor_config
                 )
+                if regressor_model_wrapper is None:
+                    self.logger.error(f"ModelFactory returned None for dnn_predictor '{name_suffix}'. Cannot build regressor head.")
+                    raise ValueError(f"ModelFactory failed for dnn_predictor '{name_suffix}'")
+                
+                # The DNNEstimator's build method might take input_shape, or derive it from config.
+                # The config already has input_shape=(latent_dim,)
+                regressor_model_wrapper.build() # This should populate regressor_model_wrapper.model
+                
+                if regressor_model_wrapper.model is None:
+                    self.logger.error(f"Regressor wrapper '{name_suffix}' built, but its .model is still None.")
+                    raise ValueError(f"Regressor wrapper '{name_suffix}' .model is None after build.")
+                
+                return regressor_model_wrapper.model # This is the actual Keras DNN model
+                
+            # Helper function to train and evaluate a model
+            def train_and_evaluate_model(model_name: str, combined_keras_model: tf.keras.Model, plots_subdir: str):
+                self.logger.info(f"Training {model_name} model...")
+                # combined_keras_model.summary(print_fn=self.logger.info) # Log summary of the Keras model
 
-            baseline_test_results = baseline_trainer.evaluate(test_dataset)
-            encoded_test_results = encoded_trainer.evaluate(encoded_test_dataset)
+                # Wrap the Keras model with CustomKerasModelWrapper for ModelTrainer
+                wrapped_model_for_trainer = CustomKerasModelWrapper(combined_keras_model, name=model_name)
+                wrapped_model_for_trainer.summary() # Log summary via wrapper
 
-            # 7. Save evaluation results
-            self.logger.info("Saving evaluation results...")
-            evaluation_results = {
-                "baseline_model": {
-                    "training_metrics": baseline_results["final_metrics"],
-                    "test_metrics": baseline_test_results,
-                },
-                "encoded_model": {
-                    "training_metrics": encoded_results["final_metrics"],
-                    "test_metrics": encoded_test_results,
-                },
-                "comparison": {
-                    "test_loss_ratio": encoded_test_results["test_loss"]
-                    / baseline_test_results["test_loss"],
-                    "test_mse_ratio": encoded_test_results["test_mse"]
-                    / baseline_test_results["test_mse"],
-                },
-            }
+                trainer_config_dict = {
+                    "batch_size": dnn_training_config.batch_size,
+                    "epochs": dnn_training_config.epochs,
+                    "learning_rate": dnn_training_config.learning_rate,
+                    "early_stopping": dnn_training_config.early_stopping,
+                }
+                # Note: ModelTrainer will call wrapped_model_for_trainer.compile() and wrapped_model_for_trainer.build()
+                trainer = ModelTrainer(model=wrapped_model_for_trainer, training_config=trainer_config_dict)
+                
+                model_plots_dir = regression_eval_dir / plots_subdir
+                model_plots_dir.mkdir(parents=True, exist_ok=True)
 
-            # Save results to registry
+                training_results = trainer.train(
+                    dataset=train_dataset,
+                    validation_data=val_dataset,
+                    callbacks=[
+                        tf.keras.callbacks.EarlyStopping(
+                            patience=dnn_training_config.early_stopping["patience"],
+                            min_delta=dnn_training_config.early_stopping["min_delta"],
+                            restore_best_weights=True,
+                        )
+                    ],
+                    plot_training=True,
+                    plots_dir=model_plots_dir,
+                )
+                test_metrics = trainer.evaluate(test_dataset)
+                self.logger.info(f"{model_name} - Test Metrics: {test_metrics}")
+                return training_results, test_metrics
+
+            all_training_histories = {}
+            all_test_metrics = {}
+
+            # --- Model 1: "From Scratch" ---
+            self.logger.info("-" * 50)
+            self.logger.info("Building Model 1: From Scratch")
+            
+            scratch_encoder_layers = []
+            for units in encoder_hidden_layers:
+                scratch_encoder_layers.append(tf.keras.layers.Dense(units, activation=encoder_activation))
+            scratch_encoder_layers.append(tf.keras.layers.Dense(latent_dim, name="scratch_latent_space")) # No activation for latent typically
+
+            scratch_encoder_part = tf.keras.Sequential(scratch_encoder_layers, name="scratch_encoder")
+            
+            scratch_regressor_dnn = build_regressor_head("from_scratch")
+
+            model_inputs = tf.keras.Input(shape=original_input_shape, name="input_features")
+            encoded_scratch = scratch_encoder_part(model_inputs)
+            predictions_scratch = scratch_regressor_dnn(encoded_scratch)
+            model_from_scratch = tf.keras.Model(
+                inputs=model_inputs, outputs=predictions_scratch, name="Regressor_From_Scratch"
+            )
+            
+            scratch_results, scratch_test_metrics = train_and_evaluate_model(
+                "From_Scratch", model_from_scratch, "from_scratch_plots"
+            )
+            all_training_histories["From_Scratch"] = scratch_results.get("history", {})
+            all_test_metrics["From_Scratch"] = scratch_test_metrics
+
+
+            # --- Model 2: "Fine-Tuned" ---
+            self.logger.info("-" * 50)
+            self.logger.info("Building Model 2: Fine-Tuned Pre-trained Encoder")
+
+            # Adapt pre-trained VAE encoder to output only z_mean (or equivalent single tensor)
+            vae_encoder_input_layer = tf.keras.Input(shape=original_input_shape, name="vae_encoder_input")
+            vae_encoder_all_outputs = pretrained_vae_full_encoder(vae_encoder_input_layer)
+            
+            # Assuming z_mean is the first output if multiple, or the direct output if single
+            if isinstance(vae_encoder_all_outputs, list):
+                if not vae_encoder_all_outputs:
+                    self.logger.error("Pretrained VAE encoder returned an empty list of outputs.")
+                    return False
+                latent_representation_output = vae_encoder_all_outputs[0] 
+            else:
+                latent_representation_output = vae_encoder_all_outputs
+
+            fine_tuned_encoder_part = tf.keras.Model(
+                inputs=vae_encoder_input_layer, 
+                outputs=latent_representation_output, 
+                name="fine_tuned_pretrained_encoder"
+            )
+            fine_tuned_encoder_part.trainable = True # Ensure it's trainable
+
+            fine_tuned_regressor_dnn = build_regressor_head("fine_tuned")
+
+            model_inputs_ft = tf.keras.Input(shape=original_input_shape, name="input_features_ft")
+            encoded_ft = fine_tuned_encoder_part(model_inputs_ft)
+            predictions_ft = fine_tuned_regressor_dnn(encoded_ft)
+            model_fine_tuned = tf.keras.Model(
+                inputs=model_inputs_ft, outputs=predictions_ft, name="Regressor_Fine_Tuned"
+            )
+
+            finetuned_results, finetuned_test_metrics = train_and_evaluate_model(
+                "Fine_Tuned", model_fine_tuned, "fine_tuned_plots"
+            )
+            all_training_histories["Fine_Tuned"] = finetuned_results.get("history", {})
+            all_test_metrics["Fine_Tuned"] = finetuned_test_metrics
+
+            # --- Model 3: "Fixed" (Feature Extractor) ---
+            self.logger.info("-" * 50)
+            self.logger.info("Building Model 3: Fixed Pre-trained Encoder")
+
+            # Re-define or clone the encoder part to set trainable to False cleanly
+            # We can reuse the same structure as fine_tuned_encoder_part but set trainable status
+            fixed_encoder_part = tf.keras.Model(
+                inputs=vae_encoder_input_layer, # re-use input definition for clarity
+                outputs=latent_representation_output, # re-use output definition
+                name="fixed_pretrained_encoder"
+            )
+            # CRITICAL: Set trainable to False *before* compiling the combined model
+            fixed_encoder_part.trainable = False
+
+            fixed_regressor_dnn = build_regressor_head("fixed_encoder")
+            
+            model_inputs_fx = tf.keras.Input(shape=original_input_shape, name="input_features_fx")
+            encoded_fx = fixed_encoder_part(model_inputs_fx) # Encoder is frozen here
+            predictions_fx = fixed_regressor_dnn(encoded_fx)
+            model_fixed = tf.keras.Model(
+                inputs=model_inputs_fx, outputs=predictions_fx, name="Regressor_Fixed_Encoder"
+            )
+
+            fixed_results, fixed_test_metrics = train_and_evaluate_model(
+                "Fixed_Encoder", model_fixed, "fixed_encoder_plots"
+            )
+            all_training_histories["Fixed_Encoder"] = fixed_results.get("history", {})
+            all_test_metrics["Fixed_Encoder"] = fixed_test_metrics
+            
+            # 6. Generate combined training plot for all three models
+            self.logger.info("-" * 50)
+            self.logger.info("Generating combined training plot...")
+            try:
+                if any(all_training_histories.values()):
+                    comparison_plot_path = regression_eval_dir / "regression_training_comparison.png"
+                    plot_combined_training_histories(
+                        histories=all_training_histories,
+                        output_path=comparison_plot_path,
+                        title="Regression Training Comparison: Scratch vs Fine-Tuned vs Fixed",
+                    )
+                    self.logger.info(f"Combined training plot saved to: {comparison_plot_path}")
+                else:
+                    self.logger.warning("Skipping combined plot: No history data found.")
+            except Exception as plot_error:
+                self.logger.error(f"Failed to generate combined training plot: {plot_error}")
+
+            # 7. Display and Save Final Evaluation Results
+            self.logger.info("=" * 100)
+            self.logger.info("Final Regression Evaluation Summary")
+            self.logger.info("=" * 100)
+
+            final_summary = {}
+            for model_name, test_metrics in all_test_metrics.items():
+                self.logger.info(f"--- {model_name} Model ---")
+                self.logger.info(f"  Test Loss: {test_metrics.get('test_loss', 'N/A'):.6f}")
+                self.logger.info(f"  Test MSE: {test_metrics.get('test_mse', 'N/A'):.6f}")
+                # Add other relevant metrics if present
+                for metric, value in test_metrics.items():
+                    if metric not in ['test_loss', 'test_mse']:
+                         self.logger.info(f"  Test {metric}: {value:.6f}")
+                final_summary[model_name] = {
+                    "training_metrics": all_training_histories[model_name].get("final_metrics", {}), # if available
+                    "test_metrics": test_metrics,
+                    "epochs_completed": all_training_histories[model_name].get("epochs_completed", "N/A") # if available
+                }
+            
+            # Save summary to a JSON file
+            summary_file_path = regression_eval_dir / "regression_evaluation_summary.json"
+            try:
+                with open(summary_file_path, 'w') as f:
+                    # Helper to convert numpy types if any sneak in, though ModelTrainer usually returns native types
+                    def ensure_serializable_summary(obj):
+                        if isinstance(obj, np.integer): return int(obj)
+                        if isinstance(obj, np.floating): return float(obj)
+                        if isinstance(obj, np.ndarray): return obj.tolist()
+                        if isinstance(obj, dict): return {k: ensure_serializable_summary(v) for k, v in obj.items()}
+                        if isinstance(obj, list): return [ensure_serializable_summary(i) for i in obj]
+                        return obj
+                    json.dump(ensure_serializable_summary(final_summary), f, indent=2)
+                self.logger.info(f"Regression evaluation summary saved to: {summary_file_path}")
+            except Exception as e:
+                self.logger.error(f"Failed to save regression summary: {str(e)}")
+
+
+            # The registry part was commented out in the original, keeping it that way.
+            # If re-enabled, it would need to be adapted for these three models.
+            # Example:
             # experiment_id = registry.register_experiment(
-            #     name=experiment_name or "Foundation Model Regression Evaluation",
+            #     name="Foundation Model Regression Evaluation (3-way)",
             #     dataset_id=data_manager.get_current_dataset_id(),
-            #     model_config={
-            #         'baseline_config': dnn_model_config_dict,
-            #         'encoded_config': encoded_model_config
-            #     },
-            #     training_config={
-            #         'baseline_config': dnn_training_config_dict,
-            #         'encoded_config': dnn_training_config_dict
-            #     },
-            #     description=experiment_description or "Evaluation of regression performance with and without foundation model encoding"
+            #     model_config={ 'dnn_regressor_head_config': dnn_model_config, 'vae_encoder_config': original_vae_model_config },
+            #     training_config=dnn_training_config, # This might need to be more specific
+            #     description="Comparison of regression: From Scratch, Fine-Tuned Pretrained, Fixed Pretrained"
             # )
-
-            # registry.complete_training(
+            # registry.update_experiment_data( # Custom update or store results in a structured way
             #     experiment_id=experiment_id,
-            #     final_metrics=evaluation_results
+            #     data_to_add={'regression_results': final_summary}
             # )
 
-            # Display results
-            self.logger.info("Regression Evaluation Results:")
-            self.logger.info("=" * 50)
-            self.logger.info("Baseline Model:")
-            self.logger.info(f"Test Loss: {baseline_test_results['test_loss']:.6f}")
-            self.logger.info(f"Test MSE: {baseline_test_results['test_mse']:.6f}")
-            self.logger.info("Encoded Model:")
-            self.logger.info(f"Test Loss: {encoded_test_results['test_loss']:.6f}")
-            self.logger.info(f"Test MSE: {encoded_test_results['test_mse']:.6f}")
-            self.logger.info("Comparison:")
-            self.logger.info(
-                f"Test Loss Ratio: {evaluation_results['comparison']['test_loss_ratio']:.3f}"
-            )
-            self.logger.info(
-                f"Test MSE Ratio: {evaluation_results['comparison']['test_mse_ratio']:.3f}"
-            )
 
-            self.logger.info("Regression evaluation completed successfully")
+            self.logger.info("Regression evaluation (new approach) completed successfully.")
             return True
 
         except Exception as e:
-            self.logger.error(f"Regression evaluation failed: {type(e).__name__}: {str(e)}")
-            self.logger.error("Error context:")
-            raise
+            self.logger.error(f"Regression evaluation (new approach) failed: {type(e).__name__}: {str(e)}")
+            self.logger.exception("Detailed traceback for regression evaluation failure:") # Logs full traceback
+            return False

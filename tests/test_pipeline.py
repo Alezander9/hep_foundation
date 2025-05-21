@@ -24,11 +24,18 @@ def create_test_configs():
                 "input_branches": [
                     "InDetTrackParticlesAuxDyn.d0",
                     "InDetTrackParticlesAuxDyn.z0",
+                    "InDetTrackParticlesAuxDyn.phi",
+                    "derived.InDetTrackParticlesAuxDyn.eta",
+                    "derived.InDetTrackParticlesAuxDyn.pt",
+                    "derived.InDetTrackParticlesAuxDyn.reducedChiSquared",
+
+                    # "InDetTrackParticlesAuxDyn.definingParametersCovMatrixDiag",
+                    # "InDetTrackParticlesAuxDyn.definingParametersCovMatrixOffDiag",
                 ],
                 "filter_branches": [],
                 "sort_by_branch": None,
-                "min_length": 3,
-                "max_length": 10,
+                "min_length": 10,
+                "max_length": 30,
             }
         ],
         label_features=[[]],
@@ -154,8 +161,18 @@ def test_configs():
 
 @pytest.fixture(scope="module")
 def pipeline(experiment_dir):
-    # Use the temp dir as the base_dir for the pipeline
-    return FoundationModelPipeline(base_dir=experiment_dir)
+    # The experiment_dir fixture already creates test_results/test_foundation_experiments
+    # and yields str(test_results/test_foundation_experiments)
+    # We want processed_datasets to be under test_results/, not test_foundation_experiments/
+    # So, the parent of experiment_dir is test_results/
+    
+    experiments_output_path = Path(experiment_dir) # This is test_results/test_foundation_experiments
+    processed_data_parent = experiments_output_path.parent # This is test_results/
+
+    return FoundationModelPipeline(
+        experiments_output_dir=str(experiments_output_path),
+        processed_data_parent_dir=str(processed_data_parent)
+    )
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_logging(experiment_dir):
@@ -241,5 +258,5 @@ def test_evaluate_foundation_model_regression(pipeline, test_configs, experiment
         foundation_model_path=foundation_model_path,
     )
     assert result is True
-    regression_plot = Path(foundation_model_path) / "testing" / "regression_training_comparison.png"
+    regression_plot = Path(foundation_model_path) / "testing" / "regression_evaluation" / "regression_training_comparison.png"
     assert regression_plot.exists(), f"Regression plot {regression_plot} not found"

@@ -4,6 +4,7 @@ import json
 import math
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 
 from hep_foundation.utils import plot_utils
 from hep_foundation.config.logging_config import get_logger
@@ -129,6 +130,10 @@ def create_plot_from_hist_data(
         ax.grid(True, linestyle='--', alpha=0.6)
         ax.tick_params(axis='both', which='major', labelsize=plot_utils.FONT_SIZES['tiny'])
         ax.set_yscale('log')
+
+        # Set y-axis formatter for clean power-of-10 labels
+        ax.yaxis.set_major_formatter(mticker.LogFormatterExponent())
+        ax.yaxis.set_minor_formatter(mticker.NullFormatter())
 
         # Control scientific notation rendering and offset text for the x-axis
         ax.ticklabel_format(style='sci', scilimits=(-3,4), axis='x', useMathText=False)

@@ -31,8 +31,8 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
                     # "InDetTrackParticlesAuxDyn.chiSquared",
                     # "InDetTrackParticlesAuxDyn.numberDoF",
 
-                    # "InDetTrackParticlesAuxDyn.definingParametersCovMatrixDiag",
-                    # "InDetTrackParticlesAuxDyn.definingParametersCovMatrixOffDiag",
+                    "InDetTrackParticlesAuxDyn.definingParametersCovMatrixDiag",
+                    "InDetTrackParticlesAuxDyn.definingParametersCovMatrixOffDiag",
                 ],
                 "filter_branches": [
                     {"branch": "InDetTrackParticlesAuxDyn.d0", "min": -5.0, "max": 5.0},
