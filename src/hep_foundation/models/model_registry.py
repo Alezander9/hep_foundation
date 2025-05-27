@@ -106,17 +106,36 @@ class ModelRegistry:
     def register_experiment(
         self,
         name: str,
-        dataset_id: str,
+        dataset_config: Any,
         model_config: dict,
         training_config: dict,
         description: str = "",
     ) -> str:
         """
-        Register new experiment using existing dataset
+        Register new experiment with complete dataset configuration
         Returns the experiment directory name (which serves as the experiment ID)
+        
+        Args:
+            name: Name of the experiment
+            dataset_config: DatasetConfig object or dataset_id string (for backward compatibility)
+            model_config: Model configuration dictionary
+            training_config: Training configuration dictionary
+            description: Optional experiment description
         """
         # Create experiment directory and folder structure
         exp_dir = self._create_experiment_folders(name)
+
+        # Handle both DatasetConfig objects and dataset_id strings for backward compatibility
+        if hasattr(dataset_config, 'to_dict'):
+            # It's a DatasetConfig object
+            dataset_config_dict = dataset_config.to_dict()
+        elif isinstance(dataset_config, str):
+            # It's a dataset_id string (backward compatibility)
+            dataset_config_dict = {"dataset_id": dataset_config}
+            self.logger.warning("Using dataset_id string is deprecated. Please pass DatasetConfig object instead.")
+        else:
+            # Assume it's already a dictionary
+            dataset_config_dict = dataset_config
 
         # Prepare experiment data
         experiment_data = {
@@ -127,7 +146,7 @@ class ModelRegistry:
                 "status": "created",
                 "environment_info": self._get_environment_info(),
             },
-            "dataset_config": {"dataset_id": dataset_id},
+            "dataset_config": dataset_config_dict,
             "model_config": {
                 "model_type": model_config["model_type"],
                 "architecture": model_config["architecture"],

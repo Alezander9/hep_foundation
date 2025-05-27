@@ -196,11 +196,17 @@ class FoundationModelPipeline:
             for name, dataset in [("train", train_dataset), ("val", val_dataset), ("test", test_dataset)]:
                 try:
                     for batch in dataset.take(1):
-                        if isinstance(batch, tuple):
+                        if isinstance(batch, tuple) and len(batch) == 2:
                             features, labels = batch
                             self.logger.info(f"{name} dataset - Features shape: {features.shape}, Labels shape: {labels.shape}")
-                        else:
+                        elif isinstance(batch, tuple) and len(batch) == 3:
+                            features, labels, indices = batch
+                            self.logger.info(f"{name} dataset - Features shape: {features.shape}, Labels shape: {labels.shape}, Indices shape: {indices.shape}")
+                        elif hasattr(batch, 'shape'):
                             self.logger.info(f"{name} dataset - Batch shape: {batch.shape}")
+                        else:
+                            self.logger.info(f"{name} dataset - Batch type: {type(batch)}, Length: {len(batch) if hasattr(batch, '__len__') else 'N/A'}")
+                        break  # Only inspect the first batch
                 except Exception as e:
                     self.logger.error(f"Error inspecting {name} dataset: {str(e)}")
 
@@ -229,7 +235,7 @@ class FoundationModelPipeline:
             else:
                 self.logger.error(f"Dataset file not found at: {dataset_path}")
 
-            # 4. Register experiment with existing dataset
+            # 4. Register experiment with complete dataset configuration
             self.logger.info("Registering experiment...")
             model_config_dict = {
                 "model_type": model_config["model_type"],
@@ -249,7 +255,7 @@ class FoundationModelPipeline:
             }
             experiment_id = registry.register_experiment(
                 name="Foundation_VAE_Model",
-                dataset_id=dataset_id,
+                dataset_config=dataset_config,
                 model_config=model_config_dict,
                 training_config=training_config_dict,
                 description="Training a foundation VAE model for feature encoding",
@@ -334,6 +340,7 @@ class FoundationModelPipeline:
                     experiment_id=experiment_id,
                     models={
                         "encoder": model.encoder,
+                        "deterministic_encoder": model.deterministic_encoder,
                         "decoder": model.decoder,
                         "full_model": model.model,
                     },
@@ -635,96 +642,120 @@ class FoundationModelPipeline:
         task_config: TaskConfig,
         delete_catalogs: bool = True,
         foundation_model_path: str = None,
+        data_sizes: list = None,
+        fixed_epochs: int = 10,
     ) -> bool:
         """
-        Evaluate a foundation model for regression tasks by comparing three approaches:
-        1. "From Scratch": An encoder (matching foundation model's encoder architecture) + regressor, trained end-to-end.
-        2. "Fine-Tuned": The pre-trained foundation model encoder + regressor, trained end-to-end (encoder is fine-tuned).
-        3. "Fixed": The pre-trained foundation model encoder (frozen) + regressor, only regressor is trained.
+        Evaluate foundation model for regression tasks using data efficiency study.
+        
+        This method trains three models (From Scratch, Fine-Tuned, Fixed) on increasing amounts of training data
+        to show how pre-trained weights help with limited data and demonstrate the value of the foundation model.
+        
+        Args:
+            dataset_config: Configuration for dataset processing
+            dnn_model_config: Configuration for DNN model
+            dnn_training_config: Configuration for DNN training
+            task_config: Configuration for task processing
+            delete_catalogs: Whether to delete catalogs after processing
+            foundation_model_path: Path to the foundation model encoder
+            data_sizes: List of training data sizes to test (e.g., [1000, 2000, 5000, 10000])
+            fixed_epochs: Number of epochs to train each model for each data size
         """
         self.logger.info("=" * 100)
-        self.logger.info("Evaluating Foundation Model for Regression (New Approach)")
+        self.logger.info("Evaluating Foundation Model for Regression (Data Efficiency Study)")
         self.logger.info("=" * 100)
 
         if not foundation_model_path:
-            self.logger.error(
-                "Foundation model path must be provided for regression evaluation."
-            )
+            self.logger.error("Foundation model path must be provided for data efficiency evaluation.")
             return False
         
         foundation_model_dir = Path(foundation_model_path)
-        # New nested path for regression evaluation outputs
-        regression_eval_dir = foundation_model_dir / "testing" / "regression_evaluation"
-        regression_eval_dir.mkdir(parents=True, exist_ok=True)
+        regression_dir = foundation_model_dir / "testing" / "regression_evaluation"
+        regression_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            # Initialize registry (optional, as per original commenting) and data manager
-            # registry = ModelRegistry(str(self.experiments_output_dir))
-            data_manager = DatasetManager(
-                base_dir=self.processed_datasets_dir
-            )
+            # Initialize data manager
+            data_manager = DatasetManager(base_dir=self.processed_datasets_dir)
 
-            # 1. Load dataset with regression labels
-            self.logger.info("Loading datasets with regression labels...")
+            # 1. Load full dataset with regression labels
+            self.logger.info("Loading full dataset with regression labels...")
             train_dataset, val_dataset, test_dataset = data_manager.load_atlas_datasets(
                 dataset_config=dataset_config,
                 validation_fraction=dataset_config.validation_fraction,
                 test_fraction=dataset_config.test_fraction,
                 batch_size=dnn_training_config.batch_size,
                 shuffle_buffer=dataset_config.shuffle_buffer,
-                include_labels=True,  # Ensure labels are included
+                include_labels=True,
                 delete_catalogs=delete_catalogs,
             )
 
-            dataset_config.validate()
-            self.logger.info("Validated dataset config")
-            dnn_training_config.validate()
-            self.logger.info("Validated training config")
+            # Count total training events
+            total_train_events = 0
+            for batch in train_dataset:
+                batch_size = tf.shape(batch[0])[0]
+                total_train_events += batch_size.numpy()
+            
+            self.logger.info(f"Total training events available: {total_train_events}")
 
-            original_input_shape = (task_config.input.get_total_feature_size(),)
-            regression_output_shape = (
-                task_config.labels[0].get_total_feature_size(),
-            )
+            # Generate data sizes if not provided
+            if data_sizes is None:
+                data_sizes = []
+                size = 1000
+                while size < total_train_events:
+                    data_sizes.append(size)
+                    if size < 10000:
+                        size += 1000
+                    elif size < 50000:
+                        size += 5000
+                    else:
+                        size += 10000
+                # Add the full dataset size
+                data_sizes.append(total_train_events)
+            
+            # Filter data_sizes to only include sizes <= total_train_events
+            data_sizes = [size for size in data_sizes if size <= total_train_events]
+            self.logger.info(f"Data sizes to test: {data_sizes}")
 
             # 2. Load Pre-trained Foundation Encoder & its Config
-            self.logger.info(f"Loading foundation model VAE encoder and its configuration from: {foundation_model_dir}")
+            self.logger.info(f"Loading foundation model configuration from: {foundation_model_dir}")
             
-            # Load VAE experiment config to get encoder architecture
             vae_config_path = foundation_model_dir / "experiment_data.json"
             if not vae_config_path.exists():
                 self.logger.error(f"Foundation model experiment data not found at: {vae_config_path}")
                 return False
+            
             with open(vae_config_path) as f:
                 vae_experiment_data = json.load(f)
             
             if "experiment_info" in vae_experiment_data and "model_config" in vae_experiment_data["experiment_info"]:
                 original_vae_model_config = vae_experiment_data["experiment_info"]["model_config"]
-            elif "model_config" in vae_experiment_data: # Fallback for older structures
+            elif "model_config" in vae_experiment_data:
                 original_vae_model_config = vae_experiment_data["model_config"]
             else:
                 self.logger.error(f"Could not find 'model_config' in VAE experiment data: {vae_config_path}")
                 return False
 
-            if not original_vae_model_config or original_vae_model_config.get("model_type") != "variational_autoencoder":
-                self.logger.error(f"Loaded config from {vae_config_path} is not for a variational_autoencoder.")
-                return False
-
             vae_arch_config = original_vae_model_config["architecture"]
             latent_dim = vae_arch_config["latent_dim"]
-            encoder_hidden_layers = vae_arch_config.get("encoder_layers", []) # E.g. [128, 64, 48]
+            encoder_hidden_layers = vae_arch_config.get("encoder_layers", [])
             encoder_activation = vae_arch_config.get("activation", "relu")
 
-            # Load the pre-trained VAE encoder model part
-            # This model typically outputs [z_mean, z_log_var, z]. We need z_mean.
-            pretrained_vae_full_encoder_path = foundation_model_dir / "models" / "foundation_model" / "encoder"
-            if not pretrained_vae_full_encoder_path.exists():
-                self.logger.error(f"Pretrained VAE encoder model not found at {pretrained_vae_full_encoder_path}")
+            # Load the pre-trained deterministic encoder directly
+            pretrained_deterministic_encoder_path = foundation_model_dir / "models" / "foundation_model" / "deterministic_encoder"
+            if not pretrained_deterministic_encoder_path.exists():
+                self.logger.error(f"Pretrained deterministic encoder not found at {pretrained_deterministic_encoder_path}")
                 return False
             
-            self.logger.info(f"Loading pre-trained VAE full encoder from: {pretrained_vae_full_encoder_path}")
-            pretrained_vae_full_encoder = tf.keras.models.load_model(pretrained_vae_full_encoder_path)
-            self.logger.info("Pre-trained VAE full encoder loaded.")
+            self.logger.info(f"Loading pre-trained deterministic encoder from: {pretrained_deterministic_encoder_path}")
+            pretrained_deterministic_encoder = tf.keras.models.load_model(pretrained_deterministic_encoder_path)
+            
+            self.logger.info(f"Loaded deterministic encoder with output shape: {pretrained_deterministic_encoder.output.shape}")
+            self.logger.info("Deterministic encoder layers:")
+            for layer in pretrained_deterministic_encoder.layers:
+                self.logger.info(f"  {layer.name}: {layer.output_shape if hasattr(layer, 'output_shape') else 'N/A'}")
 
+            original_input_shape = (task_config.input.get_total_feature_size(),)
+            regression_output_shape = (task_config.labels[0].get_total_feature_size(),)
 
             # Helper function to build regressor head
             def build_regressor_head(name_suffix: str) -> tf.keras.Model:
@@ -741,231 +772,210 @@ class FoundationModelPipeline:
                 regressor_model_wrapper = ModelFactory.create_model(
                     model_type="dnn_predictor", config=regressor_config
                 )
-                if regressor_model_wrapper is None:
-                    self.logger.error(f"ModelFactory returned None for dnn_predictor '{name_suffix}'. Cannot build regressor head.")
-                    raise ValueError(f"ModelFactory failed for dnn_predictor '{name_suffix}'")
-                
-                # The DNNEstimator's build method might take input_shape, or derive it from config.
-                # The config already has input_shape=(latent_dim,)
-                regressor_model_wrapper.build() # This should populate regressor_model_wrapper.model
-                
-                if regressor_model_wrapper.model is None:
-                    self.logger.error(f"Regressor wrapper '{name_suffix}' built, but its .model is still None.")
-                    raise ValueError(f"Regressor wrapper '{name_suffix}' .model is None after build.")
-                
-                return regressor_model_wrapper.model # This is the actual Keras DNN model
-                
-            # Helper function to train and evaluate a model
-            def train_and_evaluate_model(model_name: str, combined_keras_model: tf.keras.Model, plots_subdir: str):
-                self.logger.info(f"Training {model_name} model...")
-                # combined_keras_model.summary(print_fn=self.logger.info) # Log summary of the Keras model
+                regressor_model_wrapper.build()
+                return regressor_model_wrapper.model
 
+            # Helper function to create subset dataset
+            def create_subset_dataset(dataset, num_events):
+                """Create a subset of the dataset with exactly num_events events"""
+                # Convert to unbatched dataset to count events precisely
+                unbatched = dataset.unbatch()
+                subset = unbatched.take(num_events)
+                # Rebatch with original batch size
+                return subset.batch(dnn_training_config.batch_size)
+
+            # Helper function to train and evaluate a model for a specific data size
+            def train_and_evaluate_for_size(model_name: str, combined_keras_model: tf.keras.Model, 
+                                          train_subset, data_size: int):
+                self.logger.info(f"Training {model_name} model with {data_size} events...")
+                
                 # Wrap the Keras model with CustomKerasModelWrapper for ModelTrainer
                 wrapped_model_for_trainer = CustomKerasModelWrapper(combined_keras_model, name=model_name)
-                wrapped_model_for_trainer.summary() # Log summary via wrapper
-
+                
                 trainer_config_dict = {
                     "batch_size": dnn_training_config.batch_size,
-                    "epochs": dnn_training_config.epochs,
+                    "epochs": fixed_epochs,  # Use fixed epochs for fair comparison
                     "learning_rate": dnn_training_config.learning_rate,
-                    "early_stopping": dnn_training_config.early_stopping,
+                    "early_stopping": {"patience": fixed_epochs + 1, "min_delta": 0},  # Disable early stopping
                 }
-                # Note: ModelTrainer will call wrapped_model_for_trainer.compile() and wrapped_model_for_trainer.build()
+                
                 trainer = ModelTrainer(model=wrapped_model_for_trainer, training_config=trainer_config_dict)
                 
-                model_plots_dir = regression_eval_dir / plots_subdir
-                model_plots_dir.mkdir(parents=True, exist_ok=True)
-
+                # Train without plots to speed up
                 training_results = trainer.train(
-                    dataset=train_dataset,
+                    dataset=train_subset,
                     validation_data=val_dataset,
-                    callbacks=[
-                        tf.keras.callbacks.EarlyStopping(
-                            patience=dnn_training_config.early_stopping["patience"],
-                            min_delta=dnn_training_config.early_stopping["min_delta"],
-                            restore_best_weights=True,
-                        )
-                    ],
-                    plot_training=True,
-                    plots_dir=model_plots_dir,
+                    callbacks=[],  # No callbacks for speed
+                    plot_training=False,
                 )
+                
+                # Evaluate on test set
                 test_metrics = trainer.evaluate(test_dataset)
-                self.logger.info(f"{model_name} - Test Metrics: {test_metrics}")
-                return training_results, test_metrics
+                test_loss = test_metrics.get('test_loss', test_metrics.get('test_mse', 0.0))
+                
+                self.logger.info(f"{model_name} with {data_size} events - Test Loss: {test_loss:.6f}")
+                return test_loss
 
-            all_training_histories = {}
-            all_test_metrics = {}
+            # Store results for plotting
+            results = {
+                "data_sizes": data_sizes,
+                "From_Scratch": [],
+                "Fine_Tuned": [],
+                "Fixed_Encoder": []
+            }
 
-            # --- Model 1: "From Scratch" ---
-            self.logger.info("-" * 50)
-            self.logger.info("Building Model 1: From Scratch")
+            # 3. Run experiments for each data size
+            for data_size in data_sizes:
+                self.logger.info(f"\n{'='*50}")
+                self.logger.info(f"Training with {data_size} events")
+                self.logger.info(f"{'='*50}")
+                
+                # Create subset of training data
+                train_subset = create_subset_dataset(train_dataset, data_size)
+                
+                # --- Model 1: From Scratch ---
+                self.logger.info("Building From Scratch model...")
+                scratch_encoder_layers = []
+                for units in encoder_hidden_layers:
+                    scratch_encoder_layers.append(tf.keras.layers.Dense(units, activation=encoder_activation))
+                scratch_encoder_layers.append(tf.keras.layers.Dense(latent_dim, name="scratch_latent_space"))
+                
+                scratch_encoder_part = tf.keras.Sequential(scratch_encoder_layers, name="scratch_encoder")
+                scratch_regressor_dnn = build_regressor_head("from_scratch")
+                
+                model_inputs = tf.keras.Input(shape=original_input_shape, name="input_features")
+                encoded_scratch = scratch_encoder_part(model_inputs)
+                predictions_scratch = scratch_regressor_dnn(encoded_scratch)
+                model_from_scratch = tf.keras.Model(
+                    inputs=model_inputs, outputs=predictions_scratch, name="Regressor_From_Scratch"
+                )
+                
+                scratch_loss = train_and_evaluate_for_size("From_Scratch", model_from_scratch, train_subset, data_size)
+                results["From_Scratch"].append(scratch_loss)
+                
+                # --- Model 2: Fine-Tuned ---
+                self.logger.info("Building Fine-Tuned model...")
+                # Create a functional copy of the deterministic encoder for fine-tuning
+                # We can't use clone_model with QKeras layers, so we'll create a new model
+                # that uses the same layers but allows training
+                fine_tuned_input = tf.keras.Input(shape=original_input_shape, name="fine_tuned_input")
+                fine_tuned_encoded = pretrained_deterministic_encoder(fine_tuned_input)
+                fine_tuned_encoder_part = tf.keras.Model(
+                    inputs=fine_tuned_input,
+                    outputs=fine_tuned_encoded,
+                    name="fine_tuned_pretrained_encoder"
+                )
+                fine_tuned_encoder_part.trainable = True
+                
+                fine_tuned_regressor_dnn = build_regressor_head("fine_tuned")
+                
+                model_inputs_ft = tf.keras.Input(shape=original_input_shape, name="input_features_ft")
+                encoded_ft = fine_tuned_encoder_part(model_inputs_ft)
+                predictions_ft = fine_tuned_regressor_dnn(encoded_ft)
+                model_fine_tuned = tf.keras.Model(
+                    inputs=model_inputs_ft, outputs=predictions_ft, name="Regressor_Fine_Tuned"
+                )
+                
+                finetuned_loss = train_and_evaluate_for_size("Fine_Tuned", model_fine_tuned, train_subset, data_size)
+                results["Fine_Tuned"].append(finetuned_loss)
+                
+                # --- Model 3: Fixed Encoder ---
+                self.logger.info("Building Fixed Encoder model...")
+                # Create a functional copy of the deterministic encoder for fixed use
+                # We can't use clone_model with QKeras layers, so we'll create a new model
+                # that uses the same layers but freezes them
+                fixed_input = tf.keras.Input(shape=original_input_shape, name="fixed_input")
+                fixed_encoded = pretrained_deterministic_encoder(fixed_input)
+                fixed_encoder_part = tf.keras.Model(
+                    inputs=fixed_input,
+                    outputs=fixed_encoded,
+                    name="fixed_pretrained_encoder"
+                )
+                fixed_encoder_part.trainable = False
+                
+                fixed_regressor_dnn = build_regressor_head("fixed_encoder")
+                
+                model_inputs_fx = tf.keras.Input(shape=original_input_shape, name="input_features_fx")
+                encoded_fx = fixed_encoder_part(model_inputs_fx)
+                predictions_fx = fixed_regressor_dnn(encoded_fx)
+                model_fixed = tf.keras.Model(
+                    inputs=model_inputs_fx, outputs=predictions_fx, name="Regressor_Fixed_Encoder"
+                )
+                
+                fixed_loss = train_and_evaluate_for_size("Fixed_Encoder", model_fixed, train_subset, data_size)
+                results["Fixed_Encoder"].append(fixed_loss)
+
+            # 4. Save results and create plot
+            self.logger.info("Creating data efficiency plot...")
             
-            scratch_encoder_layers = []
-            for units in encoder_hidden_layers:
-                scratch_encoder_layers.append(tf.keras.layers.Dense(units, activation=encoder_activation))
-            scratch_encoder_layers.append(tf.keras.layers.Dense(latent_dim, name="scratch_latent_space")) # No activation for latent typically
-
-            scratch_encoder_part = tf.keras.Sequential(scratch_encoder_layers, name="scratch_encoder")
+            # Save results to JSON
+            results_file = regression_dir / "regression_data_efficiency_results.json"
+            with open(results_file, 'w') as f:
+                json.dump(results, f, indent=2)
+            self.logger.info(f"Results saved to: {results_file}")
             
-            scratch_regressor_dnn = build_regressor_head("from_scratch")
-
-            model_inputs = tf.keras.Input(shape=original_input_shape, name="input_features")
-            encoded_scratch = scratch_encoder_part(model_inputs)
-            predictions_scratch = scratch_regressor_dnn(encoded_scratch)
-            model_from_scratch = tf.keras.Model(
-                inputs=model_inputs, outputs=predictions_scratch, name="Regressor_From_Scratch"
-            )
-            
-            scratch_results, scratch_test_metrics = train_and_evaluate_model(
-                "From_Scratch", model_from_scratch, "from_scratch_plots"
-            )
-            all_training_histories["From_Scratch"] = scratch_results.get("history", {})
-            all_test_metrics["From_Scratch"] = scratch_test_metrics
-
-
-            # --- Model 2: "Fine-Tuned" ---
-            self.logger.info("-" * 50)
-            self.logger.info("Building Model 2: Fine-Tuned Pre-trained Encoder")
-
-            # Adapt pre-trained VAE encoder to output only z_mean (or equivalent single tensor)
-            vae_encoder_input_layer = tf.keras.Input(shape=original_input_shape, name="vae_encoder_input")
-            vae_encoder_all_outputs = pretrained_vae_full_encoder(vae_encoder_input_layer)
-            
-            # Assuming z_mean is the first output if multiple, or the direct output if single
-            if isinstance(vae_encoder_all_outputs, list):
-                if not vae_encoder_all_outputs:
-                    self.logger.error("Pretrained VAE encoder returned an empty list of outputs.")
-                    return False
-                latent_representation_output = vae_encoder_all_outputs[0] 
-            else:
-                latent_representation_output = vae_encoder_all_outputs
-
-            fine_tuned_encoder_part = tf.keras.Model(
-                inputs=vae_encoder_input_layer, 
-                outputs=latent_representation_output, 
-                name="fine_tuned_pretrained_encoder"
-            )
-            fine_tuned_encoder_part.trainable = True # Ensure it's trainable
-
-            fine_tuned_regressor_dnn = build_regressor_head("fine_tuned")
-
-            model_inputs_ft = tf.keras.Input(shape=original_input_shape, name="input_features_ft")
-            encoded_ft = fine_tuned_encoder_part(model_inputs_ft)
-            predictions_ft = fine_tuned_regressor_dnn(encoded_ft)
-            model_fine_tuned = tf.keras.Model(
-                inputs=model_inputs_ft, outputs=predictions_ft, name="Regressor_Fine_Tuned"
-            )
-
-            finetuned_results, finetuned_test_metrics = train_and_evaluate_model(
-                "Fine_Tuned", model_fine_tuned, "fine_tuned_plots"
-            )
-            all_training_histories["Fine_Tuned"] = finetuned_results.get("history", {})
-            all_test_metrics["Fine_Tuned"] = finetuned_test_metrics
-
-            # --- Model 3: "Fixed" (Feature Extractor) ---
-            self.logger.info("-" * 50)
-            self.logger.info("Building Model 3: Fixed Pre-trained Encoder")
-
-            # Re-define or clone the encoder part to set trainable to False cleanly
-            # We can reuse the same structure as fine_tuned_encoder_part but set trainable status
-            fixed_encoder_part = tf.keras.Model(
-                inputs=vae_encoder_input_layer, # re-use input definition for clarity
-                outputs=latent_representation_output, # re-use output definition
-                name="fixed_pretrained_encoder"
-            )
-            # CRITICAL: Set trainable to False *before* compiling the combined model
-            fixed_encoder_part.trainable = False
-
-            fixed_regressor_dnn = build_regressor_head("fixed_encoder")
-            
-            model_inputs_fx = tf.keras.Input(shape=original_input_shape, name="input_features_fx")
-            encoded_fx = fixed_encoder_part(model_inputs_fx) # Encoder is frozen here
-            predictions_fx = fixed_regressor_dnn(encoded_fx)
-            model_fixed = tf.keras.Model(
-                inputs=model_inputs_fx, outputs=predictions_fx, name="Regressor_Fixed_Encoder"
-            )
-
-            fixed_results, fixed_test_metrics = train_and_evaluate_model(
-                "Fixed_Encoder", model_fixed, "fixed_encoder_plots"
-            )
-            all_training_histories["Fixed_Encoder"] = fixed_results.get("history", {})
-            all_test_metrics["Fixed_Encoder"] = fixed_test_metrics
-            
-            # 6. Generate combined training plot for all three models
-            self.logger.info("-" * 50)
-            self.logger.info("Generating combined training plot...")
+            # Create the plot
             try:
-                if any(all_training_histories.values()):
-                    comparison_plot_path = regression_eval_dir / "regression_training_comparison.png"
-                    plot_combined_training_histories(
-                        histories=all_training_histories,
-                        output_path=comparison_plot_path,
-                        title="Regression Training Comparison: Scratch vs Fine-Tuned vs Fixed",
-                    )
-                    self.logger.info(f"Combined training plot saved to: {comparison_plot_path}")
-                else:
-                    self.logger.warning("Skipping combined plot: No history data found.")
-            except Exception as plot_error:
-                self.logger.error(f"Failed to generate combined training plot: {plot_error}")
-
-            # 7. Display and Save Final Evaluation Results
-            self.logger.info("=" * 100)
-            self.logger.info("Final Regression Evaluation Summary")
-            self.logger.info("=" * 100)
-
-            final_summary = {}
-            for model_name, test_metrics in all_test_metrics.items():
-                self.logger.info(f"--- {model_name} Model ---")
-                self.logger.info(f"  Test Loss: {test_metrics.get('test_loss', 'N/A'):.6f}")
-                self.logger.info(f"  Test MSE: {test_metrics.get('test_mse', 'N/A'):.6f}")
-                # Add other relevant metrics if present
-                for metric, value in test_metrics.items():
-                    if metric not in ['test_loss', 'test_mse']:
-                         self.logger.info(f"  Test {metric}: {value:.6f}")
-                final_summary[model_name] = {
-                    "training_metrics": all_training_histories[model_name].get("final_metrics", {}), # if available
-                    "test_metrics": test_metrics,
-                    "epochs_completed": all_training_histories[model_name].get("epochs_completed", "N/A") # if available
-                }
-            
-            # Save summary to a JSON file
-            summary_file_path = regression_eval_dir / "regression_evaluation_summary.json"
-            try:
-                with open(summary_file_path, 'w') as f:
-                    # Helper to convert numpy types if any sneak in, though ModelTrainer usually returns native types
-                    def ensure_serializable_summary(obj):
-                        if isinstance(obj, np.integer): return int(obj)
-                        if isinstance(obj, np.floating): return float(obj)
-                        if isinstance(obj, np.ndarray): return obj.tolist()
-                        if isinstance(obj, dict): return {k: ensure_serializable_summary(v) for k, v in obj.items()}
-                        if isinstance(obj, list): return [ensure_serializable_summary(i) for i in obj]
-                        return obj
-                    json.dump(ensure_serializable_summary(final_summary), f, indent=2)
-                self.logger.info(f"Regression evaluation summary saved to: {summary_file_path}")
+                import matplotlib.pyplot as plt
+                from hep_foundation.utils.plot_utils import (
+                    FONT_SIZES, LINE_WIDTHS, get_color_cycle, get_figure_size, set_science_style
+                )
+                
+                set_science_style(use_tex=False)
+                
+                plt.figure(figsize=get_figure_size("single", ratio=1.2))
+                colors = get_color_cycle("high_contrast")
+                
+                # Plot the three models
+                plt.loglog(results["data_sizes"], results["From_Scratch"], 
+                          'o-', color=colors[0], linewidth=LINE_WIDTHS["thick"], 
+                          markersize=8, label="From Scratch")
+                plt.loglog(results["data_sizes"], results["Fine_Tuned"], 
+                          's-', color=colors[1], linewidth=LINE_WIDTHS["thick"], 
+                          markersize=8, label="Fine-Tuned")
+                plt.loglog(results["data_sizes"], results["Fixed_Encoder"], 
+                          '^-', color=colors[2], linewidth=LINE_WIDTHS["thick"], 
+                          markersize=8, label="Fixed Encoder")
+                
+                plt.xlabel("Number of Training Events", fontsize=FONT_SIZES["large"])
+                plt.ylabel("Test Loss (MSE)", fontsize=FONT_SIZES["large"])
+                plt.title("Data Efficiency: Foundation Model Benefits", fontsize=FONT_SIZES["xlarge"])
+                plt.legend(fontsize=FONT_SIZES["normal"], loc="upper right")
+                plt.grid(True, alpha=0.3, which="both")
+                
+                # Save plot
+                plot_file = regression_dir / "regression_data_efficiency_plot.png"
+                plt.savefig(plot_file, dpi=300, bbox_inches="tight")
+                plt.close()
+                
+                self.logger.info(f"Data efficiency plot saved to: {plot_file}")
+                
             except Exception as e:
-                self.logger.error(f"Failed to save regression summary: {str(e)}")
+                self.logger.error(f"Failed to create plot: {str(e)}")
+            
+            # 5. Display summary
+            self.logger.info("=" * 100)
+            self.logger.info("Regression Evaluation Results Summary")
+            self.logger.info("=" * 100)
+            
+            for i, data_size in enumerate(results["data_sizes"]):
+                self.logger.info(f"Training Events: {data_size}")
+                self.logger.info(f"  From Scratch:  {results['From_Scratch'][i]:.6f}")
+                self.logger.info(f"  Fine-Tuned:    {results['Fine_Tuned'][i]:.6f}")
+                self.logger.info(f"  Fixed Encoder: {results['Fixed_Encoder'][i]:.6f}")
+                
+                # Calculate improvement ratios
+                if results['From_Scratch'][i] > 0:
+                    ft_improvement = (results['From_Scratch'][i] - results['Fine_Tuned'][i]) / results['From_Scratch'][i] * 100
+                    fx_improvement = (results['From_Scratch'][i] - results['Fixed_Encoder'][i]) / results['From_Scratch'][i] * 100
+                    self.logger.info(f"  Fine-Tuned improvement: {ft_improvement:.1f}%")
+                    self.logger.info(f"  Fixed improvement: {fx_improvement:.1f}%")
+                self.logger.info("")
 
-
-            # The registry part was commented out in the original, keeping it that way.
-            # If re-enabled, it would need to be adapted for these three models.
-            # Example:
-            # experiment_id = registry.register_experiment(
-            #     name="Foundation Model Regression Evaluation (3-way)",
-            #     dataset_id=data_manager.get_current_dataset_id(),
-            #     model_config={ 'dnn_regressor_head_config': dnn_model_config, 'vae_encoder_config': original_vae_model_config },
-            #     training_config=dnn_training_config, # This might need to be more specific
-            #     description="Comparison of regression: From Scratch, Fine-Tuned Pretrained, Fixed Pretrained"
-            # )
-            # registry.update_experiment_data( # Custom update or store results in a structured way
-            #     experiment_id=experiment_id,
-            #     data_to_add={'regression_results': final_summary}
-            # )
-
-
-            self.logger.info("Regression evaluation (new approach) completed successfully.")
+            self.logger.info("Regression evaluation completed successfully")
             return True
 
         except Exception as e:
-            self.logger.error(f"Regression evaluation (new approach) failed: {type(e).__name__}: {str(e)}")
-            self.logger.exception("Detailed traceback for regression evaluation failure:") # Logs full traceback
+            self.logger.error(f"Regression evaluation failed: {type(e).__name__}: {str(e)}")
+            self.logger.exception("Detailed traceback:")
             return False

@@ -46,6 +46,20 @@ class DatasetConfig:
         if self.task_config is None:
             raise ValueError("task_config must be provided")
 
+    def to_dict(self) -> dict:
+        """Convert DatasetConfig to dictionary for serialization"""
+        return {
+            "run_numbers": self.run_numbers,
+            "signal_keys": self.signal_keys,
+            "catalog_limit": self.catalog_limit,
+            "validation_fraction": self.validation_fraction,
+            "test_fraction": self.test_fraction,
+            "shuffle_buffer": self.shuffle_buffer,
+            "plot_distributions": self.plot_distributions,
+            "include_labels": self.include_labels,
+            "task_config": self.task_config.to_dict() if self.task_config else None,
+        }
+
 
 class DatasetManager:
     """Manages pre-processed ATLAS datasets with integrated processing capabilities"""

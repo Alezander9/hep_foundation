@@ -5,11 +5,11 @@ alwaysApply: true
 ---
 # HEP Foundation Project Overview
 
-This project analyzes High Energy Physics data, specificpally ATLAS PHYSLITE data.
+We are building a foundation model for particle physics. This project analyzes High Energy Physics data, specifically ATLAS PHYSLITE data.
 
 ## Structure & Tooling
 
-- **Layout**: Uses the `src` layout. Core package code is in`.
+- **Layout**: Uses the `src` layout.
 - **Package Management**: Uses` for virtual environments and package installation.
   - Create environment: `uv venv`
   - Activate environment: `source .venv/bin/activate`

@@ -1445,10 +1445,15 @@ class PhysliteFeatureProcessor:
         all_features = np.concatenate(normalized_features, axis=1)
 
         if labels_dict:
-            # Normalize and reshape labels
-            normalized_labels = []
+            # Create labels organized by configuration (not concatenated)
+            # This allows ModelTrainer to select correct label using label_index
+            all_label_configs = []
+            
+            # Process each label configuration separately
             for config_name in sorted(labels_dict.keys()):
                 config_features = labels_dict[config_name]
+                normalized_config_labels = []
+                
                 for name in sorted(config_features.keys()):
                     label_array = config_features[name]
                     if name.startswith("scalar/"):
@@ -1463,11 +1468,15 @@ class PhysliteFeatureProcessor:
                         normalized = (
                             label_array - np.array(params["means"])
                         ) / np.array(params["stds"])
-                    normalized_labels.append(normalized.reshape(n_events, -1))
-
-            # Concatenate normalized labels
-            all_labels = np.concatenate(normalized_labels, axis=1)
-            return tf.data.Dataset.from_tensor_slices((all_features, all_labels))
+                    normalized_config_labels.append(normalized.reshape(n_events, -1))
+                
+                # Concatenate features within this config
+                config_labels = np.concatenate(normalized_config_labels, axis=1)
+                all_label_configs.append(config_labels)
+            
+            # Convert to tuple so ModelTrainer can index by label_index
+            labels_tuple = tuple(all_label_configs)
+            return tf.data.Dataset.from_tensor_slices((all_features, labels_tuple))
         else:
             return tf.data.Dataset.from_tensor_slices(all_features)
 

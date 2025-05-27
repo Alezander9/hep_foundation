@@ -44,6 +44,8 @@ def create_test_configs():
                 {
                     "input_branches": [
                         "MET_Core_AnalysisMETAuxDyn.mpx",
+                        "MET_Core_AnalysisMETAuxDyn.mpy",
+                        "MET_Core_AnalysisMETAuxDyn.sumet",
                     ],
                     "filter_branches": [],
                     "sort_by_branch": None,
@@ -108,7 +110,7 @@ def create_test_configs():
     vae_training_config = TrainingConfig(
         batch_size=1024,
         learning_rate=0.001,
-        epochs=1,
+        epochs=10,
         early_stopping_patience=2,
         early_stopping_min_delta=1e-3,
         plot_training=False,
@@ -117,7 +119,7 @@ def create_test_configs():
     dnn_training_config = TrainingConfig(
         batch_size=1024,
         learning_rate=0.001,
-        epochs=1,
+        epochs=10,
         early_stopping_patience=2,
         early_stopping_min_delta=1e-3,
         plot_training=False,
@@ -208,7 +210,7 @@ def setup_logging(experiment_dir):
     root_logger.removeHandler(console_handler)
     root_logger.removeHandler(file_handler)
 
-def test_train_foundation_model(pipeline, test_configs, experiment_dir):
+def test_01_train_foundation_model(pipeline, test_configs, experiment_dir):
     """Test foundation model training"""
     logger = logging.getLogger(__name__)
     experiment_name = "001_Foundation_VAE_Model"
@@ -226,15 +228,25 @@ def test_train_foundation_model(pipeline, test_configs, experiment_dir):
         
         assert result is True, "Pipeline training returned False"
         assert experiment_path.exists(), f"Experiment dir {experiment_path} not found"
+        
+        # Verify that the experiment_data.json file was created
+        experiment_data_path = experiment_path / "experiment_data.json"
+        assert experiment_data_path.exists(), f"Experiment data file not found at {experiment_data_path}"
+        
         logger.info("Foundation model training test completed successfully")
         
     except Exception as e:
         logger.error(f"Foundation model training failed: {str(e)}")
         raise
 
-def test_evaluate_foundation_model_anomaly_detection(pipeline, test_configs, experiment_dir):
+def test_02_evaluate_foundation_model_anomaly_detection(pipeline, test_configs, experiment_dir):
     experiment_name = "001_Foundation_VAE_Model"
     foundation_model_path = str(Path(experiment_dir) / experiment_name)
+    
+    # Ensure the foundation model exists before proceeding
+    experiment_data_path = Path(foundation_model_path) / "experiment_data.json"
+    assert experiment_data_path.exists(), f"Foundation model not found. Run test_01_train_foundation_model first."
+    
     result = pipeline.evaluate_foundation_model_anomaly_detection(
         dataset_config=test_configs["dataset_config"],
         task_config=test_configs["task_config"],
@@ -246,9 +258,17 @@ def test_evaluate_foundation_model_anomaly_detection(pipeline, test_configs, exp
     anomaly_dir = Path(foundation_model_path) / "testing" / "anomaly_detection"
     assert anomaly_dir.exists(), f"Anomaly detection dir {anomaly_dir} not found"
 
-def test_evaluate_foundation_model_regression(pipeline, test_configs, experiment_dir):
+def test_03_evaluate_foundation_model_regression(pipeline, test_configs, experiment_dir):
     experiment_name = "001_Foundation_VAE_Model"
     foundation_model_path = str(Path(experiment_dir) / experiment_name)
+    
+    # Ensure the foundation model exists before proceeding
+    experiment_data_path = Path(foundation_model_path) / "experiment_data.json"
+    assert experiment_data_path.exists(), f"Foundation model not found. Run test_01_train_foundation_model first."
+    
+    # Use smaller data sizes for testing to speed up the process
+    test_data_sizes = [1000, 2000, 5000]
+    
     result = pipeline.evaluate_foundation_model_regression(
         dataset_config=test_configs["dataset_config"],
         dnn_model_config=test_configs["dnn_model_config"],
@@ -256,7 +276,17 @@ def test_evaluate_foundation_model_regression(pipeline, test_configs, experiment
         task_config=test_configs["task_config"],
         delete_catalogs=False,
         foundation_model_path=foundation_model_path,
+        data_sizes=test_data_sizes,
+        fixed_epochs=3,  # Use fewer epochs for testing
     )
     assert result is True
-    regression_plot = Path(foundation_model_path) / "testing" / "regression_evaluation" / "regression_training_comparison.png"
-    assert regression_plot.exists(), f"Regression plot {regression_plot} not found"
+    
+    # Check that the regression evaluation results were created
+    regression_dir = Path(foundation_model_path) / "testing" / "regression_evaluation"
+    assert regression_dir.exists(), f"Regression evaluation dir {regression_dir} not found"
+    
+    results_file = regression_dir / "regression_data_efficiency_results.json"
+    assert results_file.exists(), f"Regression data efficiency results file {results_file} not found"
+    
+    plot_file = regression_dir / "regression_data_efficiency_plot.png"
+    assert plot_file.exists(), f"Regression data efficiency plot {plot_file} not found"

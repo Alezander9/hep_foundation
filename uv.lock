@@ -807,7 +807,7 @@ wheels = [
 [[package]]
 name = "hep-foundation"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "numpy" },
     { name = "psutil" },

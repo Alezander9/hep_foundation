@@ -150,7 +150,7 @@ def create_plot_from_hist_data(
     for i in range(plot_idx, len(axes)):
         axes[i].axis('off')
     
-    fig.supylabel("Density", fontsize=plot_utils.FONT_SIZES['small'])
+    fig.supylabel("Density (log scale)", fontsize=plot_utils.FONT_SIZES['small'])
 
     if effective_legend_labels and loaded_hist_data_list:
         proxy_handles = []

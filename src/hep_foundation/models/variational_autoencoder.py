@@ -245,6 +245,7 @@ class VariationalAutoEncoder(BaseModel):
 
         # Will be set during build
         self.encoder = None
+        self.deterministic_encoder = None
         self.decoder = None
         self.beta = None
 
@@ -304,6 +305,12 @@ class VariationalAutoEncoder(BaseModel):
             encoder_inputs, [z_mean, z_log_var, z], name="encoder"
         )
         self.logger.info("Built encoder model")
+        
+        # Create deterministic encoder (only z_mean output) for downstream tasks
+        self.deterministic_encoder = keras.Model(
+            encoder_inputs, z_mean, name="deterministic_encoder"
+        )
+        self.logger.info("Built deterministic encoder model")
 
         # Build Decoder
         decoder_inputs = keras.Input(shape=(self.latent_dim,), name="decoder_input")
