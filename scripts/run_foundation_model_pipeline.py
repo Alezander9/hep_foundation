@@ -76,7 +76,7 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
         # run_numbers=run_numbers[-1:],
         signal_keys=["zprime_tt", "wprime_qq", "zprime_bb"],
         # catalog_limit=2,
-        catalog_limit=10,
+        catalog_limit=20,
         validation_fraction=0.15,
         test_fraction=0.15,
         shuffle_buffer=50000,
@@ -91,8 +91,8 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
         "model_type": "variational_autoencoder",
         "architecture": {
             "latent_dim": 32,
-            "encoder_layers": [128, 64, 48],
-            "decoder_layers": [48, 64, 128],
+            "encoder_layers": [128, 128, 64, 48],
+            "decoder_layers": [48, 64, 128, 128],
             "activation": "relu",
             "name": "variational_autoencoder",
         },
@@ -111,7 +111,7 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
         "model_type": "dnn_predictor",
         "architecture": {
             # Input and output shapes are automatically set in the model pipeline
-            "hidden_layers": [128, 64, 32],
+            "hidden_layers": [16, 8, 4],
             "label_index": 0,  # Use first label set
             "activation": "relu",
             "output_activation": "linear",
@@ -128,7 +128,7 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
     vae_training_config = TrainingConfig(
         batch_size=1024,
         learning_rate=0.001,
-        epochs=50,
+        epochs=100,
         # epochs=3,
         early_stopping_patience=10,
         early_stopping_min_delta=1e-4,
@@ -138,13 +138,17 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
     dnn_training_config = TrainingConfig(
         batch_size=1024,
         learning_rate=0.001,
-        epochs=20,
+        epochs=50,
         # epochs=2,
         early_stopping_patience=100,
         early_stopping_min_delta=1e-4,
         plot_training=True,
     )
 
+    # Regression evaluation settings
+    # Data sizes to test for the data efficiency study
+    regression_data_sizes = [1000, 2000, 5000, 10000, 20000, 50000]
+    
     return {
         "dataset_config": dataset_config,
         "vae_model_config": vae_model_config,
@@ -152,6 +156,7 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
         "vae_training_config": vae_training_config,
         "dnn_training_config": dnn_training_config,
         "task_config": task_config,
+        "regression_data_sizes": regression_data_sizes,
     }
 
 
@@ -207,13 +212,15 @@ pipeline = FoundationModelPipeline()
 success = pipeline.run_process(
     process_name="{process_type}",
     dataset_config=configs['dataset_config'],
+    task_config=configs['task_config'],
     vae_model_config=configs['vae_model_config'],
     dnn_model_config=configs['dnn_model_config'],
     vae_training_config=configs['vae_training_config'],
     dnn_training_config=configs['dnn_training_config'],
-    task_config=configs['task_config'],
     delete_catalogs={delete_catalogs},
-    foundation_model_path="{foundation_model_path}"
+    foundation_model_path="{foundation_model_path}",
+    data_sizes=configs['regression_data_sizes'],
+    fixed_epochs=configs['dnn_training_config'].epochs
 )
 sys.exit(0 if success else 1)
                 """,
@@ -228,6 +235,16 @@ sys.exit(0 if success else 1)
         print("=" * 80)
         print(f"Started foundation pipeline process at {timestamp}")
         print(f"Process type: {process_type}")
+        
+        # Show regression-specific parameters
+        if process_type == "regression":
+            configs = create_configs()
+            print(f"Data sizes: {configs['regression_data_sizes']}")
+            print(f"Fixed epochs: {configs['dnn_training_config'].epochs}")
+        
+        if foundation_model_path:
+            print(f"Foundation model: {foundation_model_path}")
+            
         print(f"Logging output to: {log_file}")
         print("Process is running in background. You can close VSCode safely.")
         print(f"To stop the process, run: kill {process.pid}")

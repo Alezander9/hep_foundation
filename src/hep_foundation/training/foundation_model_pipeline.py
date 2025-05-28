@@ -64,13 +64,15 @@ class FoundationModelPipeline:
         self,
         process_name: str,
         dataset_config: DatasetConfig,
-        vae_model_config: dict,
-        dnn_model_config: dict,
-        vae_training_config: TrainingConfig,
-        dnn_training_config: TrainingConfig,
         task_config: TaskConfig,
+        vae_model_config: dict = None,
+        dnn_model_config: dict = None,
+        vae_training_config: TrainingConfig = None,
+        dnn_training_config: TrainingConfig = None,
         delete_catalogs: bool = True,
         foundation_model_path: str = None,
+        data_sizes: list = None,
+        fixed_epochs: int = None,
     ) -> bool:
         """
         Run the specified process with provided configurations.
@@ -78,13 +80,15 @@ class FoundationModelPipeline:
         Args:
             process_name: Name of the process to run ("train", "anomaly", or "regression")
             dataset_config: Configuration for dataset processing
-            vae_model_config: Configuration for VAE model
-            dnn_model_config: Configuration for DNN model
-            vae_training_config: Configuration for VAE training
-            dnn_training_config: Configuration for DNN training
             task_config: Configuration for task processing
+            vae_model_config: Configuration for VAE model (optional)
+            dnn_model_config: Configuration for DNN model (optional)
+            vae_training_config: Configuration for VAE training (optional)
+            dnn_training_config: Configuration for DNN training (optional)
             delete_catalogs: Whether to delete catalogs after processing
-            foundation_model_path: Path to the foundation model encoder to use for encoding
+            foundation_model_path: Path to the foundation model encoder to use for encoding (optional)
+            data_sizes: List of training data sizes for regression evaluation (optional)
+            fixed_epochs: Number of epochs for regression evaluation (optional)
         """
         valid_processes = ["train", "anomaly", "regression"]
         if process_name not in valid_processes:
@@ -93,34 +97,44 @@ class FoundationModelPipeline:
             )
             return False
 
+        # Define method mapping with all possible parameters
+        method_map = {
+            "train": self.train_foundation_model,
+            "anomaly": self.evaluate_foundation_model_anomaly_detection,
+            "regression": self.evaluate_foundation_model_regression,
+        }
+
+        # Get the method to call
+        method = method_map[process_name]
+
+        # Prepare common arguments that all methods accept
+        common_args = {
+            "dataset_config": dataset_config,
+            "task_config": task_config,
+            "delete_catalogs": delete_catalogs,
+        }
+
+        # Add optional arguments based on what each method accepts
         if process_name == "train":
-            return self.train_foundation_model(
-                dataset_config=dataset_config,
-                model_config=vae_model_config,
-                training_config=vae_training_config,
-                task_config=task_config,
-                delete_catalogs=delete_catalogs,
-            )
+            common_args.update({
+                "model_config": vae_model_config,
+                "training_config": vae_training_config,
+            })
         elif process_name == "anomaly":
-            return self.evaluate_foundation_model_anomaly_detection(
-                dataset_config=dataset_config,
-                task_config=task_config,
-                delete_catalogs=delete_catalogs,
-                foundation_model_path=foundation_model_path,
-                vae_training_config=vae_training_config,
-            )
+            common_args.update({
+                "foundation_model_path": foundation_model_path,
+                "vae_training_config": vae_training_config,
+            })
         elif process_name == "regression":
-            return self.evaluate_foundation_model_regression(
-                dataset_config=dataset_config,
-                dnn_model_config=dnn_model_config,
-                dnn_training_config=dnn_training_config,
-                task_config=task_config,
-                delete_catalogs=delete_catalogs,
-                foundation_model_path=foundation_model_path,
-            )
-        else:
-            self.logger.error(f"Unknown process name: {process_name}")
-            return False
+            common_args.update({
+                "dnn_model_config": dnn_model_config,
+                "dnn_training_config": dnn_training_config,
+                "foundation_model_path": foundation_model_path,
+                "data_sizes": data_sizes,
+                "fixed_epochs": fixed_epochs,
+            })
+
+        return method(**common_args)
 
     def train_foundation_model(
         self,
