@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 import numpy as np
 import tensorflow as tf
@@ -73,7 +73,7 @@ class FoundationModelPipeline:
         foundation_model_path: str = None,
         data_sizes: list = None,
         fixed_epochs: int = None,
-    ) -> bool:
+    ) -> Union[bool, str]:
         """
         Run the specified process with provided configurations.
 
@@ -89,6 +89,10 @@ class FoundationModelPipeline:
             foundation_model_path: Path to the foundation model encoder to use for encoding (optional)
             data_sizes: List of training data sizes for regression evaluation (optional)
             fixed_epochs: Number of epochs for regression evaluation (optional)
+            
+        Returns:
+            bool: Success status for anomaly/regression processes
+            str: Foundation model path for train process, or None if training failed
         """
         valid_processes = ["train", "anomaly", "regression"]
         if process_name not in valid_processes:
@@ -136,6 +140,122 @@ class FoundationModelPipeline:
 
         return method(**common_args)
 
+    def run_full_pipeline(
+        self,
+        dataset_config: DatasetConfig,
+        task_config: TaskConfig,
+        vae_model_config: dict,
+        dnn_model_config: dict,
+        vae_training_config: TrainingConfig,
+        dnn_training_config: TrainingConfig,
+        delete_catalogs: bool = True,
+        data_sizes: list = None,
+        fixed_epochs: int = None,
+    ) -> bool:
+        """
+        Run the complete foundation model pipeline: train → regression → anomaly.
+        
+        This method runs all three processes sequentially, using the trained model
+        from the training phase for both evaluation tasks.
+        
+        Args:
+            dataset_config: Configuration for dataset processing
+            task_config: Configuration for task processing
+            vae_model_config: Configuration for VAE model
+            dnn_model_config: Configuration for DNN model
+            vae_training_config: Configuration for VAE training
+            dnn_training_config: Configuration for DNN training
+            delete_catalogs: Whether to delete catalogs after processing
+            data_sizes: List of training data sizes for regression evaluation (optional)
+            fixed_epochs: Number of epochs for regression evaluation (optional)
+            
+        Returns:
+            bool: True if all processes completed successfully, False otherwise
+        """
+        self.logger.info("=" * 100)
+        self.logger.info("RUNNING FULL FOUNDATION MODEL PIPELINE")
+        self.logger.info("Process: Train → Regression → Anomaly Detection")
+        self.logger.info("=" * 100)
+        
+        try:
+            # Step 1: Train the foundation model
+            self.logger.info("\n" + "="*50)
+            self.logger.info("STEP 1/3: TRAINING FOUNDATION MODEL")
+            self.logger.info("="*50)
+            
+            foundation_model_path = self.run_process(
+                process_name="train",
+                dataset_config=dataset_config,
+                task_config=task_config,
+                vae_model_config=vae_model_config,
+                vae_training_config=vae_training_config,
+                delete_catalogs=delete_catalogs,
+            )
+            
+            if not foundation_model_path or not isinstance(foundation_model_path, str):
+                self.logger.error("Training failed or did not return a valid model path")
+                return False
+                
+            self.logger.info(f"Training completed successfully. Model saved at: {foundation_model_path}")
+            
+            # Step 2: Run regression evaluation
+            self.logger.info("\n" + "="*50)
+            self.logger.info("STEP 2/3: REGRESSION EVALUATION")
+            self.logger.info("="*50)
+            
+            regression_success = self.run_process(
+                process_name="regression",
+                dataset_config=dataset_config,
+                task_config=task_config,
+                dnn_model_config=dnn_model_config,
+                dnn_training_config=dnn_training_config,
+                foundation_model_path=foundation_model_path,
+                data_sizes=data_sizes,
+                fixed_epochs=fixed_epochs,
+                delete_catalogs=delete_catalogs,
+            )
+            
+            if not regression_success:
+                self.logger.error("Regression evaluation failed")
+                return False
+                
+            self.logger.info("Regression evaluation completed successfully")
+            
+            # Step 3: Run anomaly detection evaluation
+            self.logger.info("\n" + "="*50)
+            self.logger.info("STEP 3/3: ANOMALY DETECTION EVALUATION")
+            self.logger.info("="*50)
+            
+            anomaly_success = self.run_process(
+                process_name="anomaly",
+                dataset_config=dataset_config,
+                task_config=task_config,
+                foundation_model_path=foundation_model_path,
+                vae_training_config=vae_training_config,
+                delete_catalogs=delete_catalogs,
+            )
+            
+            if not anomaly_success:
+                self.logger.error("Anomaly detection evaluation failed")
+                return False
+                
+            self.logger.info("Anomaly detection evaluation completed successfully")
+            
+            # Final summary
+            self.logger.info("\n" + "="*100)
+            self.logger.info("FULL PIPELINE COMPLETED SUCCESSFULLY")
+            self.logger.info("="*100)
+            self.logger.info(f"Foundation model: {foundation_model_path}")
+            self.logger.info("All three processes (train → regression → anomaly) completed successfully")
+            self.logger.info("="*100)
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Full pipeline failed: {type(e).__name__}: {str(e)}")
+            self.logger.exception("Detailed traceback:")
+            return False
+
     def train_foundation_model(
         self,
         dataset_config: DatasetConfig,
@@ -143,9 +263,12 @@ class FoundationModelPipeline:
         training_config: TrainingConfig,
         task_config: TaskConfig,
         delete_catalogs: bool = True,
-    ) -> bool:
+    ) -> Union[str, None]:
         """
         Train a foundation model using provided configurations.
+        
+        Returns:
+            str: Path to the trained foundation model directory, or None if training failed
         """
         self.logger.info("=" * 100)
         self.logger.info("Training Foundation Model")
@@ -417,7 +540,11 @@ class FoundationModelPipeline:
                 print_metrics(training_results["final_metrics"])
 
             self.logger.info("Foundation model training completed successfully")
-            return True
+            
+            # Return the path to the trained model for use in subsequent evaluations
+            foundation_model_path = str(self.experiments_output_dir / experiment_id)
+            self.logger.info(f"Foundation model saved at: {foundation_model_path}")
+            return foundation_model_path
 
         except Exception as e:
             self.logger.error(

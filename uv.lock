@@ -816,6 +816,7 @@ dependencies = [
     { name = "requests" },
     { name = "seaborn" },
     { name = "tensorflow" },
+    { name = "tensorflow-model-optimization" },
     { name = "tqdm" },
     { name = "uproot" },
 ]
@@ -836,6 +837,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.32.3" },
     { name = "seaborn", specifier = ">=0.13.2" },
     { name = "tensorflow", specifier = "==2.13.1" },
+    { name = "tensorflow-model-optimization", specifier = ">=0.7.3" },
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "uproot", specifier = ">=5.6.0" },
 ]

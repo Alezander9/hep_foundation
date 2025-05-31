@@ -213,7 +213,6 @@ def setup_logging(experiment_dir):
 def test_01_train_foundation_model(pipeline, test_configs, experiment_dir):
     """Test foundation model training"""
     logger = logging.getLogger(__name__)
-    experiment_name = "001_Foundation_VAE_Model"
     
     logger.info("Starting foundation model training test")
     try:
@@ -224,28 +223,32 @@ def test_01_train_foundation_model(pipeline, test_configs, experiment_dir):
             task_config=test_configs["task_config"],
             delete_catalogs=False,
         )
-        experiment_path = Path(experiment_dir) / experiment_name
         
-        assert result is True, "Pipeline training returned False"
+        # Now train_foundation_model returns the model path as a string, not True
+        assert isinstance(result, str), f"Pipeline training should return a string path, got {type(result)}"
+        assert result, "Pipeline training returned empty string or None"
+        
+        experiment_path = Path(result)
         assert experiment_path.exists(), f"Experiment dir {experiment_path} not found"
         
         # Verify that the experiment_data.json file was created
         experiment_data_path = experiment_path / "experiment_data.json"
         assert experiment_data_path.exists(), f"Experiment data file not found at {experiment_data_path}"
         
-        logger.info("Foundation model training test completed successfully")
+        logger.info(f"Foundation model training test completed successfully. Model saved at: {result}")
         
     except Exception as e:
         logger.error(f"Foundation model training failed: {str(e)}")
         raise
 
 def test_02_evaluate_foundation_model_anomaly_detection(pipeline, test_configs, experiment_dir):
-    experiment_name = "001_Foundation_VAE_Model"
-    foundation_model_path = str(Path(experiment_dir) / experiment_name)
+    # We need to find the model that was trained in test_01
+    # Since the experiment name is generated dynamically, we need to find it
+    experiment_dirs = list(Path(experiment_dir).glob("*"))
+    model_dirs = [d for d in experiment_dirs if d.is_dir() and (d / "experiment_data.json").exists()]
     
-    # Ensure the foundation model exists before proceeding
-    experiment_data_path = Path(foundation_model_path) / "experiment_data.json"
-    assert experiment_data_path.exists(), f"Foundation model not found. Run test_01_train_foundation_model first."
+    assert len(model_dirs) > 0, "No trained foundation model found. Run test_01_train_foundation_model first."
+    foundation_model_path = str(model_dirs[0])  # Use the first found model
     
     result = pipeline.evaluate_foundation_model_anomaly_detection(
         dataset_config=test_configs["dataset_config"],
@@ -259,12 +262,13 @@ def test_02_evaluate_foundation_model_anomaly_detection(pipeline, test_configs, 
     assert anomaly_dir.exists(), f"Anomaly detection dir {anomaly_dir} not found"
 
 def test_03_evaluate_foundation_model_regression(pipeline, test_configs, experiment_dir):
-    experiment_name = "001_Foundation_VAE_Model"
-    foundation_model_path = str(Path(experiment_dir) / experiment_name)
+    # We need to find the model that was trained in test_01
+    # Since the experiment name is generated dynamically, we need to find it
+    experiment_dirs = list(Path(experiment_dir).glob("*"))
+    model_dirs = [d for d in experiment_dirs if d.is_dir() and (d / "experiment_data.json").exists()]
     
-    # Ensure the foundation model exists before proceeding
-    experiment_data_path = Path(foundation_model_path) / "experiment_data.json"
-    assert experiment_data_path.exists(), f"Foundation model not found. Run test_01_train_foundation_model first."
+    assert len(model_dirs) > 0, "No trained foundation model found. Run test_01_train_foundation_model first."
+    foundation_model_path = str(model_dirs[0])  # Use the first found model
     
     # Use smaller data sizes for testing to speed up the process
     test_data_sizes = [1000, 2000, 5000]
@@ -290,3 +294,60 @@ def test_03_evaluate_foundation_model_regression(pipeline, test_configs, experim
     
     plot_file = regression_dir / "regression_data_efficiency_plot.png"
     assert plot_file.exists(), f"Regression data efficiency plot {plot_file} not found"
+
+def test_04_run_full_pipeline(pipeline, test_configs, experiment_dir):
+    """Test the full pipeline (train → regression → anomaly)"""
+    logger = logging.getLogger(__name__)
+    
+    logger.info("Starting full pipeline test")
+    try:
+        # Use smaller data sizes for testing to speed up the process
+        test_data_sizes = [1000, 2000]
+        
+        result = pipeline.run_full_pipeline(
+            dataset_config=test_configs["dataset_config"],
+            task_config=test_configs["task_config"],
+            vae_model_config=test_configs["vae_model_config"],
+            dnn_model_config=test_configs["dnn_model_config"],
+            vae_training_config=test_configs["vae_training_config"],
+            dnn_training_config=test_configs["dnn_training_config"],
+            delete_catalogs=False,
+            data_sizes=test_data_sizes,
+            fixed_epochs=3,  # Use fewer epochs for testing
+        )
+        
+        assert result is True, "Full pipeline should return True on success"
+        
+        # Find the model that was created by the full pipeline
+        experiment_dirs = list(Path(experiment_dir).glob("*"))
+        model_dirs = [d for d in experiment_dirs if d.is_dir() and (d / "experiment_data.json").exists()]
+        
+        # Should have at least one model (could be more if previous tests ran)
+        assert len(model_dirs) > 0, "No trained foundation model found after full pipeline"
+        
+        # Find the most recently created model directory (full pipeline should create a new one)
+        latest_model_dir = max(model_dirs, key=lambda x: x.stat().st_mtime)
+        
+        # Verify all expected outputs exist
+        experiment_data_path = latest_model_dir / "experiment_data.json"
+        assert experiment_data_path.exists(), f"Experiment data file not found at {experiment_data_path}"
+        
+        # Check anomaly detection outputs
+        anomaly_dir = latest_model_dir / "testing" / "anomaly_detection"
+        assert anomaly_dir.exists(), f"Anomaly detection dir {anomaly_dir} not found"
+        
+        # Check regression evaluation outputs
+        regression_dir = latest_model_dir / "testing" / "regression_evaluation"
+        assert regression_dir.exists(), f"Regression evaluation dir {regression_dir} not found"
+        
+        results_file = regression_dir / "regression_data_efficiency_results.json"
+        assert results_file.exists(), f"Regression data efficiency results file {results_file} not found"
+        
+        plot_file = regression_dir / "regression_data_efficiency_plot.png"
+        assert plot_file.exists(), f"Regression data efficiency plot {plot_file} not found"
+        
+        logger.info(f"Full pipeline test completed successfully. Model saved at: {latest_model_dir}")
+        
+    except Exception as e:
+        logger.error(f"Full pipeline test failed: {str(e)}")
+        raise

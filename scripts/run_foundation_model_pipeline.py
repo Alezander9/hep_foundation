@@ -161,7 +161,7 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
 
 
 def run_foundation_pipeline(
-    process_type: str = "train",
+    process_type: str = "all",
     delete_catalogs: bool = True,
     foundation_model_path: str = None,
 ) -> None:
@@ -169,11 +169,9 @@ def run_foundation_pipeline(
     Run the foundation model pipeline with specified process type
 
     Args:
-        process_type: Type of process to run ("train", "anomaly", or "regression")
-        experiment_name: Optional name for the experiment
-        experiment_description: Optional description for the experiment
+        process_type: Type of process to run ("train", "anomaly", "regression", or "all")
         delete_catalogs: Whether to delete catalogs after processing
-        foundation_model_path: Path to the foundation model encoder to use for encoding
+        foundation_model_path: Path to the foundation model encoder to use for encoding (only for individual processes)
     """
     # Create logs directory if it doesn't exist
     logs_dir = Path("logs")
@@ -184,20 +182,43 @@ def run_foundation_pipeline(
     log_file = logs_dir / f"foundation_pipeline_{process_type}_{timestamp}.log"
 
     # Validate process type
-    valid_processes = ["train", "anomaly", "regression"]
+    valid_processes = ["train", "anomaly", "regression", "all"]
     if process_type not in valid_processes:
         raise ValueError(
             f"Invalid process type: {process_type}. Must be one of {valid_processes}"
         )
 
-    # Run the pipeline
-    try:
-        with open(log_file, "w") as f:
-            process = subprocess.Popen(
-                [
-                    "python",
-                    "-c",
-                    f"""
+    # Prepare the python code to execute
+    if process_type == "all":
+        # Run the full pipeline (train -> regression -> anomaly)
+        python_code = f"""
+import sys
+from hep_foundation.training.foundation_model_pipeline import FoundationModelPipeline
+from scripts.run_foundation_model_pipeline import create_configs
+
+# Get the configs
+configs = create_configs()
+
+# Initialize the pipeline
+pipeline = FoundationModelPipeline()
+
+# Run the full pipeline
+success = pipeline.run_full_pipeline(
+    dataset_config=configs['dataset_config'],
+    task_config=configs['task_config'],
+    vae_model_config=configs['vae_model_config'],
+    dnn_model_config=configs['dnn_model_config'],
+    vae_training_config=configs['vae_training_config'],
+    dnn_training_config=configs['dnn_training_config'],
+    delete_catalogs={delete_catalogs},
+    data_sizes=configs['regression_data_sizes'],
+    fixed_epochs=configs['dnn_training_config'].epochs
+)
+sys.exit(0 if success else 1)
+"""
+    else:
+        # Run individual process
+        python_code = f"""
 import sys
 from hep_foundation.training.foundation_model_pipeline import FoundationModelPipeline
 from scripts.run_foundation_model_pipeline import create_configs
@@ -223,8 +244,13 @@ success = pipeline.run_process(
     fixed_epochs=configs['dnn_training_config'].epochs
 )
 sys.exit(0 if success else 1)
-                """,
-                ],
+"""
+
+    # Run the pipeline
+    try:
+        with open(log_file, "w") as f:
+            process = subprocess.Popen(
+                ["python", "-c", python_code],
                 stdout=f,
                 stderr=subprocess.STDOUT,
                 preexec_fn=os.setpgrp,  # This makes it continue running if VSCode is closed
@@ -236,13 +262,18 @@ sys.exit(0 if success else 1)
         print(f"Started foundation pipeline process at {timestamp}")
         print(f"Process type: {process_type}")
         
-        # Show regression-specific parameters
-        if process_type == "regression":
+        # Show process-specific information
+        if process_type == "all":
+            print("Running full pipeline: Train → Regression → Anomaly Detection")
+            configs = create_configs()
+            print(f"Data sizes: {configs['regression_data_sizes']}")
+            print(f"Fixed epochs: {configs['dnn_training_config'].epochs}")
+        elif process_type == "regression":
             configs = create_configs()
             print(f"Data sizes: {configs['regression_data_sizes']}")
             print(f"Fixed epochs: {configs['dnn_training_config'].epochs}")
         
-        if foundation_model_path:
+        if foundation_model_path and process_type != "all":
             print(f"Foundation model: {foundation_model_path}")
             
         print(f"Logging output to: {log_file}")
@@ -261,9 +292,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--process",
         type=str,
-        default="train",
-        choices=["train", "anomaly", "regression"],
-        help="Type of process to run (train, anomaly, or regression)",
+        default="all",
+        choices=["train", "anomaly", "regression", "all"],
+        help="Type of process to run: 'train', 'anomaly', 'regression', or 'all' (default: run full pipeline - train → regression → anomaly)",
     )
 
     parser.add_argument(
