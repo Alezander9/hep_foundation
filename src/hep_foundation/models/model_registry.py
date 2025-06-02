@@ -69,7 +69,7 @@ class ModelRegistry:
         # Create experiment directory structure
         exp_dir = self.base_path / formatted_name
         (exp_dir / "models").mkdir(parents=True, exist_ok=True)
-        (exp_dir / "training_history").mkdir(parents=True, exist_ok=True)
+        (exp_dir / "training").mkdir(parents=True, exist_ok=True)
         (exp_dir / "testing").mkdir(parents=True, exist_ok=True)
 
         # Save updated index
@@ -207,7 +207,7 @@ class ModelRegistry:
             json.dump(experiment_data, f, indent=2)
 
         # Save training history to CSV
-        history_dir = exp_dir / "training_history"
+        history_dir = exp_dir / "training" / "training_history"
 
         # Save epoch-wise metrics (including all loss components)
         if "history" in metrics:

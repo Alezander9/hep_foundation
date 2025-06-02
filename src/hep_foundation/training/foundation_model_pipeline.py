@@ -837,21 +837,6 @@ class FoundationModelPipeline:
                 total_train_events += batch_size.numpy()
             
             self.logger.info(f"Total training events available: {total_train_events}")
-
-            # Generate data sizes if not provided
-            if data_sizes is None:
-                data_sizes = []
-                size = 1000
-                while size < total_train_events:
-                    data_sizes.append(size)
-                    if size < 10000:
-                        size += 1000
-                    elif size < 50000:
-                        size += 5000
-                    else:
-                        size += 10000
-                # Add the full dataset size
-                data_sizes.append(total_train_events)
             
             # Filter data_sizes to only include sizes <= total_train_events
             data_sizes = [size for size in data_sizes if size <= total_train_events]
