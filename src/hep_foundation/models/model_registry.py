@@ -160,7 +160,7 @@ class ModelRegistry:
             json.dump(experiment_data, f, indent=2, default=self.ensure_serializable)
 
         # Create a training history file
-        with open(exp_dir / "training_history" / "metrics.json", "w") as f:
+        with open(exp_dir / "training" / "metrics.json", "w") as f:
             json.dump(
                 {"epochs_completed": 0, "history": {}, "final_metrics": None},
                 f,
@@ -207,7 +207,7 @@ class ModelRegistry:
             json.dump(experiment_data, f, indent=2)
 
         # Save training history to CSV
-        history_dir = exp_dir / "training" / "training_history"
+        history_dir = exp_dir / "training"
 
         # Save epoch-wise metrics (including all loss components)
         if "history" in metrics:
@@ -356,7 +356,7 @@ class ModelRegistry:
                 experiment_data = json.load(f)
 
             # Optionally load final metrics if training is completed
-            metrics_path = exp_dir / "training_history" / "final_metrics.json"
+            metrics_path = exp_dir / "training" / "final_metrics.json"
             if metrics_path.exists():
                 with open(metrics_path) as f:
                     metrics_data = json.load(f)
