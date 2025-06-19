@@ -147,7 +147,7 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
 
     # Regression evaluation settings
     # Data sizes to test for the data efficiency study
-    regression_data_sizes = [1000, 2000, 5000, 10000, 20000, 50000]
+    regression_data_sizes = [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000]
     
     return {
         "dataset_config": dataset_config,
