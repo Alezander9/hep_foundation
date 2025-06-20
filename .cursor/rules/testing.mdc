@@ -1,0 +1,10 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Our project is tested with pytest.
+We have a comprehensive test for the foundation model pipeline in tests/test_pipeline.py
+Do not ever write custom tests for functionality
+Do not run tests yourself
+The only way you should test is by asking the users to run the tests and manually check the results

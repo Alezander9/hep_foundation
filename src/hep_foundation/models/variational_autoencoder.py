@@ -788,6 +788,7 @@ class AnomalyDetectionEvaluator:
         loss_type: str,
         signal_name: str,
         plot_data_dir: Path,
+        bin_edges: np.ndarray = None,
     ) -> Path:
         """
         Save loss distribution data as JSON for later combined plotting.
@@ -797,6 +798,7 @@ class AnomalyDetectionEvaluator:
             loss_type: Type of loss ('reconstruction' or 'kl_divergence')
             signal_name: Name of the signal dataset ('background' for background data)
             plot_data_dir: Directory to save the JSON file
+            bin_edges: Optional pre-calculated bin edges for coordinated binning
             
         Returns:
             Path to the saved JSON file
@@ -804,22 +806,31 @@ class AnomalyDetectionEvaluator:
         # Calculate histogram data
         if losses.size == 0:
             counts = []
-            bin_edges = []
+            if bin_edges is not None:
+                bin_edges_list = bin_edges.tolist()
+            else:
+                bin_edges_list = []
         else:
-            # Use percentile-based range for better visualization
-            p1, p99 = np.percentile(losses, [1, 99])
-            if p1 == p99:
-                p1 -= 0.5
-                p99 += 0.5
-            plot_range = (p1, p99)
-            
-            counts, bin_edges = np.histogram(losses, bins=50, range=plot_range, density=True)
+            if bin_edges is not None:
+                # Use provided bin edges for coordinated binning
+                counts, _ = np.histogram(losses, bins=bin_edges, density=True)
+                bin_edges_list = bin_edges.tolist()
+            else:
+                # Fallback to individual percentile-based range
+                p0_1, p99_9 = np.percentile(losses, [0.1, 99.9])
+                if p0_1 == p99_9:
+                    p0_1 -= 0.5
+                    p99_9 += 0.5
+                plot_range = (p0_1, p99_9)
+                
+                counts, calculated_bin_edges = np.histogram(losses, bins=50, range=plot_range, density=True)
+                bin_edges_list = calculated_bin_edges.tolist()
         
         # Create JSON data structure
         loss_data = {
             loss_type: {
                 "counts": counts.tolist() if hasattr(counts, 'tolist') else counts,
-                "bin_edges": bin_edges.tolist() if hasattr(bin_edges, 'tolist') else bin_edges,
+                "bin_edges": bin_edges_list,
                 "n_events": len(losses),
                 "mean": float(np.mean(losses)) if losses.size > 0 else 0.0,
                 "std": float(np.std(losses)) if losses.size > 0 else 0.0,
@@ -925,12 +936,69 @@ class AnomalyDetectionEvaluator:
         plots_dir = test_dir / "plots"
         plots_dir.mkdir(parents=True, exist_ok=True)
         
-        # Save background loss distribution data
+        # Calculate global bin edges for coordinated binning
+        self.logger.info("Calculating global bin edges for coordinated loss distribution binning...")
+        
+        # Collect all reconstruction losses
+        all_recon_losses = [bg_recon_losses]
+        for signal_name, (sig_recon_losses, _) in signal_loss_data.items():
+            all_recon_losses.append(sig_recon_losses)
+        combined_recon_losses = np.concatenate(all_recon_losses)
+        
+        # Collect all KL losses  
+        all_kl_losses = [bg_kl_losses]
+        for signal_name, (_, sig_kl_losses) in signal_loss_data.items():
+            all_kl_losses.append(sig_kl_losses)
+        combined_kl_losses = np.concatenate(all_kl_losses)
+        
+        # Calculate global bin edges (0.1 to 99.9 percentiles)
+        recon_p0_1, recon_p99_9 = np.percentile(combined_recon_losses, [0.1, 99.9])
+        if recon_p0_1 == recon_p99_9:
+            recon_p0_1 -= 0.5
+            recon_p99_9 += 0.5
+        recon_bin_edges = np.linspace(recon_p0_1, recon_p99_9, 51)  # 50 bins
+        
+        kl_p0_1, kl_p99_9 = np.percentile(combined_kl_losses, [0.1, 99.9])
+        if kl_p0_1 == kl_p99_9:
+            kl_p0_1 -= 0.5
+            kl_p99_9 += 0.5
+        kl_bin_edges = np.linspace(kl_p0_1, kl_p99_9, 51)  # 50 bins
+        
+        self.logger.info(f"Reconstruction loss bin range: [{recon_p0_1:.3f}, {recon_p99_9:.3f}] (covers 99.8% of all data)")
+        self.logger.info(f"KL divergence loss bin range: [{kl_p0_1:.3f}, {kl_p99_9:.3f}] (covers 99.8% of all data)")
+        self.logger.info("Using coordinated bin edges to ensure perfect histogram alignment")
+        
+        # Save bin edges metadata for reference
+        bin_edges_metadata = {
+            "reconstruction_loss": {
+                "bin_edges": recon_bin_edges.tolist(),
+                "percentile_range": [0.1, 99.9],
+                "data_range": [float(recon_p0_1), float(recon_p99_9)],
+                "n_bins": len(recon_bin_edges) - 1,
+                "total_events": len(combined_recon_losses),
+            },
+            "kl_divergence": {
+                "bin_edges": kl_bin_edges.tolist(),
+                "percentile_range": [0.1, 99.9],
+                "data_range": [float(kl_p0_1), float(kl_p99_9)],
+                "n_bins": len(kl_bin_edges) - 1,
+                "total_events": len(combined_kl_losses),
+            },
+            "timestamp": str(datetime.now()),
+            "datasets": ["background"] + list(signal_loss_data.keys()),
+        }
+        
+        bin_edges_metadata_path = plot_data_dir / "loss_bin_edges_metadata.json"
+        with open(bin_edges_metadata_path, 'w') as f:
+            json.dump(bin_edges_metadata, f, indent=2)
+        self.logger.info(f"Saved loss bin edges metadata to {bin_edges_metadata_path}")
+        
+        # Save background loss distribution data with coordinated bin edges
         bg_recon_json = self._save_loss_distribution_data(
-            bg_recon_losses, "reconstruction", "background", plot_data_dir
+            bg_recon_losses, "reconstruction", "background", plot_data_dir, recon_bin_edges
         )
         bg_kl_json = self._save_loss_distribution_data(
-            bg_kl_losses, "kl_divergence", "background", plot_data_dir
+            bg_kl_losses, "kl_divergence", "background", plot_data_dir, kl_bin_edges
         )
         
         # Save signal loss distribution data and collect paths
@@ -943,12 +1011,12 @@ class AnomalyDetectionEvaluator:
         signal_kl_roc_jsons = []
         
         for signal_name, (sig_recon_losses, sig_kl_losses) in signal_loss_data.items():
-            # Save loss distribution data
+            # Save loss distribution data with coordinated bin edges
             sig_recon_json = self._save_loss_distribution_data(
-                sig_recon_losses, "reconstruction", signal_name, plot_data_dir
+                sig_recon_losses, "reconstruction", signal_name, plot_data_dir, recon_bin_edges
             )
             sig_kl_json = self._save_loss_distribution_data(
-                sig_kl_losses, "kl_divergence", signal_name, plot_data_dir
+                sig_kl_losses, "kl_divergence", signal_name, plot_data_dir, kl_bin_edges
             )
             
             signal_recon_jsons.append(sig_recon_json)
