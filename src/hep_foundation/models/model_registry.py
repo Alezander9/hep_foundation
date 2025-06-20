@@ -23,16 +23,13 @@ class ModelRegistry:
 
         self.base_path = Path(base_path)
         self.db_path = self.base_path / "registry.db"
-        self.model_store = self.base_path / "model_store"
 
         self.logger.info("ModelRegistry paths:")
         self.logger.info(f"Base path: {self.base_path.absolute()}")
         self.logger.info(f"DB path: {self.db_path.absolute()}")
-        self.logger.info(f"Model store: {self.model_store.absolute()}")
 
         # Create directories if they don't exist
         self.base_path.mkdir(parents=True, exist_ok=True)
-        self.model_store.mkdir(parents=True, exist_ok=True)
 
         # Initialize registry structure
         self._initialize_model_registry()
@@ -110,6 +107,7 @@ class ModelRegistry:
         model_config: dict,
         training_config: dict,
         description: str = "",
+        source_config_file: str = None,
     ) -> str:
         """
         Register new experiment with complete dataset configuration
@@ -158,6 +156,15 @@ class ModelRegistry:
         # Save experiment data
         with open(exp_dir / "experiment_data.json", "w") as f:
             json.dump(experiment_data, f, indent=2, default=self.ensure_serializable)
+        
+        # Save the source config file if provided (eliminates desync)
+        if source_config_file:
+            import shutil
+            from pathlib import Path
+            source_path = Path(source_config_file)
+            if source_path.exists():
+                shutil.copy2(source_path, exp_dir / "source_pipeline_config.yaml")
+                self.logger.info(f"Source config file copied to: {exp_dir / 'source_pipeline_config.yaml'}")
 
         # Create a training history file
         with open(exp_dir / "training" / "metrics.json", "w") as f:

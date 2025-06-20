@@ -23,7 +23,7 @@ from hep_foundation.data.physlite_derived_features import (
     get_derived_feature,
     get_dependencies,
 )
-from hep_foundation.data.task_config import (
+from hep_foundation.config.task_config import (
     PhysliteFeatureArrayAggregator,
     PhysliteFeatureArrayFilter,
     PhysliteFeatureFilter,

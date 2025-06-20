@@ -7,9 +7,11 @@ import tensorflow as tf
 import h5py
 
 from hep_foundation.config.logging_config import get_logger
-from hep_foundation.data.dataset_manager import DatasetConfig, DatasetManager
-from hep_foundation.data.task_config import TaskConfig
-from hep_foundation.data.dataset_visualizer import create_plot_from_hist_data
+from hep_foundation.data.dataset_manager import DatasetManager
+from hep_foundation.config.dataset_config import DatasetConfig
+from hep_foundation.config.task_config import TaskConfig
+from hep_foundation.training.model_trainer import ModelTrainer
+from hep_foundation.config.training_config import TrainingConfig
 from hep_foundation.models.model_factory import ModelFactory
 from hep_foundation.models.model_registry import ModelRegistry
 from hep_foundation.models.variational_autoencoder import (
@@ -17,8 +19,7 @@ from hep_foundation.models.variational_autoencoder import (
     VAEConfig,
     VariationalAutoEncoder,
 )
-from hep_foundation.training.model_trainer import ModelTrainer, TrainingConfig
-from hep_foundation.utils.plot_utils import plot_combined_training_histories
+from hep_foundation.models.dnn_predictor import DNNPredictorConfig
 from hep_foundation.models.base_model import CustomKerasModelWrapper
 
 
@@ -65,8 +66,8 @@ class FoundationModelPipeline:
         process_name: str,
         dataset_config: DatasetConfig,
         task_config: TaskConfig,
-        vae_model_config: dict = None,
-        dnn_model_config: dict = None,
+        vae_model_config: VAEConfig = None,
+        dnn_model_config: DNNPredictorConfig = None,
         vae_training_config: TrainingConfig = None,
         dnn_training_config: TrainingConfig = None,
         delete_catalogs: bool = True,
@@ -144,8 +145,8 @@ class FoundationModelPipeline:
         self,
         dataset_config: DatasetConfig,
         task_config: TaskConfig,
-        vae_model_config: dict,
-        dnn_model_config: dict,
+        vae_model_config: VAEConfig,
+        dnn_model_config: DNNPredictorConfig,
         vae_training_config: TrainingConfig,
         dnn_training_config: TrainingConfig,
         delete_catalogs: bool = True,
@@ -259,7 +260,7 @@ class FoundationModelPipeline:
     def train_foundation_model(
         self,
         dataset_config: DatasetConfig,
-        model_config: dict,
+        model_config: VAEConfig,
         training_config: TrainingConfig,
         task_config: TaskConfig,
         delete_catalogs: bool = True,
@@ -356,28 +357,27 @@ class FoundationModelPipeline:
 
             # 4. Register experiment with complete dataset configuration
             self.logger.info("Registering experiment...")
-            model_config_dict = {
-                "model_type": model_config["model_type"],
-                "architecture": {
-                    **model_config["architecture"],
-                    "input_shape": (
-                        task_config.input.get_total_feature_size(),
-                    ),  # Must be a tuple
-                },
-                "hyperparameters": model_config["hyperparameters"],
-            }
-            training_config_dict = {
-                "batch_size": training_config.batch_size,
-                "epochs": training_config.epochs,
-                "learning_rate": training_config.learning_rate,
-                "early_stopping": training_config.early_stopping,
-            }
+            
+            # Update the model config with the computed input shape
+            model_config.architecture["input_shape"] = (
+                task_config.input.get_total_feature_size(),
+            )  # Must be a tuple
+            
+            # Convert configs to dictionaries for registry storage
+            model_config_dict = model_config.to_dict()
+            training_config_dict = training_config.to_dict()
+            # Get source config file path if available
+            source_config_file = None
+            if hasattr(dataset_config, 'to_dict') and '_source_config_file' in getattr(dataset_config, '__dict__', {}):
+                source_config_file = dataset_config.__dict__.get('_source_config_file')
+            
             experiment_id = registry.register_experiment(
                 name="Foundation_VAE_Model",
                 dataset_config=dataset_config,
                 model_config=model_config_dict,
                 training_config=training_config_dict,
                 description="Training a foundation VAE model for feature encoding",
+                source_config_file=source_config_file,
             )
             self.logger.info(f"Created experiment: {experiment_id}")
 
@@ -385,7 +385,7 @@ class FoundationModelPipeline:
             self.logger.info("Creating model...")
             try:
                 model = ModelFactory.create_model(
-                    model_type="variational_autoencoder", config=model_config_dict
+                    model_type="variational_autoencoder", config=model_config
                 )
                 model.build()
             except Exception as e:
@@ -761,7 +761,7 @@ class FoundationModelPipeline:
     def evaluate_foundation_model_regression(
         self,
         dataset_config: DatasetConfig,
-        dnn_model_config: dict,
+        dnn_model_config: DNNPredictorConfig,
         dnn_training_config: TrainingConfig,
         task_config: TaskConfig,
         delete_catalogs: bool = True,
@@ -868,16 +868,17 @@ class FoundationModelPipeline:
 
             # Helper function to build regressor head
             def build_regressor_head(name_suffix: str) -> tf.keras.Model:
-                regressor_config = {
-                    "model_type": "dnn_predictor",
-                    "architecture": {
-                        **dnn_model_config["architecture"],
-                        "input_shape": (latent_dim,),
-                        "output_shape": regression_output_shape,
-                        "name": f"{dnn_model_config['architecture'].get('name', 'regressor')}_{name_suffix}",
-                    },
-                    "hyperparameters": dnn_model_config["hyperparameters"],
-                }
+                # Create a copy of the DNN config with modified architecture
+                import copy
+                regressor_config = copy.deepcopy(dnn_model_config)
+                
+                # Update the architecture for the regressor head
+                regressor_config.architecture.update({
+                    "input_shape": (latent_dim,),
+                    "output_shape": regression_output_shape,
+                    "name": f"{dnn_model_config.architecture.get('name', 'regressor')}_{name_suffix}",
+                })
+                
                 regressor_model_wrapper = ModelFactory.create_model(
                     model_type="dnn_predictor", config=regressor_config
                 )

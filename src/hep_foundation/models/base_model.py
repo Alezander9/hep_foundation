@@ -32,6 +32,19 @@ class ModelConfig:
         """
         pass
 
+    def to_dict(self) -> dict:
+        """
+        Convert configuration to dictionary format.
+        
+        Returns:
+            Dictionary containing model configuration
+        """
+        return {
+            "model_type": self.model_type,
+            "architecture": self.architecture,
+            "hyperparameters": self.hyperparameters,
+        }
+
 
 class BaseModel(ABC):
     """Base class for all models"""

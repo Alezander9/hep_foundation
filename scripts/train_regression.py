@@ -15,10 +15,12 @@ import numpy as np
 
 from hep_foundation.config.logging_config import get_logger
 from hep_foundation.data.atlas_data import get_run_numbers
-from hep_foundation.data.dataset_manager import DatasetConfig, DatasetManager
-from hep_foundation.data.task_config import TaskConfig
+from hep_foundation.data.dataset_manager import DatasetManager
+from hep_foundation.config.dataset_config import DatasetConfig
+from hep_foundation.config.task_config import TaskConfig
 from hep_foundation.models.model_factory import ModelFactory
-from hep_foundation.training.model_trainer import ModelTrainer, TrainingConfig
+from hep_foundation.training.model_trainer import ModelTrainer
+from hep_foundation.config.training_config import TrainingConfig
 from hep_foundation.models.base_model import CustomKerasModelWrapper
 
 

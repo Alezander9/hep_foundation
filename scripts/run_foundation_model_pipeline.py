@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from hep_foundation.data.atlas_data import get_run_numbers
-from hep_foundation.data.dataset_manager import DatasetConfig
-from hep_foundation.data.task_config import TaskConfig
+from hep_foundation.config.dataset_config import DatasetConfig
+from hep_foundation.config.task_config import TaskConfig
 from hep_foundation.training.model_trainer import TrainingConfig
 
 
