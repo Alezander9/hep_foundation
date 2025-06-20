@@ -831,6 +831,7 @@ class PhysliteFeatureProcessor:
         delete_catalogs: bool = True,
         plot_output: Optional[Path] = None,
         first_event_logged: bool = True,
+        bin_edges_metadata_path: Optional[Path] = None,
     ) -> tuple[list[dict[str, np.ndarray]], list[dict[str, np.ndarray]], dict]:
         """
         Process either ATLAS or signal data using task configuration.
@@ -843,6 +844,8 @@ class PhysliteFeatureProcessor:
             plot_distributions: Whether to generate distribution plots
             delete_catalogs: Whether to delete catalogs after processing
             plot_output: Optional complete path (including filename) for saving plots
+            first_event_logged: Whether the first event has been logged
+            bin_edges_metadata_path: Optional path to save/load bin edges metadata for coordinated histogram binning
 
         Returns:
             Tuple containing:
@@ -1171,18 +1174,34 @@ class PhysliteFeatureProcessor:
         if plotting_enabled and overall_plot_samples_count > 0 and raw_histogram_data_for_file is not None:
             self.logger.info(f"Preparing histogram data from {overall_plot_samples_count} sampled events for {plot_output}")
 
+            # Load existing bin edges metadata if available (for coordinated binning)
+            existing_bin_edges = None
+            if bin_edges_metadata_path:
+                existing_bin_edges = self._load_bin_edges_metadata(bin_edges_metadata_path)
+
+            # Collect new bin edges that will be saved
+            new_bin_edges_metadata = {}
+
             # Details for N_Tracks_per_Event
             if sampled_event_n_tracks_list:
                 counts_arr = np.array(sampled_event_n_tracks_list)
                 if counts_arr.size > 0:
-                    min_val = int(np.min(counts_arr))
-                    max_val = int(np.max(counts_arr))
-                    if min_val == max_val:
-                        bins = np.array([min_val - 0.5, min_val + 0.5])
+                    if existing_bin_edges and "N_Tracks_per_Event" in existing_bin_edges:
+                        # Use existing bin edges, filter out-of-range data
+                        stored_edges = np.array(existing_bin_edges["N_Tracks_per_Event"])
+                        filtered_data, n_low, n_high = self._check_data_range_compatibility(counts_arr, stored_edges, "N_Tracks_per_Event")
+                        counts, bin_edges = np.histogram(filtered_data, bins=stored_edges, density=True)
                     else:
-                        bins = np.arange(min_val - 0.5, max_val + 1.5, 1)
-                    counts, bin_edges = np.histogram(counts_arr, bins=bins, density=True)
+                        # Create new bin edges
+                        min_val = int(np.min(counts_arr))
+                        max_val = int(np.max(counts_arr))
+                        if min_val == max_val:
+                            bin_edges = np.array([min_val - 0.5, min_val + 0.5])
+                        else:
+                            bin_edges = np.arange(min_val - 0.5, max_val + 1.5, 1)
+                        counts, _ = np.histogram(counts_arr, bins=bin_edges, density=True)
                     raw_histogram_data_for_file["N_Tracks_per_Event"] = {"counts": counts.tolist(), "bin_edges": bin_edges.tolist()}
+                    new_bin_edges_metadata["N_Tracks_per_Event"] = bin_edges.tolist()
                 else:
                     raw_histogram_data_for_file["N_Tracks_per_Event"] = {"counts": [], "bin_edges": []}
 
@@ -1190,13 +1209,22 @@ class PhysliteFeatureProcessor:
             for name, values_list in sampled_scalar_features.items():
                 values_arr = np.array(values_list)
                 if values_arr.size > 0:
-                    p1, p99 = np.percentile(values_arr, [1, 99])
-                    if p1 == p99:
-                        p1 -= 0.5
-                        p99 += 0.5
-                    plot_range = (p1, p99)
-                    counts, bin_edges = np.histogram(values_arr, bins=100, range=plot_range, density=True)
+                    if existing_bin_edges and name in existing_bin_edges:
+                        # Use existing bin edges, filter out-of-range data
+                        stored_edges = np.array(existing_bin_edges[name])
+                        filtered_data, n_low, n_high = self._check_data_range_compatibility(values_arr, stored_edges, name)
+                        counts, bin_edges = np.histogram(filtered_data, bins=stored_edges, density=True)
+                    else:
+                        # Create new bin edges using wider percentiles to reduce harsh cutoffs
+                        p0_1, p99_9 = np.percentile(values_arr, [0.1, 99.9])
+                        if p0_1 == p99_9:
+                            p0_1 -= 0.5
+                            p99_9 += 0.5
+                        plot_range = (p0_1, p99_9)
+                        counts, bin_edges = np.histogram(values_arr, bins=100, range=plot_range, density=True)
+                    
                     raw_histogram_data_for_file[name] = {"counts": counts.tolist(), "bin_edges": bin_edges.tolist()}
+                    new_bin_edges_metadata[name] = bin_edges.tolist()
                 else:
                     raw_histogram_data_for_file[name] = {"counts": [], "bin_edges": []}
             
@@ -1239,13 +1267,22 @@ class PhysliteFeatureProcessor:
                             valid_data = data_slice[mask]
 
                             if valid_data.size > 0:
-                                p1, p99 = np.percentile(valid_data, [1, 99])
-                                if p1 == p99:
-                                    p1 -= 0.5
-                                    p99 += 0.5
-                                plot_range = (p1, p99)
-                                counts, bin_edges = np.histogram(valid_data, bins=100, range=plot_range, density=True)
+                                if existing_bin_edges and feature_name in existing_bin_edges:
+                                    # Use existing bin edges, filter out-of-range data
+                                    stored_edges = np.array(existing_bin_edges[feature_name])
+                                    filtered_data, n_low, n_high = self._check_data_range_compatibility(valid_data, stored_edges, feature_name)
+                                    counts, bin_edges = np.histogram(filtered_data, bins=stored_edges, density=True)
+                                else:
+                                    # Create new bin edges using wider percentiles to reduce harsh cutoffs
+                                    p0_1, p99_9 = np.percentile(valid_data, [0.1, 99.9])
+                                    if p0_1 == p99_9:
+                                        p0_1 -= 0.5
+                                        p99_9 += 0.5
+                                    plot_range = (p0_1, p99_9)
+                                    counts, bin_edges = np.histogram(valid_data, bins=100, range=plot_range, density=True)
+                                
                                 raw_histogram_data_for_file[feature_name] = {"counts": counts.tolist(), "bin_edges": bin_edges.tolist()}
+                                new_bin_edges_metadata[feature_name] = bin_edges.tolist()
                             else:
                                 raw_histogram_data_for_file[feature_name] = {"counts": [], "bin_edges": []}
                     except Exception as e_agg_hist:
@@ -1255,25 +1292,31 @@ class PhysliteFeatureProcessor:
                             raw_histogram_data_for_file[feature_name_val] = {"counts": [], "bin_edges": []}
 
 
-            # Save the raw histogram data
+            # Save the raw histogram data to plot_data folder (no individual plots)
             if raw_histogram_data_for_file and plot_output:
                 data_file_path = None 
                 try:
-                    data_file_path = plot_output.with_name(plot_output.stem + "_hist_data.json")
+                    # Create plot_data folder alongside the plots folder
+                    plot_data_dir = plot_output.parent.parent / "plot_data"
+                    plot_data_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    # Save JSON to plot_data folder
+                    data_file_path = plot_data_dir / (plot_output.stem + "_hist_data.json")
                     with open(data_file_path, 'w') as f_json:
                         json.dump(raw_histogram_data_for_file, f_json, indent=4)
                     self.logger.info(f"Saved raw histogram data to {data_file_path}")
 
-                    # --- Create the plot from the saved JSON data ---
-                    if data_file_path and data_file_path.exists():
-                        self.logger.info(f"Creating plot from {data_file_path} to {plot_output}.")
-                        create_plot_from_hist_data(
-                            hist_data_paths=data_file_path,
-                            output_plot_path=plot_output, # Original plot output path
-                            title_prefix="Feature" # Simplified title
-                        )
-                except Exception as e_save_or_plot:
-                    self.logger.error(f"Failed to save histogram data or create plot from it: {e_save_or_plot}")
+                    # No individual plot generation - only save the JSON data
+                    
+                except Exception as e_save:
+                    self.logger.error(f"Failed to save histogram data: {e_save}")
+
+            # Save bin edges metadata if we have new bin edges to save
+            if bin_edges_metadata_path and new_bin_edges_metadata:
+                try:
+                    self._save_bin_edges_metadata(new_bin_edges_metadata, bin_edges_metadata_path)
+                except Exception as e_save_bin_edges:
+                    self.logger.error(f"Failed to save bin edges metadata: {e_save_bin_edges}")
         # --- End of Histogram Data Generation and Plotting from JSON ---
 
 
@@ -1562,3 +1605,74 @@ class PhysliteFeatureProcessor:
             return [catalog_path] if catalog_path else []
         else:
             raise ValueError("Must provide either run_number or signal_key")
+
+    def _save_bin_edges_metadata(self, bin_edges_data: dict, metadata_path: Path) -> None:
+        """
+        Save bin edges metadata to a JSON file for coordinated histogram binning.
+        
+        Args:
+            bin_edges_data: Dictionary mapping feature names to their bin edges
+            metadata_path: Path to save the metadata file
+        """
+        try:
+            metadata_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(metadata_path, 'w') as f:
+                json.dump(bin_edges_data, f, indent=2)
+            self.logger.info(f"Saved bin edges metadata to {metadata_path}")
+        except Exception as e:
+            self.logger.error(f"Failed to save bin edges metadata to {metadata_path}: {e}")
+
+    def _load_bin_edges_metadata(self, metadata_path: Path) -> Optional[dict]:
+        """
+        Load bin edges metadata from a JSON file for coordinated histogram binning.
+        
+        Args:
+            metadata_path: Path to the metadata file
+            
+        Returns:
+            Dictionary mapping feature names to their bin edges, or None if loading fails
+        """
+        try:
+            if not metadata_path.exists():
+                return None
+            with open(metadata_path, 'r') as f:
+                bin_edges_data = json.load(f)
+            self.logger.info(f"Loaded bin edges metadata from {metadata_path}")
+            return bin_edges_data
+        except Exception as e:
+            self.logger.error(f"Failed to load bin edges metadata from {metadata_path}: {e}")
+            return None
+
+    def _check_data_range_compatibility(self, values: np.ndarray, existing_bin_edges: np.ndarray, feature_name: str) -> tuple[np.ndarray, int, int]:
+        """
+        Check if data fits within existing bin edges and filter out-of-range values.
+        
+        Args:
+            values: New data values
+            existing_bin_edges: Existing bin edges
+            feature_name: Name of the feature (for logging)
+            
+        Returns:
+            Tuple of (filtered_values, n_excluded_low, n_excluded_high)
+        """
+        if values.size == 0:
+            return values, 0, 0
+            
+        edges_min, edges_max = existing_bin_edges[0], existing_bin_edges[-1]
+        
+        # Count out-of-range values
+        n_below = np.sum(values < edges_min)
+        n_above = np.sum(values > edges_max)
+        
+        if n_below > 0 or n_above > 0:
+            total_values = len(values)
+            pct_below = 100 * n_below / total_values
+            pct_above = 100 * n_above / total_values
+            self.logger.info(f"Feature '{feature_name}': {n_below} values ({pct_below:.1f}%) below bin range, "
+                           f"{n_above} values ({pct_above:.1f}%) above bin range. Excluding from histogram to maintain consistent binning.")
+        
+        # Filter out values outside the bin range (don't clip to avoid edge pileup)
+        mask = (values >= edges_min) & (values <= edges_max)
+        filtered_values = values[mask]
+        
+        return filtered_values, n_below, n_above

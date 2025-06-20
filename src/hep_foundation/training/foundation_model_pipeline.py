@@ -327,25 +327,7 @@ class FoundationModelPipeline:
                 include_labels=dataset_config.include_labels,
                 delete_catalogs=delete_catalogs,
             )
-            
-            # Add logging to inspect dataset structure
-            self.logger.info("ATLAS datasets loaded. Inspecting structure...")
-            for name, dataset in [("train", train_dataset), ("val", val_dataset), ("test", test_dataset)]:
-                try:
-                    for batch in dataset.take(1):
-                        if isinstance(batch, tuple) and len(batch) == 2:
-                            features, labels = batch
-                            self.logger.info(f"{name} dataset - Features shape: {features.shape}, Labels shape: {labels.shape}")
-                        elif isinstance(batch, tuple) and len(batch) == 3:
-                            features, labels, indices = batch
-                            self.logger.info(f"{name} dataset - Features shape: {features.shape}, Labels shape: {labels.shape}, Indices shape: {indices.shape}")
-                        elif hasattr(batch, 'shape'):
-                            self.logger.info(f"{name} dataset - Batch shape: {batch.shape}")
-                        else:
-                            self.logger.info(f"{name} dataset - Batch type: {type(batch)}, Length: {len(batch) if hasattr(batch, '__len__') else 'N/A'}")
-                        break  # Only inspect the first batch
-                except Exception as e:
-                    self.logger.error(f"Error inspecting {name} dataset: {str(e)}")
+
 
             # Get the dataset ID and verify it exists
             dataset_id = data_manager.get_current_dataset_id()
@@ -659,7 +641,8 @@ class FoundationModelPipeline:
             # Determine background histogram data path to pass to signal dataset loading for comparison plot
             background_hist_data_path_for_comparison = None
             if dataset_config.plot_distributions and background_dataset_id_for_plots:
-                background_plot_data_dir = data_manager.get_dataset_dir(background_dataset_id_for_plots) / "plots"
+                # Look for background histogram data in the plot_data folder
+                background_plot_data_dir = data_manager.get_dataset_dir(background_dataset_id_for_plots) / "plot_data"
                 potential_background_hist_path = background_plot_data_dir / "atlas_dataset_features_hist_data.json"
                 if potential_background_hist_path.exists():
                     background_hist_data_path_for_comparison = potential_background_hist_path

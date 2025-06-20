@@ -248,6 +248,14 @@ class DatasetManager:
                 "processing_time": 0,
             }
 
+            # Prepare bin edges metadata path for coordinated histogram binning
+            bin_edges_metadata_path = None
+            if dataset_config.plot_distributions and plot_output:
+                # Create plot_data folder at dataset root level (not inside plots)
+                plot_data_dir = dataset_dir / "plot_data"
+                plot_data_dir.mkdir(parents=True, exist_ok=True)
+                bin_edges_metadata_path = plot_data_dir / "background_bin_edges_metadata.json"
+
             first_event_logged = False
             for run_number in dataset_config.run_numbers:
                 self.logger.info(f"Processing run {run_number}")
@@ -260,6 +268,7 @@ class DatasetManager:
                         plot_distributions=dataset_config.plot_distributions,
                         plot_output=plot_output,
                         first_event_logged=first_event_logged,
+                        bin_edges_metadata_path=bin_edges_metadata_path,
                     )
                     first_event_logged = True
                     inputs, labels, stats = result
@@ -450,13 +459,25 @@ class DatasetManager:
                     self.logger.info(f"[Debug] Processing signal type: {signal_key}")
 
                     plot_output_for_signal_json = None
+                    bin_edges_metadata_path = None
                     if dataset_config.plot_distributions:
                         plots_dir = dataset_dir / "plots"
                         plots_dir.mkdir(parents=True, exist_ok=True)
-                        # This plot_output is for _process_data to know where to save the JSON.
-                        # _process_data itself won't make the PNG for signals.
+                        plot_data_dir = dataset_dir / "plot_data"
+                        plot_data_dir.mkdir(parents=True, exist_ok=True)
+                        
+                        # This plot_output is for _process_data to determine the JSON filename
+                        # The actual JSON will be saved in plot_data folder
                         plot_output_for_signal_json = plots_dir / f"{signal_key}_dataset_features.png" 
-                        self.logger.info(f"[Debug] plot_output for signal JSON data: {plot_output_for_signal_json}")
+                        self.logger.info(f"[Debug] plot_output for signal JSON data naming: {plot_output_for_signal_json}")
+                        
+                        # Use background bin edges metadata if available
+                        if background_hist_data_path:
+                            # Look for bin edges metadata in the plot_data folder at dataset root level
+                            # background_hist_data_path is in dataset_dir/plot_data/filename.json
+                            # so background_hist_data_path.parent is dataset_dir/plot_data
+                            background_plot_data_dir = background_hist_data_path.parent
+                            bin_edges_metadata_path = background_plot_data_dir / "background_bin_edges_metadata.json"
                     
                     # Process data for this signal type
                     # IMPORTANT: Ensure plot_distributions=dataset_config.plot_distributions
@@ -468,6 +489,7 @@ class DatasetManager:
                         plot_distributions=dataset_config.plot_distributions, 
                         plot_output=plot_output_for_signal_json, # Pass path for JSON saving
                         first_event_logged=first_event_logged,
+                        bin_edges_metadata_path=bin_edges_metadata_path,
                     )
                     first_event_logged = True
                     if not inputs:
@@ -569,7 +591,9 @@ class DatasetManager:
                     
                     # Collect histogram data path for this signal for the combined plot
                     if dataset_config.plot_distributions and plot_output_for_signal_json:
-                        signal_json_path = plot_output_for_signal_json.with_name(plot_output_for_signal_json.stem + "_hist_data.json")
+                        # Look for JSON file in plot_data folder
+                        plot_data_dir = dataset_dir / "plot_data"
+                        signal_json_path = plot_data_dir / (plot_output_for_signal_json.stem + "_hist_data.json")
                         if signal_json_path.exists():
                             collected_signal_hist_data_paths.append(signal_json_path)
                             collected_signal_legend_labels.append(signal_key)
