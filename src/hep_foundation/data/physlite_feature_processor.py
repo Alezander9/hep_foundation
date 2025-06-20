@@ -1181,6 +1181,14 @@ class PhysliteFeatureProcessor:
 
             # Collect new bin edges that will be saved
             new_bin_edges_metadata = {}
+            
+            # Add metadata including event count for legend display
+            raw_histogram_data_for_file["_metadata"] = {
+                "total_processed_events": stats["processed_events"],
+                "total_sampled_events": overall_plot_samples_count,
+                "signal_key": signal_key if signal_key else "background",
+                "run_number": run_number if run_number else None
+            }
 
             # Details for N_Tracks_per_Event
             if sampled_event_n_tracks_list:

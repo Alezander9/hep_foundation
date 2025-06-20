@@ -9,6 +9,16 @@ import matplotlib.ticker as mticker
 from hep_foundation.utils import plot_utils
 from hep_foundation.config.logging_config import get_logger
 
+
+def format_event_count(event_count: int) -> str:
+    """Format event count with order of magnitude notation (k, M, etc.)"""
+    if event_count >= 1_000_000:
+        return f"{event_count/1_000_000:.1f}M"
+    elif event_count >= 1_000:
+        return f"{event_count/1_000:.1f}k"
+    else:
+        return str(event_count)
+
 def create_plot_from_hist_data(
     hist_data_paths: Union[list[Union[str, Path]], Union[str, Path]],
     output_plot_path: Union[str, Path],
@@ -52,9 +62,25 @@ def create_plot_from_hist_data(
                     continue
                 loaded_hist_data_list.append(data)
                 if legend_labels:
-                    effective_legend_labels.append(legend_labels[idx])
+                    # Use provided legend labels but enhance with event count if available
+                    base_label = legend_labels[idx]
+                    if "_metadata" in data and "total_processed_events" in data["_metadata"]:
+                        event_count = data["_metadata"]["total_processed_events"]
+                        event_str = format_event_count(event_count)
+                        enhanced_label = f"{base_label} ({event_str} events)"
+                    else:
+                        enhanced_label = base_label
+                    effective_legend_labels.append(enhanced_label)
                 else:
-                    effective_legend_labels.append(hist_file_path.stem.replace("_hist_data", ""))
+                    # Auto-generate labels with event counts
+                    base_name = hist_file_path.stem.replace("_hist_data", "")
+                    if "_metadata" in data and "total_processed_events" in data["_metadata"]:
+                        event_count = data["_metadata"]["total_processed_events"]
+                        event_str = format_event_count(event_count)
+                        enhanced_label = f"{base_name} ({event_str} events)"
+                    else:
+                        enhanced_label = base_name
+                    effective_legend_labels.append(enhanced_label)
         except Exception as e:
             logger.error(f"Failed to load histogram data from {hist_file_path}: {e}. Skipping this file.")
             continue
@@ -70,7 +96,9 @@ def create_plot_from_hist_data(
     feature_names_ordered = []
     if "N_Tracks_per_Event" in first_dataset_hist_data:
         feature_names_ordered.append("N_Tracks_per_Event")
-    other_features = sorted([name for name in first_dataset_hist_data if name != "N_Tracks_per_Event"])
+    # Filter out metadata and other non-feature keys when collecting feature names
+    other_features = sorted([name for name in first_dataset_hist_data 
+                           if name != "N_Tracks_per_Event" and not name.startswith("_")])
     feature_names_ordered.extend(other_features)
     
     total_plots = len(feature_names_ordered)
