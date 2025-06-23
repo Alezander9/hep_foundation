@@ -16,7 +16,7 @@ from hep_foundation.data.atlas_file_manager import ATLASFileManager
 from hep_foundation.data.physlite_feature_processor import PhysliteFeatureProcessor
 from hep_foundation.config.task_config import TaskConfig
 from hep_foundation.config.dataset_config import DatasetConfig
-from hep_foundation.utils.utils import ConfigSerializer
+
 
 
 
@@ -64,13 +64,13 @@ class DatasetManager:
         Returns:
             Tuple containing:
             - Path to the dataset HDF5 file
-            - Path to the config file
+            - Path to the dataset config file
         """
         dataset_dir = self.get_dataset_dir(dataset_id)
-        return (
-            dataset_dir / "dataset.h5",  # dataset path
-            dataset_dir / "config.yaml",  # config path
-        )
+        dataset_path = dataset_dir / "dataset.h5"
+        config_path = dataset_dir / "_dataset_config.yaml"
+        
+        return dataset_path, config_path
 
     def get_current_dataset_id(self) -> str:
         """Get ID of currently loaded dataset"""
@@ -95,12 +95,8 @@ class DatasetManager:
         if not isinstance(config, DatasetConfig):
             raise ValueError("config must be a DatasetConfig object")
 
-        config_dict = {
-            "run_numbers": config.run_numbers,
-            "signal_keys": config.signal_keys,
-            "catalog_limit": config.catalog_limit,
-            "task_config": config.task_config.to_dict() if config.task_config else None,
-        }
+        # Use the dynamic to_dict() method
+        config_dict = config.to_dict()
 
         # Create a descriptive ID based on dataset type
         if config_dict.get("run_numbers"):
@@ -124,24 +120,38 @@ class DatasetManager:
         self.logger.info(f"Generated dataset ID: {result}")
         return result
 
-    def save_dataset_config(self, dataset_id: str, config: Union[dict, TaskConfig]):
-        """Save full dataset configuration"""
+    def save_dataset_config(self, dataset_id: str, config: "DatasetConfig"):
+        """Save dataset configuration as separate config and info files"""
         # Get paths
         dataset_dir = self.get_dataset_dir(dataset_id)
-        config_path = dataset_dir / "config.yaml"
+        dataset_config_path = dataset_dir / "_dataset_config.yaml"
+        dataset_info_path = dataset_dir / "_dataset_info.json"
         
         # Ensure directory exists
         dataset_dir.mkdir(parents=True, exist_ok=True)
 
-        # Convert TaskConfig to dict if needed
-        if isinstance(config, TaskConfig):
-            config = config.to_dict()
+        # Extract clean configuration using to_dict() methods (dynamic!)
+        config_dict = config.to_dict()
+        
+        # Separate dataset config from task config
+        task_config_dict = config_dict.pop("task_config")  # Remove and get task config
+        dataset_config_dict = config_dict  # Everything else is dataset config
 
-        # Prepare configuration
-        full_config = {
+        # Create clean config YAML (like the source configs)
+        clean_config = {
+            "dataset": dataset_config_dict,
+            "task": task_config_dict
+        }
+
+        # Save clean config as YAML
+        import yaml
+        with open(dataset_config_path, 'w') as f:
+            yaml.dump(clean_config, f, default_flow_style=False, indent=2)
+
+        # Prepare metadata info  
+        dataset_info = {
             "dataset_id": dataset_id,
             "creation_date": str(datetime.now()),
-            "config": config,
             "atlas_version": self.atlas_manager.get_version(),
             "software_versions": {
                 "python": platform.python_version(),
@@ -151,21 +161,40 @@ class DatasetManager:
             },
         }
 
-        # Save using our serializer
-        ConfigSerializer.to_yaml(full_config, config_path)
-        return config_path
+        # Save metadata as JSON
+        import json
+        with open(dataset_info_path, 'w') as f:
+            json.dump(dataset_info, f, indent=2)
+
+        self.logger.info(f"Saved dataset config to: {dataset_config_path}")
+        self.logger.info(f"Saved dataset info to: {dataset_info_path}")
+        
+        return dataset_config_path, dataset_info_path
 
     def get_dataset_info(self, dataset_id: str) -> dict:
-        """Get full dataset information including recreation parameters"""
-        config_path = self.get_dataset_dir(dataset_id) / "config.yaml"
-        self.logger.info(f"Looking for config at: {config_path}")  # Debug print
-        if not config_path.exists():
-            self.logger.info(
-                f"Available configs: {list(self.get_dataset_dir(dataset_id).glob('*.yaml'))}"
-            )  # Debug print
-            raise ValueError(f"No configuration found for dataset {dataset_id}")
+        """Get dataset information from separate config and info files"""
+        dataset_dir = self.get_dataset_dir(dataset_id)
+        dataset_config_path = dataset_dir / "_dataset_config.yaml"
+        dataset_info_path = dataset_dir / "_dataset_info.json"
+        
+        # Check for required files
+        if not dataset_config_path.exists():
+            raise ValueError(f"Dataset config file not found: {dataset_config_path}")
+            
+        if not dataset_info_path.exists():
+            raise ValueError(f"Dataset info file not found: {dataset_info_path}")
 
-        return ConfigSerializer.from_yaml(config_path)
+        # Load both files and combine
+        import yaml, json
+        with open(dataset_config_path) as f:
+            dataset_config = yaml.safe_load(f)
+        with open(dataset_info_path) as f:
+            dataset_info = json.load(f)
+            
+        return {
+            **dataset_info,
+            "config": dataset_config
+        }
 
     def _create_atlas_dataset(
         self,
@@ -198,8 +227,8 @@ class DatasetManager:
 
         try:
             # Save configuration first
-            self.save_dataset_config(dataset_id, dataset_config)
-            self.logger.info(f"Saved configuration to: {config_path}")
+            dataset_config_path, dataset_info_path = self.save_dataset_config(dataset_id, dataset_config)
+            self.logger.info(f"Saved configuration to: {dataset_config_path} and {dataset_info_path}")
 
             # Process all runs
             all_inputs = []
@@ -352,8 +381,10 @@ class DatasetManager:
             # Clean up on failure
             if dataset_path.exists():
                 dataset_path.unlink()
-            if config_path.exists():
-                config_path.unlink()
+            if dataset_config_path.exists():
+                dataset_config_path.unlink()
+            if dataset_info_path.exists():
+                dataset_info_path.unlink()
             if plot_output and plot_output.exists():
                 shutil.rmtree(plot_output)
             if dataset_dir.exists() and not any(dataset_dir.iterdir()):
@@ -369,11 +400,11 @@ class DatasetManager:
         Returns:
             Tuple containing:
             - Path to the dataset HDF5 file
-            - Path to the config file
+            - Path to the dataset config file
         """
         dataset_dir = self.get_dataset_dir(dataset_id)
         dataset_path = dataset_dir / "signal_dataset.h5"
-        config_path = dataset_dir / "config.yaml"
+        config_path = dataset_dir / "_dataset_config.yaml"
         
         self.logger.info(f"[Debug] Signal dataset directory: {dataset_dir}")
         self.logger.info(f"[Debug] Signal dataset path: {dataset_path}")
