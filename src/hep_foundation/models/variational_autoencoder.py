@@ -198,6 +198,9 @@ class BetaSchedule(keras.callbacks.Callback):
         self.total_epochs = total_epochs
         self.warmup_epochs = warmup_epochs
         self.cycle_epochs = cycle_epochs
+        
+        # Initialize logger
+        self.logger = get_logger(__name__)
 
     def on_epoch_begin(self, epoch: int, logs: Optional[dict] = None):
         if epoch < self.warmup_epochs:
@@ -428,13 +431,24 @@ class VariationalAutoEncoder(BaseModel):
                     linewidth=LINE_WIDTHS["thick"],
                 )
                 if "total_loss" in self._history:
+                    # Fix: Use a color from the available high_contrast palette instead of invalid "bright" palette
+                    # Get a fourth color by extending the high_contrast palette
+                    extended_colors = get_color_cycle("high_contrast", 4)
                     ax1.plot(
                         epochs,
                         self._history["total_loss"],
-                        color=get_color_cycle("bright", 4)[3],
+                        color=extended_colors[3],
                         label="Total Loss",
                         linewidth=LINE_WIDTHS["thick"],
                     )
+                
+                # Debug: Print some loss values to help diagnose the overlap issue
+                if len(self._history["reconstruction_loss"]) > 0:
+                    self.logger.debug(f"Sample reconstruction loss values: {self._history['reconstruction_loss'][:3]}...")
+                    if "total_loss" in self._history:
+                        self.logger.debug(f"Sample total loss values: {self._history['total_loss'][:3]}...")
+                    if "kl_loss" in self._history:
+                        self.logger.debug(f"Sample KL loss values: {self._history['kl_loss'][:3]}...")
 
                 betas = self._calculate_beta_schedule(len(epochs))
                 ax2.plot(
@@ -445,6 +459,9 @@ class VariationalAutoEncoder(BaseModel):
                     label="Beta",
                     linewidth=LINE_WIDTHS["thick"],
                 )
+                
+                # Debug: Print some beta values to help diagnose if beta is always 0
+                self.logger.debug(f"Sample beta values: {betas[:5]}...")
 
                 ax1.set_xlabel("Epoch", fontsize=FONT_SIZES["large"])
                 ax1.set_ylabel(
