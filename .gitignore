@@ -5,6 +5,7 @@ processed_datasets
 notebooks
 logs
 _test_results
+catalog_stack
 # Python cache files
 __pycache__/
 *.py[cod]
