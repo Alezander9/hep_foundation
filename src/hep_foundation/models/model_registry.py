@@ -119,6 +119,7 @@ class ModelRegistry:
             model_config: Model configuration dictionary
             training_config: Training configuration dictionary
             description: Optional experiment description
+            source_config_file: Path to the source YAML config file
         """
         # Create experiment directory and folder structure
         exp_dir = self._create_experiment_folders(name)
@@ -135,44 +136,33 @@ class ModelRegistry:
             # Assume it's already a dictionary
             dataset_config_dict = dataset_config
 
-        # Prepare experiment data
-        experiment_data = {
-            "experiment_info": {
-                "name": name,
-                "description": description,
-                "timestamp": str(datetime.now()),
-                "status": "created",
-                "environment_info": self._get_environment_info(),
-            },
-            "dataset_config": dataset_config_dict,
-            "model_config": {
-                "model_type": model_config["model_type"],
-                "architecture": model_config["architecture"],
-                "hyperparameters": model_config["hyperparameters"],
-            },
-            "training_config": training_config,
+        # Collect experiment info (machine/environment info)
+        experiment_info = {
+            "name": name,
+            "description": description,
+            "timestamp": str(datetime.now()),
+            "status": "created",
+            "environment_info": self._get_environment_info(),
         }
 
-        # Save experiment data
-        with open(exp_dir / "experiment_data.json", "w") as f:
-            json.dump(experiment_data, f, indent=2, default=self.ensure_serializable)
-        
-        # Save the source config file if provided (eliminates desync)
+        # Save experiment info as separate JSON file for machine/environment details
+        with open(exp_dir / "_experiment_info.json", "w") as f:
+            json.dump(experiment_info, f, indent=2, default=self.ensure_serializable)
+        self.logger.info(f"Experiment info saved to: {exp_dir / '_experiment_info.json'}")
+
+        # Save the source YAML config file for reproducibility
         if source_config_file:
             import shutil
             from pathlib import Path
             source_path = Path(source_config_file)
             if source_path.exists():
-                shutil.copy2(source_path, exp_dir / "source_pipeline_config.yaml")
-                self.logger.info(f"Source config file copied to: {exp_dir / 'source_pipeline_config.yaml'}")
+                config_dest = exp_dir / "_experiment_config.yaml"
+                shutil.copy2(source_path, config_dest)
+                self.logger.info(f"Source config file saved as: {config_dest}")
+            else:
+                self.logger.warning(f"Source config file not found: {source_config_file}")
 
-        # Create a training history file
-        with open(exp_dir / "training" / "metrics.json", "w") as f:
-            json.dump(
-                {"epochs_completed": 0, "history": {}, "final_metrics": None},
-                f,
-                indent=2,
-            )
+
 
         return exp_dir.name
 
@@ -205,13 +195,14 @@ class ModelRegistry:
         # Ensure metrics are serializable
         metrics = self.ensure_serializable(final_metrics)
 
-        # Update experiment status in experiment_data.json
-        exp_data_path = exp_dir / "experiment_data.json"
-        with open(exp_data_path) as f:
-            experiment_data = json.load(f)
-        experiment_data["experiment_info"]["status"] = "completed"
-        with open(exp_data_path, "w") as f:
-            json.dump(experiment_data, f, indent=2)
+        # Update experiment status in experiment_info.json
+        exp_info_path = exp_dir / "_experiment_info.json"
+        if exp_info_path.exists():
+            with open(exp_info_path) as f:
+                experiment_info = json.load(f)
+            experiment_info["status"] = "completed"
+            with open(exp_info_path, "w") as f:
+                json.dump(experiment_info, f, indent=2, default=self.ensure_serializable)
 
         # Save training history to CSV
         history_dir = exp_dir / "training"
@@ -341,37 +332,47 @@ class ModelRegistry:
 
     def get_experiment_data(self, experiment_id: str) -> dict:
         """
-        Load experiment data from experiment_data.json
+        Load experiment data from separate files (_experiment_info.json, _experiment_config.yaml, final_metrics.json)
 
         Args:
             experiment_id: The experiment directory name (e.g. '001_vae_test')
 
         Returns:
-            Dictionary containing all experiment configuration and metadata
+            Dictionary containing experiment info, training results, and config file path
         """
         exp_dir = self.base_path / experiment_id
-        exp_data_path = exp_dir / "experiment_data.json"
 
         if not exp_dir.exists():
             raise ValueError(f"No experiment found with ID {experiment_id}")
 
-        if not exp_data_path.exists():
-            raise ValueError(f"No experiment data file found for {experiment_id}")
+        experiment_data = {}
 
-        try:
-            with open(exp_data_path) as f:
-                experiment_data = json.load(f)
+        # Load experiment info (machine/environment details and status)
+        exp_info_path = exp_dir / "_experiment_info.json"
+        if exp_info_path.exists():
+            try:
+                with open(exp_info_path) as f:
+                    experiment_data["experiment_info"] = json.load(f)
+            except json.JSONDecodeError:
+                self.logger.warning(f"Invalid JSON format in experiment info file for {experiment_id}")
 
-            # Optionally load final metrics if training is completed
-            metrics_path = exp_dir / "training" / "final_metrics.json"
-            if metrics_path.exists():
+        # Load training results if available
+        metrics_path = exp_dir / "training" / "final_metrics.json"
+        if metrics_path.exists():
+            try:
                 with open(metrics_path) as f:
-                    metrics_data = json.load(f)
-                    experiment_data["training_results"] = metrics_data
+                    experiment_data["training_results"] = json.load(f)
+            except json.JSONDecodeError:
+                self.logger.warning(f"Invalid JSON format in training metrics file for {experiment_id}")
 
-            return experiment_data
 
-        except json.JSONDecodeError:
-            raise ValueError(
-                f"Invalid JSON format in experiment data file for {experiment_id}"
-            )
+
+        # Note: Configuration is available in _experiment_config.yaml for reproducibility
+        config_path = exp_dir / "_experiment_config.yaml"
+        if config_path.exists():
+            experiment_data["config_file_path"] = str(config_path)
+
+        if not experiment_data:
+            raise ValueError(f"No valid experiment files found for {experiment_id}")
+
+        return experiment_data

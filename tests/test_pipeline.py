@@ -14,12 +14,12 @@ from hep_foundation.config.config_loader import load_pipeline_config
 def create_test_configs():
     """Load test configurations from YAML file."""
     # Get the path to the test config file
-    test_config_path = Path(__file__).parent / "test_pipeline_config.yaml"
+    test_config_path = Path(__file__).parent / "_test_pipeline_config.yaml"
     
     # Load configuration using the new config loader
     config = load_pipeline_config(test_config_path)
     
-    # Return the config objects in the same format as before
+    # Return the config objects and source file path
     return {
         "dataset_config": config["dataset_config"],
         "vae_model_config": config["vae_model_config"],
@@ -27,13 +27,14 @@ def create_test_configs():
         "vae_training_config": config["vae_training_config"],
         "dnn_training_config": config["dnn_training_config"],
         "task_config": config["task_config"],
+        "source_config_file": config.get("_source_config_file"),
     }
 
 @pytest.fixture(scope="session")
 def experiment_dir():
     """Create a temporary experiment directory for the test run."""
     # Define a fixed directory for test results
-    base_dir = Path.cwd() / "test_results"
+    base_dir = Path.cwd() / "_test_results"
     test_dir = base_dir / "test_foundation_experiments"
 
     # Delete the directory if it exists from a previous run
@@ -58,13 +59,9 @@ def test_configs():
 
 @pytest.fixture(scope="module")
 def pipeline(experiment_dir):
-    # The experiment_dir fixture already creates test_results/test_foundation_experiments
-    # and yields str(test_results/test_foundation_experiments)
-    # We want processed_datasets to be under test_results/, not test_foundation_experiments/
-    # So, the parent of experiment_dir is test_results/
     
-    experiments_output_path = Path(experiment_dir) # This is test_results/test_foundation_experiments
-    processed_data_parent = experiments_output_path.parent # This is test_results/
+    experiments_output_path = Path(experiment_dir)
+    processed_data_parent = experiments_output_path.parent 
 
     return FoundationModelPipeline(
         experiments_output_dir=str(experiments_output_path),
@@ -113,9 +110,13 @@ def test_run_full_pipeline(pipeline, test_configs, experiment_dir):
     logger.info("Starting full pipeline test")
     try:
         # Load test config to get evaluation settings
-        test_config_path = Path(__file__).parent / "test_pipeline_config.yaml"
+        test_config_path = Path(__file__).parent / "_test_pipeline_config.yaml"
         full_config = load_pipeline_config(test_config_path)
         evaluation_config = full_config.get('evaluation_config')
+        
+        # Set the source config file for reproducibility
+        if test_configs.get("source_config_file"):
+            pipeline.set_source_config_file(test_configs["source_config_file"])
         
         result = pipeline.run_full_pipeline(
             dataset_config=test_configs["dataset_config"],
@@ -133,7 +134,7 @@ def test_run_full_pipeline(pipeline, test_configs, experiment_dir):
         
         # Find the model that was created by the full pipeline
         experiment_dirs = list(Path(experiment_dir).glob("*"))
-        model_dirs = [d for d in experiment_dirs if d.is_dir() and (d / "experiment_data.json").exists()]
+        model_dirs = [d for d in experiment_dirs if d.is_dir() and (d / "_experiment_info.json").exists()]
         
         # Should have at least one model (could be more if previous tests ran)
         assert len(model_dirs) > 0, "No trained foundation model found after full pipeline"
@@ -141,9 +142,14 @@ def test_run_full_pipeline(pipeline, test_configs, experiment_dir):
         # Find the most recently created model directory (full pipeline should create a new one)
         latest_model_dir = max(model_dirs, key=lambda x: x.stat().st_mtime)
         
-        # Verify all expected outputs exist
-        experiment_data_path = latest_model_dir / "experiment_data.json"
-        assert experiment_data_path.exists(), f"Experiment data file not found at {experiment_data_path}"
+        # Verify all expected outputs exist (no longer checking for experiment_data.json)
+        
+        # Check for the new reproducibility files
+        experiment_config_path = latest_model_dir / "_experiment_config.yaml"
+        assert experiment_config_path.exists(), f"Experiment config file not found at {experiment_config_path}"
+        
+        experiment_info_path = latest_model_dir / "_experiment_info.json"
+        assert experiment_info_path.exists(), f"Experiment info file not found at {experiment_info_path}"
         
         # Check anomaly detection outputs
         anomaly_dir = latest_model_dir / "testing" / "anomaly_detection"

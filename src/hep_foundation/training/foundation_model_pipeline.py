@@ -57,10 +57,23 @@ class FoundationModelPipeline:
         
         self.processed_datasets_dir.mkdir(parents=True, exist_ok=True)
         
+        # Source config file for reproducibility
+        self._source_config_file = None
+        
         self.logger.info("Foundation Model Pipeline initialized.")
         self.logger.info(f"  Experiment outputs will be in: {self.experiments_output_dir.absolute()}")
         self.logger.info(f"  Processed datasets will be in: {self.processed_datasets_dir.absolute()}")
         self.logger.info(f"TensorFlow: {tf.__version__} (Eager: {tf.executing_eagerly()})")
+
+    def set_source_config_file(self, config_file_path: str):
+        """
+        Set the source config file path for reproducibility.
+        
+        Args:
+            config_file_path: Path to the YAML config file used for this pipeline run
+        """
+        self._source_config_file = config_file_path
+        self.logger.info(f"Source config file set to: {config_file_path}")
 
     def run_process(
         self,
@@ -368,9 +381,8 @@ class FoundationModelPipeline:
             model_config_dict = model_config.to_dict()
             training_config_dict = training_config.to_dict()
             # Get source config file path if available
-            source_config_file = None
-            if hasattr(dataset_config, 'to_dict') and '_source_config_file' in getattr(dataset_config, '__dict__', {}):
-                source_config_file = dataset_config.__dict__.get('_source_config_file')
+            # Note: This should be passed explicitly when calling train_foundation_model
+            source_config_file = getattr(self, '_source_config_file', None)
             
             experiment_id = registry.register_experiment(
                 name="Foundation_VAE_Model",
@@ -579,7 +591,7 @@ class FoundationModelPipeline:
 
         foundation_model_path = Path(foundation_model_path)
         model_weights_path = foundation_model_path / "models" / "foundation_model" / "full_model"
-        config_path = foundation_model_path / "experiment_data.json"
+        config_path = foundation_model_path / "_experiment_config.yaml"
 
         if not model_weights_path.exists():
             model_weights_path_h5 = model_weights_path.with_suffix(".weights.h5")
@@ -591,7 +603,7 @@ class FoundationModelPipeline:
                 return False
 
         if not config_path.exists():
-            self.logger.error(f"Foundation model experiment data not found at: {config_path}")
+            self.logger.error(f"Foundation model config not found at: {config_path}")
             return False
 
         try:
@@ -601,19 +613,18 @@ class FoundationModelPipeline:
 
             # 1. Load original model configuration and experiment ID
             self.logger.info(f"Loading original model config from: {config_path}")
+            import yaml
             with open(config_path) as f:
-                original_experiment_data = json.load(f)
+                original_experiment_data = yaml.safe_load(f)
 
             # Get the experiment ID from the foundation model path
             foundation_experiment_id = foundation_model_path.name
 
-            # Navigate potential nested structure if saved via registry's complete_training
-            if "experiment_info" in original_experiment_data and "model_config" in original_experiment_data["experiment_info"]:
-                original_model_config = original_experiment_data["experiment_info"]["model_config"]
-            elif "model_config" in original_experiment_data:
-                original_model_config = original_experiment_data["model_config"]
+            # Get the VAE model config from the YAML structure
+            if "models" in original_experiment_data and "vae" in original_experiment_data["models"]:
+                original_model_config = original_experiment_data["models"]["vae"]
             else:
-                self.logger.error(f"Could not find 'model_config' in experiment data: {config_path}")
+                self.logger.error(f"Could not find VAE model config in: {config_path}")
                 return False
 
             if not original_model_config or original_model_config.get("model_type") != "variational_autoencoder":
@@ -741,32 +752,8 @@ class FoundationModelPipeline:
             self.logger.info("Anomaly Detection Results")
             self.logger.info("=" * 100)
             
-            experiment_data = registry.get_experiment_data(foundation_experiment_id)
             self.logger.info(f"Foundation Model ID: {foundation_experiment_id}")
-
-            # Display anomaly detection specific results
-            if "test_results" in experiment_data and "anomaly_detection" in experiment_data["test_results"]:
-                anomaly_results = experiment_data["test_results"]["anomaly_detection"]
-                self.logger.info(f"Timestamp: {anomaly_results.get('timestamp')}")
-                self.logger.info(f"Background Events: {anomaly_results.get('background_events')}")
-                self.logger.info(f"Plots Directory: {anomaly_results.get('plots_directory')}")
-                
-                if "signal_results" in anomaly_results:
-                    self.logger.info("Signal Results:")
-                    for signal_name, results in anomaly_results["signal_results"].items():
-                        self.logger.info(f"  Signal: {signal_name} (Events: {results.get('n_events')})")
-                        if "reconstruction_metrics" in results:
-                            recon_metrics = results["reconstruction_metrics"]
-                            self.logger.info("    Reconstruction Metrics:")
-                            self.logger.info(f"      AUC: {recon_metrics.get('roc_auc', 'N/A'):.4f}")
-                            self.logger.info(f"      Separation: {recon_metrics.get('separation', 'N/A'):.4f}")
-                        if "kl_divergence_metrics" in results:
-                            kl_metrics = results["kl_divergence_metrics"]
-                            self.logger.info("    KL Divergence Metrics:")
-                            self.logger.info(f"      AUC: {kl_metrics.get('roc_auc', 'N/A'):.4f}")
-                            self.logger.info(f"      Separation: {kl_metrics.get('separation', 'N/A'):.4f}")
-            else:
-                self.logger.warning("No anomaly detection results found in experiment data.")
+            self.logger.info("Anomaly detection evaluation completed. Results are available in the testing directory.")
 
             self.logger.info("Anomaly detection evaluation completed successfully")
             return True
@@ -846,20 +833,20 @@ class FoundationModelPipeline:
             # 2. Load Pre-trained Foundation Encoder & its Config
             self.logger.info(f"Loading foundation model configuration from: {foundation_model_dir}")
             
-            vae_config_path = foundation_model_dir / "experiment_data.json"
+            # Load the VAE model config from the YAML config file
+            vae_config_path = foundation_model_dir / "_experiment_config.yaml"
             if not vae_config_path.exists():
-                self.logger.error(f"Foundation model experiment data not found at: {vae_config_path}")
+                self.logger.error(f"Foundation model config not found at: {vae_config_path}")
                 return False
             
+            import yaml
             with open(vae_config_path) as f:
-                vae_experiment_data = json.load(f)
+                vae_config_data = yaml.safe_load(f)
             
-            if "experiment_info" in vae_experiment_data and "model_config" in vae_experiment_data["experiment_info"]:
-                original_vae_model_config = vae_experiment_data["experiment_info"]["model_config"]
-            elif "model_config" in vae_experiment_data:
-                original_vae_model_config = vae_experiment_data["model_config"]
+            if "models" in vae_config_data and "vae" in vae_config_data["models"]:
+                original_vae_model_config = vae_config_data["models"]["vae"]
             else:
-                self.logger.error(f"Could not find 'model_config' in VAE experiment data: {vae_config_path}")
+                self.logger.error(f"Could not find VAE model config in: {vae_config_path}")
                 return False
 
             vae_arch_config = original_vae_model_config["architecture"]
