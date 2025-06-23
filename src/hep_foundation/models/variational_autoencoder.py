@@ -628,29 +628,16 @@ class AnomalyDetectionEvaluator:
         # Setup self.logger
         self.logger = get_logger(__name__)
 
-        # Verify experiment data exists
-        self.experiment_data_path = self.experiment_path / "experiment_data.json"
-        if not self.experiment_data_path.exists():
-            raise ValueError(f"No experiment data found at {self.experiment_data_path}")
+        # Load experiment info from the new file structure
+        self.experiment_info_path = self.experiment_path / "_experiment_info.json"
+        if not self.experiment_info_path.exists():
+            raise ValueError(f"No experiment info found at {self.experiment_info_path}")
 
-        # Load existing experiment data
-        with open(self.experiment_data_path) as f:
-            self.experiment_data = json.load(f)
+        # Load existing experiment info
+        with open(self.experiment_info_path) as f:
+            self.experiment_info = json.load(f)
 
-        # Initialize test results storage
-        self.test_results = {}
 
-    def _update_experiment_data(self, test_results: dict) -> None:
-        """Update experiment data with new test results"""
-        # Add or update test results in experiment data
-        if "test_results" not in self.experiment_data:
-            self.experiment_data["test_results"] = {}
-
-        self.experiment_data["test_results"].update(test_results)
-
-        # Save updated experiment data
-        with open(self.experiment_data_path, "w") as f:
-            json.dump(self.experiment_data, f, indent=2)
 
     def _calculate_losses(
         self, dataset: tf.data.Dataset
@@ -1190,8 +1177,7 @@ class AnomalyDetectionEvaluator:
             }
         }
 
-        # Update experiment data with test results
-        self._update_experiment_data(test_results)
+
 
         return test_results
 
