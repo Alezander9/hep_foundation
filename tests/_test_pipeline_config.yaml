@@ -19,9 +19,9 @@ dataset:
 # Task Configuration - matches existing test setup
 task:
   event_filters: {}
-  
+
   input_features: []
-  
+
   input_array_aggregators:
     - input_branches:
         - "InDetTrackParticlesAuxDyn.d0"
@@ -34,10 +34,10 @@ task:
       sort_by_branch: null
       min_length: 10
       max_length: 30
-  
+
   label_features:
     - []
-  
+
   label_array_aggregators:
     - - input_branches:
           - "MET_Core_AnalysisMETAuxDyn.mpx"
@@ -89,7 +89,7 @@ training:
       patience: 2
       min_delta: 0.001
     plot_training: true
-  
+
   dnn:
     batch_size: 1024
     learning_rate: 0.001
@@ -109,4 +109,4 @@ evaluation:
 pipeline:
   delete_catalogs: false  # Keep for debugging during tests
   experiments_output_dir: "test_foundation_experiments"  # Will be overridden by test fixture
-  processed_data_parent_dir: null  # Will be set by test fixture 
+  processed_data_parent_dir: null  # Will be set by test fixture
