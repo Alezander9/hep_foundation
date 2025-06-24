@@ -1,11 +1,11 @@
 atlas_data
 experiments
-foundation_experiments
-processed_datasets
 notebooks
 logs
+_foundation_experiments
+_processed_datasets
 _test_results
-catalog_stack
+_experiment_config_stack
 # Python cache files
 __pycache__/
 *.py[cod]

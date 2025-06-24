@@ -34,14 +34,14 @@ class FoundationModelPipeline:
     3. Evaluating foundation models for regression tasks
     """
 
-    def __init__(self, experiments_output_dir: str = "foundation_experiments", processed_data_parent_dir: Optional[str] = None):
+    def __init__(self, experiments_output_dir: str = "_foundation_experiments", processed_data_parent_dir: Optional[str] = None):
         """
         Initialize the foundation model pipeline.
 
         Args:
             experiments_output_dir: Base directory for storing individual experiment results.
-            processed_data_parent_dir: Parent directory for 'processed_datasets'. 
-                                       If None, 'processed_datasets' is at the workspace root.
+            processed_data_parent_dir: Parent directory for '_processed_datasets'. 
+                                       If None, '_processed_datasets' is at the workspace root.
         """
         self.logger = get_logger(__name__)
 
@@ -49,11 +49,11 @@ class FoundationModelPipeline:
         self.experiments_output_dir.mkdir(parents=True, exist_ok=True)
 
         if processed_data_parent_dir is None:
-            # Default for script runs: datasets are at the root level in 'processed_datasets'
-            self.processed_datasets_dir = Path("processed_datasets")
+            # Default for script runs: datasets are at the root level in '_processed_datasets'
+            self.processed_datasets_dir = Path("_processed_datasets")
         else:
             # For tests or if specified: datasets are relative to this given parent
-            self.processed_datasets_dir = Path(processed_data_parent_dir) / "processed_datasets"
+            self.processed_datasets_dir = Path(processed_data_parent_dir) / "_processed_datasets"
         
         self.processed_datasets_dir.mkdir(parents=True, exist_ok=True)
         

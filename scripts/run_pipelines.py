@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Pipeline Catalog Processor
+Pipeline Config Processor
 
-This script processes YAML configuration files from a catalog_stack directory,
+This script processes YAML configuration files from a _experiment_config_stack directory,
 running the full foundation model pipeline for each configuration.
 
 Features:
-- Processes all YAML files in catalog_stack/ directory
+- Processes all YAML files in _experiment_config_stack/ directory
 - Runs full pipeline (train → regression → anomaly) for each config
-- Saves logs to logs/ directory (one per catalog)
-- Deletes processed catalogs from stack (configs are saved in experiment folders)
+- Saves logs to logs/ directory (one per config)
+- Deletes processed configs from stack (configs are saved in experiment folders)
 - Supports dry-run mode for testing
 - Handles errors gracefully and continues processing
 """
@@ -27,63 +27,63 @@ from hep_foundation.config.logging_config import get_logger
 from hep_foundation.training.foundation_model_pipeline import FoundationModelPipeline
 
 
-class PipelineCatalogProcessor:
-    """Processes pipeline configuration catalogs from a stack directory."""
+class PipelineconfigProcessor:
+    """Processes pipeline configuration configs from a stack directory."""
     
-    def __init__(self, catalog_stack_dir: str = "catalog_stack", logs_dir: str = "logs"):
+    def __init__(self, config_stack_dir: str = "_experiment_config_stack", logs_dir: str = "logs"):
         """
-        Initialize the catalog processor.
+        Initialize the config processor.
         
         Args:
-            catalog_stack_dir: Directory containing YAML configuration files to process
+            config_stack_dir: Directory containing YAML configuration files to process
             logs_dir: Directory to save log files
         """
-        self.catalog_stack_dir = Path(catalog_stack_dir)
+        self.config_stack_dir = Path(config_stack_dir)
         self.logs_dir = Path(logs_dir)
         self.logger = get_logger(__name__)
         
         # Create directories if they don't exist
-        self.catalog_stack_dir.mkdir(exist_ok=True)
+        self.config_stack_dir.mkdir(exist_ok=True)
         self.logs_dir.mkdir(exist_ok=True)
         
-        self.logger.info(f"Catalog processor initialized")
-        self.logger.info(f"  Catalog stack: {self.catalog_stack_dir.absolute()}")
+        self.logger.info(f"config processor initialized")
+        self.logger.info(f"  config stack: {self.config_stack_dir.absolute()}")
         self.logger.info(f"  Logs directory: {self.logs_dir.absolute()}")
     
-    def find_catalog_files(self) -> List[Path]:
-        """Find all YAML configuration files in the catalog stack."""
+    def find_config_files(self) -> List[Path]:
+        """Find all YAML configuration files in the config stack."""
         yaml_patterns = ["*.yaml", "*.yml"]
-        catalog_files = []
+        config_files = []
         
         for pattern in yaml_patterns:
-            catalog_files.extend(self.catalog_stack_dir.glob(pattern))
+            config_files.extend(self.config_stack_dir.glob(pattern))
         
         # Sort by modification time (oldest first) for consistent processing order
-        catalog_files.sort(key=lambda x: x.stat().st_mtime)
+        config_files.sort(key=lambda x: x.stat().st_mtime)
         
-        self.logger.info(f"Found {len(catalog_files)} catalog files to process")
-        for i, catalog_file in enumerate(catalog_files, 1):
-            self.logger.info(f"  {i}. {catalog_file.name}")
+        self.logger.info(f"Found {len(config_files)} config files to process")
+        for i, config_file in enumerate(config_files, 1):
+            self.logger.info(f"  {i}. {config_file.name}")
         
-        return catalog_files
+        return config_files
     
-    def load_catalog_config(self, catalog_path: Path) -> dict:
+    def load_config_config(self, config_path: Path) -> dict:
         """
-        Load pipeline configuration from a catalog file.
+        Load pipeline configuration from a config file.
         
         Args:
-            catalog_path: Path to the YAML configuration file
+            config_path: Path to the YAML configuration file
             
         Returns:
             Dictionary containing all configuration objects
         """
-        self.logger.info(f"Loading configuration from: {catalog_path}")
+        self.logger.info(f"Loading configuration from: {config_path}")
         
         try:
-            config = load_pipeline_config(catalog_path)
+            config = load_pipeline_config(config_path)
             
             # Extract all the config objects
-            catalog_config = {
+            config_config = {
                 "dataset_config": config["dataset_config"],
                 "vae_model_config": config["vae_model_config"],
                 "dnn_model_config": config["dnn_model_config"],
@@ -95,26 +95,26 @@ class PipelineCatalogProcessor:
             }
             
             self.logger.info("Configuration loaded successfully")
-            return catalog_config
+            return config_config
             
         except Exception as e:
-            self.logger.error(f"Failed to load configuration from {catalog_path}: {str(e)}")
+            self.logger.error(f"Failed to load configuration from {config_path}: {str(e)}")
             raise
     
-    def setup_catalog_logging(self, catalog_name: str) -> Tuple[Path, logging.FileHandler]:
+    def setup_config_logging(self, config_name: str) -> Tuple[Path, logging.FileHandler]:
         """
-        Set up logging for a specific catalog.
+        Set up logging for a specific config.
         
         Args:
-            catalog_name: Name of the catalog (without extension)
+            config_name: Name of the config (without extension)
             
         Returns:
             Tuple of (log_file_path, file_handler)
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_file = self.logs_dir / f"pipeline_{catalog_name}_{timestamp}.log"
+        log_file = self.logs_dir / f"pipeline_{config_name}_{timestamp}.log"
         
-        # Create file handler for this catalog
+        # Create file handler for this config
         file_handler = logging.FileHandler(log_file)
         file_handler.setLevel(logging.INFO)
         file_handler.setFormatter(logging.Formatter(
@@ -125,178 +125,178 @@ class PipelineCatalogProcessor:
         root_logger = logging.getLogger()
         root_logger.addHandler(file_handler)
         
-        self.logger.info(f"Logging for catalog '{catalog_name}' to: {log_file}")
+        self.logger.info(f"Logging for config '{config_name}' to: {log_file}")
         return log_file, file_handler
     
-    def cleanup_catalog_logging(self, file_handler: logging.FileHandler):
-        """Clean up logging handler for a catalog."""
+    def cleanup_config_logging(self, file_handler: logging.FileHandler):
+        """Clean up logging handler for a config."""
         root_logger = logging.getLogger()
         root_logger.removeHandler(file_handler)
         file_handler.close()
     
-    def process_catalog(self, catalog_path: Path, dry_run: bool = False) -> bool:
+    def process_config(self, config_path: Path, dry_run: bool = False) -> bool:
         """
-        Process a single catalog file.
+        Process a single config file.
         
         Args:
-            catalog_path: Path to the catalog YAML file
-            dry_run: If True, don't actually run the pipeline or delete the catalog
+            config_path: Path to the config YAML file
+            dry_run: If True, don't actually run the pipeline or delete the config
             
         Returns:
             True if processing was successful, False otherwise
         """
-        catalog_name = catalog_path.stem
+        config_name = config_path.stem
         
         self.logger.info("=" * 100)
-        self.logger.info(f"PROCESSING CATALOG: {catalog_name}")
+        self.logger.info(f"PROCESSING config: {config_name}")
         self.logger.info("=" * 100)
         
-        # Set up logging for this catalog
-        log_file, file_handler = self.setup_catalog_logging(catalog_name)
+        # Set up logging for this config
+        log_file, file_handler = self.setup_config_logging(config_name)
         
         try:
             # Load configuration
-            catalog_config = self.load_catalog_config(catalog_path)
+            config_config = self.load_config_config(config_path)
             
             if dry_run:
                 self.logger.info("DRY RUN: Would run pipeline with this configuration")
-                self.logger.info(f"Dataset runs: {catalog_config['dataset_config'].run_numbers}")
-                self.logger.info(f"Signal keys: {catalog_config['dataset_config'].signal_keys}")
-                self.logger.info(f"VAE epochs: {catalog_config['vae_training_config'].epochs}")
-                self.logger.info(f"DNN epochs: {catalog_config['dnn_training_config'].epochs}")
+                self.logger.info(f"Dataset runs: {config_config['dataset_config'].run_numbers}")
+                self.logger.info(f"Signal keys: {config_config['dataset_config'].signal_keys}")
+                self.logger.info(f"VAE epochs: {config_config['vae_training_config'].epochs}")
+                self.logger.info(f"DNN epochs: {config_config['dnn_training_config'].epochs}")
                 return True
             
             # Initialize pipeline
             pipeline = FoundationModelPipeline()
             
             # Set source config file for reproducibility
-            if catalog_config.get("source_config_file"):
-                pipeline.set_source_config_file(catalog_config["source_config_file"])
+            if config_config.get("source_config_file"):
+                pipeline.set_source_config_file(config_config["source_config_file"])
             
             # Get evaluation configuration
-            evaluation_config = catalog_config.get("evaluation_config")
+            evaluation_config = config_config.get("evaluation_config")
             data_sizes = evaluation_config.regression_data_sizes if evaluation_config else [1000, 2000, 5000]
             fixed_epochs = evaluation_config.fixed_epochs if evaluation_config else 10
             
             # Run the full pipeline
             self.logger.info("Starting full pipeline execution...")
             success = pipeline.run_full_pipeline(
-                dataset_config=catalog_config["dataset_config"],
-                task_config=catalog_config["task_config"],
-                vae_model_config=catalog_config["vae_model_config"],
-                dnn_model_config=catalog_config["dnn_model_config"],
-                vae_training_config=catalog_config["vae_training_config"],
-                dnn_training_config=catalog_config["dnn_training_config"],
-                delete_catalogs=True,  # Clean up intermediate files
+                dataset_config=config_config["dataset_config"],
+                task_config=config_config["task_config"],
+                vae_model_config=config_config["vae_model_config"],
+                dnn_model_config=config_config["dnn_model_config"],
+                vae_training_config=config_config["vae_training_config"],
+                dnn_training_config=config_config["dnn_training_config"],
+                delete_catalogs=True,     # Clean up intermediate files
                 data_sizes=data_sizes,
                 fixed_epochs=fixed_epochs,
             )
             
             if success:
-                self.logger.info(f"Successfully completed pipeline for catalog: {catalog_name}")
+                self.logger.info(f"Successfully completed pipeline for config: {config_name}")
                 
-                # Delete the catalog file from the stack
-                self.logger.info(f"Removing processed catalog from stack: {catalog_path}")
-                catalog_path.unlink()
+                # Delete the config file from the stack
+                self.logger.info(f"Removing processed config from stack: {config_path}")
+                config_path.unlink()
                 
                 return True
             else:
-                self.logger.error(f"Pipeline failed for catalog: {catalog_name}")
+                self.logger.error(f"Pipeline failed for config: {config_name}")
                 return False
                 
         except Exception as e:
-            self.logger.error(f"Error processing catalog {catalog_name}: {type(e).__name__}: {str(e)}")
+            self.logger.error(f"Error processing config {config_name}: {type(e).__name__}: {str(e)}")
             self.logger.error("Full traceback:")
             self.logger.error(traceback.format_exc())
             return False
             
         finally:
             # Clean up logging
-            self.cleanup_catalog_logging(file_handler)
-            self.logger.info(f"Log file for catalog '{catalog_name}': {log_file}")
+            self.cleanup_config_logging(file_handler)
+            self.logger.info(f"Log file for config '{config_name}': {log_file}")
     
-    def run(self, dry_run: bool = False, max_catalogs: int = None) -> bool:
+    def run(self, dry_run: bool = False, max_configs: int = None) -> bool:
         """
-        Run the catalog processor.
+        Run the config processor.
         
         Args:
-            dry_run: If True, don't actually run pipelines or delete catalogs
-            max_catalogs: Maximum number of catalogs to process (None for all)
+            dry_run: If True, don't actually run pipelines or delete configs
+            max_configs: Maximum number of configs to process (None for all)
             
         Returns:
-            True if all catalogs were processed successfully
+            True if all configs were processed successfully
         """
         self.logger.info("=" * 100)
-        self.logger.info("STARTING PIPELINE CATALOG PROCESSOR")
+        self.logger.info("STARTING PIPELINE config PROCESSOR")
         if dry_run:
             self.logger.info("DRY RUN MODE - No pipelines will be executed")
         self.logger.info("=" * 100)
         
-        # Find all catalog files
-        catalog_files = self.find_catalog_files()
+        # Find all config files
+        config_files = self.find_config_files()
         
-        if not catalog_files:
-            self.logger.warning("No catalog files found in the stack directory")
+        if not config_files:
+            self.logger.warning("No config files found in the stack directory")
             return True
         
-        # Limit number of catalogs if specified
-        if max_catalogs is not None:
-            catalog_files = catalog_files[:max_catalogs]
-            self.logger.info(f"Processing limited to first {max_catalogs} catalogs")
+        # Limit number of configs if specified
+        if max_configs is not None:
+            config_files = config_files[:max_configs]
+            self.logger.info(f"Processing limited to first {max_configs} configs")
         
-        # Process each catalog
+        # Process each config
         successful_count = 0
         failed_count = 0
         
-        for i, catalog_path in enumerate(catalog_files, 1):
+        for i, config_path in enumerate(config_files, 1):
             self.logger.info(f"\n{'='*50}")
-            self.logger.info(f"CATALOG {i}/{len(catalog_files)}: {catalog_path.name}")
+            self.logger.info(f"config {i}/{len(config_files)}: {config_path.name}")
             self.logger.info(f"{'='*50}")
             
-            success = self.process_catalog(catalog_path, dry_run=dry_run)
+            success = self.process_config(config_path, dry_run=dry_run)
             
             if success:
                 successful_count += 1
-                self.logger.info(f"✓ Catalog {i} completed successfully")
+                self.logger.info(f"✓ config {i} completed successfully")
             else:
                 failed_count += 1
-                self.logger.error(f"✗ Catalog {i} failed")
+                self.logger.error(f"✗ config {i} failed")
         
         # Final summary
         self.logger.info("\n" + "=" * 100)
-        self.logger.info("CATALOG PROCESSING SUMMARY")
+        self.logger.info("config PROCESSING SUMMARY")
         self.logger.info("=" * 100)
-        self.logger.info(f"Total catalogs processed: {len(catalog_files)}")
+        self.logger.info(f"Total configs processed: {len(config_files)}")
         self.logger.info(f"Successful: {successful_count}")
         self.logger.info(f"Failed: {failed_count}")
         
         if failed_count == 0:
-            self.logger.info("🎉 All catalogs processed successfully!")
+            self.logger.info("🎉 All configs processed successfully!")
             return True
         else:
-            self.logger.warning(f"⚠️  {failed_count} catalog(s) failed processing")
+            self.logger.warning(f"⚠️  {failed_count} config(s) failed processing")
             return False
 
 
 def main():
     """Main entry point for the script."""
     parser = argparse.ArgumentParser(
-        description="Process foundation model pipeline catalogs from a stack directory",
+        description="Process foundation model pipeline configs from a stack directory",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python scripts/run_pipelines.py                    # Process all catalogs in catalog_stack/
+  python scripts/run_pipelines.py                    # Process all configs in  /
   python scripts/run_pipelines.py --dry-run          # Preview what would be processed
-  python scripts/run_pipelines.py --max-catalogs 3   # Process only first 3 catalogs
-  python scripts/run_pipelines.py --catalog-dir my_configs  # Use custom catalog directory
+  python scripts/run_pipelines.py --max-configs 3   # Process only first 3 configs
+  python scripts/run_pipelines.py --config-dir my_configs  # Use custom config directory
         """
     )
     
     parser.add_argument(
-        "--catalog-dir",
+        "--config-dir",
         type=str,
-        default="catalog_stack",
-        help="Directory containing YAML configuration files (default: catalog_stack)"
+        default="_experiment_config_stack",
+        help="Directory containing YAML configuration files (default: _experiment_config_stack)"
     )
     
     parser.add_argument(
@@ -309,29 +309,29 @@ Examples:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Preview catalogs without running pipelines or deleting files"
+        help="Preview configs without running pipelines or deleting files"
     )
     
     parser.add_argument(
-        "--max-catalogs",
+        "--max-configs",
         type=int,
         default=None,
-        help="Maximum number of catalogs to process (default: all)"
+        help="Maximum number of configs to process (default: all)"
     )
     
     args = parser.parse_args()
     
     try:
         # Initialize processor
-        processor = PipelineCatalogProcessor(
-            catalog_stack_dir=args.catalog_dir,
+        processor = PipelineconfigProcessor(
+            config_stack_dir=args.config_dir,
             logs_dir=args.logs_dir
         )
         
         # Run processor
         success = processor.run(
             dry_run=args.dry_run,
-            max_catalogs=args.max_catalogs
+            max_configs=args.max_configs
         )
         
         # Exit with appropriate code
