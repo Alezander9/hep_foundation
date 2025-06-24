@@ -8,7 +8,7 @@ from typing import Any
 from hep_foundation.data.atlas_data import get_run_numbers
 from hep_foundation.config.dataset_config import DatasetConfig
 from hep_foundation.config.task_config import TaskConfig
-from hep_foundation.training.model_trainer import TrainingConfig
+from hep_foundation.config.training_config import TrainingConfig
 
 
 def create_configs(model_type: str = "vae") -> dict[str, Any]:
@@ -75,8 +75,8 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
         run_numbers=run_numbers[-3:],
         # run_numbers=run_numbers[-1:],
         signal_keys=["zprime_tt", "wprime_qq", "zprime_bb"],
-        # catalog_limit=2,
-        catalog_limit=20,
+        catalog_limit=2,
+        # catalog_limit=20,
         validation_fraction=0.15,
         test_fraction=0.15,
         shuffle_buffer=50000,
@@ -128,8 +128,8 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
     vae_training_config = TrainingConfig(
         batch_size=1024,
         learning_rate=0.001,
-        epochs=100,
-        # epochs=3,
+        # epochs=100,
+        epochs=3,
         early_stopping_patience=10,
         early_stopping_min_delta=1e-4,
         plot_training=True,
@@ -138,8 +138,8 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
     dnn_training_config = TrainingConfig(
         batch_size=1024,
         learning_rate=0.001,
-        epochs=50,
-        # epochs=2,
+        # epochs=50,
+        epochs=2,
         early_stopping_patience=100,
         early_stopping_min_delta=1e-4,
         plot_training=True,
@@ -147,7 +147,8 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
 
     # Regression evaluation settings
     # Data sizes to test for the data efficiency study
-    regression_data_sizes = [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000]
+    # regression_data_sizes = [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000]
+    regression_data_sizes = [100, 200]
     
     return {
         "dataset_config": dataset_config,
@@ -194,7 +195,7 @@ def run_foundation_pipeline(
         python_code = f"""
 import sys
 from hep_foundation.training.foundation_model_pipeline import FoundationModelPipeline
-from scripts.run_foundation_model_pipeline import create_configs
+from scripts.async_run_foundation_model_pipeline import create_configs
 
 # Get the configs
 configs = create_configs()
@@ -221,7 +222,7 @@ sys.exit(0 if success else 1)
         python_code = f"""
 import sys
 from hep_foundation.training.foundation_model_pipeline import FoundationModelPipeline
-from scripts.run_foundation_model_pipeline import create_configs
+from scripts.async_run_foundation_model_pipeline import create_configs
 
 # Get the configs
 configs = create_configs()

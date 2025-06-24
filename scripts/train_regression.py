@@ -141,7 +141,7 @@ def train_regression_model():
         
         # 2. Initialize data manager and load datasets
         logger.info("Loading datasets...")
-        data_manager = DatasetManager(base_dir="processed_datasets")
+        data_manager = DatasetManager(base_dir="_processed_datasets")
         
         train_dataset, val_dataset, test_dataset = data_manager.load_atlas_datasets(
             dataset_config=dataset_config,
