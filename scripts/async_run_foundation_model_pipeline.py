@@ -5,10 +5,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from hep_foundation.data.atlas_data import get_run_numbers
 from hep_foundation.config.dataset_config import DatasetConfig
 from hep_foundation.config.task_config import TaskConfig
 from hep_foundation.config.training_config import TrainingConfig
+from hep_foundation.data.atlas_data import get_run_numbers
 
 
 def create_configs(model_type: str = "vae") -> dict[str, Any]:
@@ -30,7 +30,6 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
                     "derived.InDetTrackParticlesAuxDyn.reducedChiSquared",
                     # "InDetTrackParticlesAuxDyn.chiSquared",
                     # "InDetTrackParticlesAuxDyn.numberDoF",
-
                     # "InDetTrackParticlesAuxDyn.definingParametersCovMatrixDiag",
                     # "InDetTrackParticlesAuxDyn.definingParametersCovMatrixOffDiag",
                 ],
@@ -58,7 +57,7 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
                         "MET_Core_AnalysisMETAuxDyn.mpy",
                         "MET_Core_AnalysisMETAuxDyn.sumet",
                     ],
-                    "filter_branches": [],  
+                    "filter_branches": [],
                     "sort_by_branch": None,
                     "min_length": 1,
                     "max_length": 1,
@@ -69,9 +68,8 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
 
     # Get run numbers from the new atlas_data module
     run_numbers = get_run_numbers()
-    
+
     dataset_config = DatasetConfig(
-        
         run_numbers=run_numbers[-3:],
         # run_numbers=run_numbers[-1:],
         signal_keys=["zprime_tt", "wprime_qq", "zprime_bb"],
@@ -149,7 +147,7 @@ def create_configs(model_type: str = "vae") -> dict[str, Any]:
     # Data sizes to test for the data efficiency study
     # regression_data_sizes = [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000]
     regression_data_sizes = [100, 200]
-    
+
     return {
         "dataset_config": dataset_config,
         "vae_model_config": vae_model_config,
@@ -262,7 +260,7 @@ sys.exit(0 if success else 1)
         print("=" * 80)
         print(f"Started foundation pipeline process at {timestamp}")
         print(f"Process type: {process_type}")
-        
+
         # Show process-specific information
         if process_type == "all":
             print("Running full pipeline: Train → Regression → Anomaly Detection")
@@ -273,10 +271,10 @@ sys.exit(0 if success else 1)
             configs = create_configs()
             print(f"Data sizes: {configs['regression_data_sizes']}")
             print(f"Fixed epochs: {configs['dnn_training_config'].epochs}")
-        
+
         if foundation_model_path and process_type != "all":
             print(f"Foundation model: {foundation_model_path}")
-            
+
         print(f"Logging output to: {log_file}")
         print("Process is running in background. You can close VSCode safely.")
         print(f"To stop the process, run: kill {process.pid}")

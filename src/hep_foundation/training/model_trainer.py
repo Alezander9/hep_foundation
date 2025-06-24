@@ -1,5 +1,4 @@
 import time
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -81,11 +80,20 @@ class ModelTrainer:
 
         # Check if this is a predictor model (either DNNPredictor or CustomKerasModelWrapper for regression)
         is_predictor = isinstance(self.model, DNNPredictor)
-        
+
         # For CustomKerasModelWrapper, check if it's being used for regression
         if isinstance(self.model, CustomKerasModelWrapper):
-            model_name = getattr(self.model, 'name', '').lower()
-            is_predictor = any(term in model_name for term in ['regressor', 'predictor', 'from_scratch', 'fine_tuned', 'fixed_encoder'])
+            model_name = getattr(self.model, "name", "").lower()
+            is_predictor = any(
+                term in model_name
+                for term in [
+                    "regressor",
+                    "predictor",
+                    "from_scratch",
+                    "fine_tuned",
+                    "fixed_encoder",
+                ]
+            )
 
         # Different compilation settings based on model type
         if is_predictor:
@@ -116,16 +124,25 @@ class ModelTrainer:
         """
         # Import here to avoid circular imports
         from hep_foundation.models.base_model import CustomKerasModelWrapper
-        
+
         # Check if this is a predictor model (either DNNPredictor or CustomKerasModelWrapper for regression)
         is_predictor = isinstance(self.model, DNNPredictor)
-        
+
         # For CustomKerasModelWrapper, check if it's being used for regression
         # We can identify this by checking if the model name contains regression-related terms
         if isinstance(self.model, CustomKerasModelWrapper):
-            model_name = getattr(self.model, 'name', '').lower()
-            is_predictor = any(term in model_name for term in ['regressor', 'predictor', 'from_scratch', 'fine_tuned', 'fixed_encoder'])
-        
+            model_name = getattr(self.model, "name", "").lower()
+            is_predictor = any(
+                term in model_name
+                for term in [
+                    "regressor",
+                    "predictor",
+                    "from_scratch",
+                    "fine_tuned",
+                    "fixed_encoder",
+                ]
+            )
+
         if is_predictor:
             # For predictor models, use features as input and select correct label as target
             def prepare_predictor_data(
@@ -139,11 +156,11 @@ class ModelTrainer:
 
                 # Select the correct label set based on label_index
                 # For CustomKerasModelWrapper, we assume label_index 0 (first label set)
-                if hasattr(self.model, 'label_index'):
+                if hasattr(self.model, "label_index"):
                     label_index = self.model.label_index
                 else:
                     label_index = 0  # Default for CustomKerasModelWrapper
-                    
+
                 if isinstance(labels, (list, tuple)):
                     target_labels = labels[label_index]
                 else:

@@ -47,7 +47,7 @@ class TrainingConfig:
     def to_dict(self) -> dict:
         """
         Convert training configuration to dictionary format.
-        
+
         Returns:
             Dictionary containing training configuration
         """

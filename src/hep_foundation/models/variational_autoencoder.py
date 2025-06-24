@@ -198,7 +198,7 @@ class BetaSchedule(keras.callbacks.Callback):
         self.total_epochs = total_epochs
         self.warmup_epochs = warmup_epochs
         self.cycle_epochs = cycle_epochs
-        
+
         # Initialize logger
         self.logger = get_logger(__name__)
 
@@ -308,7 +308,7 @@ class VariationalAutoEncoder(BaseModel):
             encoder_inputs, [z_mean, z_log_var, z], name="encoder"
         )
         self.logger.info("Built encoder model")
-        
+
         # Create deterministic encoder (only z_mean output) for downstream tasks
         self.deterministic_encoder = keras.Model(
             encoder_inputs, z_mean, name="deterministic_encoder"
@@ -441,14 +441,20 @@ class VariationalAutoEncoder(BaseModel):
                         label="Total Loss",
                         linewidth=LINE_WIDTHS["thick"],
                     )
-                
+
                 # Debug: Print some loss values to help diagnose the overlap issue
                 if len(self._history["reconstruction_loss"]) > 0:
-                    self.logger.debug(f"Sample reconstruction loss values: {self._history['reconstruction_loss'][:3]}...")
+                    self.logger.debug(
+                        f"Sample reconstruction loss values: {self._history['reconstruction_loss'][:3]}..."
+                    )
                     if "total_loss" in self._history:
-                        self.logger.debug(f"Sample total loss values: {self._history['total_loss'][:3]}...")
+                        self.logger.debug(
+                            f"Sample total loss values: {self._history['total_loss'][:3]}..."
+                        )
                     if "kl_loss" in self._history:
-                        self.logger.debug(f"Sample KL loss values: {self._history['kl_loss'][:3]}...")
+                        self.logger.debug(
+                            f"Sample KL loss values: {self._history['kl_loss'][:3]}..."
+                        )
 
                 betas = self._calculate_beta_schedule(len(epochs))
                 ax2.plot(
@@ -459,7 +465,7 @@ class VariationalAutoEncoder(BaseModel):
                     label="Beta",
                     linewidth=LINE_WIDTHS["thick"],
                 )
-                
+
                 # Debug: Print some beta values to help diagnose if beta is always 0
                 self.logger.debug(f"Sample beta values: {betas[:5]}...")
 
@@ -637,8 +643,6 @@ class AnomalyDetectionEvaluator:
         with open(self.experiment_info_path) as f:
             self.experiment_info = json.load(f)
 
-
-
     def _calculate_losses(
         self, dataset: tf.data.Dataset
     ) -> tuple[np.ndarray, np.ndarray]:
@@ -796,14 +800,14 @@ class AnomalyDetectionEvaluator:
     ) -> Path:
         """
         Save loss distribution data as JSON for later combined plotting.
-        
+
         Args:
             losses: Array of loss values
             loss_type: Type of loss ('reconstruction' or 'kl_divergence')
             signal_name: Name of the signal dataset ('background' for background data)
             plot_data_dir: Directory to save the JSON file
             bin_edges: Optional pre-calculated bin edges for coordinated binning
-            
+
         Returns:
             Path to the saved JSON file
         """
@@ -826,29 +830,33 @@ class AnomalyDetectionEvaluator:
                     p0_1 -= 0.5
                     p99_9 += 0.5
                 plot_range = (p0_1, p99_9)
-                
-                counts, calculated_bin_edges = np.histogram(losses, bins=50, range=plot_range, density=True)
+
+                counts, calculated_bin_edges = np.histogram(
+                    losses, bins=50, range=plot_range, density=True
+                )
                 bin_edges_list = calculated_bin_edges.tolist()
-        
+
         # Create JSON data structure
         loss_data = {
             loss_type: {
-                "counts": counts.tolist() if hasattr(counts, 'tolist') else counts,
+                "counts": counts.tolist() if hasattr(counts, "tolist") else counts,
                 "bin_edges": bin_edges_list,
                 "n_events": len(losses),
                 "mean": float(np.mean(losses)) if losses.size > 0 else 0.0,
                 "std": float(np.std(losses)) if losses.size > 0 else 0.0,
             }
         }
-        
+
         # Save to JSON file
         json_filename = f"loss_distributions_{signal_name}_{loss_type}_data.json"
         json_path = plot_data_dir / json_filename
-        
-        with open(json_path, 'w') as f:
+
+        with open(json_path, "w") as f:
             json.dump(loss_data, f, indent=2)
-        
-        self.logger.info(f"Saved {loss_type} loss distribution data for {signal_name} to {json_path}")
+
+        self.logger.info(
+            f"Saved {loss_type} loss distribution data for {signal_name} to {json_path}"
+        )
         return json_path
 
     def _save_roc_curve_data(
@@ -861,27 +869,27 @@ class AnomalyDetectionEvaluator:
     ) -> Path:
         """
         Save ROC curve data as JSON for later combined plotting.
-        
+
         Args:
             bg_losses: Background loss values
             sig_losses: Signal loss values
             loss_type: Type of loss ('reconstruction' or 'kl_divergence')
             signal_name: Name of the signal dataset
             plot_data_dir: Directory to save the JSON file
-            
+
         Returns:
             Path to the saved JSON file
         """
         from sklearn.metrics import auc, roc_curve
-        
+
         # Create labels and scores for ROC calculation
         labels = np.concatenate([np.zeros(len(bg_losses)), np.ones(len(sig_losses))])
         scores = np.concatenate([bg_losses, sig_losses])
-        
+
         # Calculate ROC curve
         fpr, tpr, thresholds = roc_curve(labels, scores)
         roc_auc = auc(fpr, tpr)
-        
+
         # Downsample to reduce file size (keep max 50 points)
         if len(fpr) > 50:
             indices = np.linspace(0, len(fpr) - 1, 50).astype(int)
@@ -893,7 +901,7 @@ class AnomalyDetectionEvaluator:
             fpr = fpr[indices]
             tpr = tpr[indices]
             thresholds = thresholds[indices] if len(thresholds) > 0 else []
-        
+
         # Create JSON data structure
         roc_data = {
             loss_type: {
@@ -905,15 +913,17 @@ class AnomalyDetectionEvaluator:
                 "n_signal": len(sig_losses),
             }
         }
-        
+
         # Save to JSON file
         json_filename = f"roc_curves_{signal_name}_{loss_type}_data.json"
         json_path = plot_data_dir / json_filename
-        
-        with open(json_path, 'w') as f:
+
+        with open(json_path, "w") as f:
             json.dump(roc_data, f, indent=2)
-        
-        self.logger.info(f"Saved {loss_type} ROC curve data for {signal_name} to {json_path}")
+
+        self.logger.info(
+            f"Saved {loss_type} ROC curve data for {signal_name} to {json_path}"
+        )
         return json_path
 
     def _create_combined_loss_distribution_plots(
@@ -925,53 +935,61 @@ class AnomalyDetectionEvaluator:
     ) -> None:
         """
         Create combined loss distribution plots for all signals together.
-        
+
         Args:
             bg_recon_losses: Background reconstruction losses
-            bg_kl_losses: Background KL divergence losses  
+            bg_kl_losses: Background KL divergence losses
             signal_loss_data: Dictionary mapping signal names to their loss arrays
             test_dir: Base testing directory (contains plot_data/ and plots/ subdirectories)
         """
         self.logger.info("Creating combined loss distribution plots...")
-        
+
         # Create plot_data and plots directories
         plot_data_dir = test_dir / "plot_data"
         plot_data_dir.mkdir(parents=True, exist_ok=True)
         plots_dir = test_dir / "plots"
         plots_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Calculate global bin edges for coordinated binning
-        self.logger.info("Calculating global bin edges for coordinated loss distribution binning...")
-        
+        self.logger.info(
+            "Calculating global bin edges for coordinated loss distribution binning..."
+        )
+
         # Collect all reconstruction losses
         all_recon_losses = [bg_recon_losses]
         for signal_name, (sig_recon_losses, _) in signal_loss_data.items():
             all_recon_losses.append(sig_recon_losses)
         combined_recon_losses = np.concatenate(all_recon_losses)
-        
-        # Collect all KL losses  
+
+        # Collect all KL losses
         all_kl_losses = [bg_kl_losses]
         for signal_name, (_, sig_kl_losses) in signal_loss_data.items():
             all_kl_losses.append(sig_kl_losses)
         combined_kl_losses = np.concatenate(all_kl_losses)
-        
+
         # Calculate global bin edges (0.1 to 99.9 percentiles)
         recon_p0_1, recon_p99_9 = np.percentile(combined_recon_losses, [0.1, 99.9])
         if recon_p0_1 == recon_p99_9:
             recon_p0_1 -= 0.5
             recon_p99_9 += 0.5
         recon_bin_edges = np.linspace(recon_p0_1, recon_p99_9, 51)  # 50 bins
-        
+
         kl_p0_1, kl_p99_9 = np.percentile(combined_kl_losses, [0.1, 99.9])
         if kl_p0_1 == kl_p99_9:
             kl_p0_1 -= 0.5
             kl_p99_9 += 0.5
         kl_bin_edges = np.linspace(kl_p0_1, kl_p99_9, 51)  # 50 bins
-        
-        self.logger.info(f"Reconstruction loss bin range: [{recon_p0_1:.3f}, {recon_p99_9:.3f}] (covers 99.8% of all data)")
-        self.logger.info(f"KL divergence loss bin range: [{kl_p0_1:.3f}, {kl_p99_9:.3f}] (covers 99.8% of all data)")
-        self.logger.info("Using coordinated bin edges to ensure perfect histogram alignment")
-        
+
+        self.logger.info(
+            f"Reconstruction loss bin range: [{recon_p0_1:.3f}, {recon_p99_9:.3f}] (covers 99.8% of all data)"
+        )
+        self.logger.info(
+            f"KL divergence loss bin range: [{kl_p0_1:.3f}, {kl_p99_9:.3f}] (covers 99.8% of all data)"
+        )
+        self.logger.info(
+            "Using coordinated bin edges to ensure perfect histogram alignment"
+        )
+
         # Save bin edges metadata for reference
         bin_edges_metadata = {
             "reconstruction_loss": {
@@ -991,83 +1009,103 @@ class AnomalyDetectionEvaluator:
             "timestamp": str(datetime.now()),
             "datasets": ["background"] + list(signal_loss_data.keys()),
         }
-        
+
         bin_edges_metadata_path = plot_data_dir / "loss_bin_edges_metadata.json"
-        with open(bin_edges_metadata_path, 'w') as f:
+        with open(bin_edges_metadata_path, "w") as f:
             json.dump(bin_edges_metadata, f, indent=2)
         self.logger.info(f"Saved loss bin edges metadata to {bin_edges_metadata_path}")
-        
+
         # Save background loss distribution data with coordinated bin edges
         bg_recon_json = self._save_loss_distribution_data(
-            bg_recon_losses, "reconstruction", "background", plot_data_dir, recon_bin_edges
+            bg_recon_losses,
+            "reconstruction",
+            "background",
+            plot_data_dir,
+            recon_bin_edges,
         )
         bg_kl_json = self._save_loss_distribution_data(
             bg_kl_losses, "kl_divergence", "background", plot_data_dir, kl_bin_edges
         )
-        
+
         # Save signal loss distribution data and collect paths
         signal_recon_jsons = []
         signal_kl_jsons = []
         signal_legend_labels = []
-        
+
         # Save ROC curve data for each signal
         signal_recon_roc_jsons = []
         signal_kl_roc_jsons = []
-        
+
         for signal_name, (sig_recon_losses, sig_kl_losses) in signal_loss_data.items():
             # Save loss distribution data with coordinated bin edges
             sig_recon_json = self._save_loss_distribution_data(
-                sig_recon_losses, "reconstruction", signal_name, plot_data_dir, recon_bin_edges
+                sig_recon_losses,
+                "reconstruction",
+                signal_name,
+                plot_data_dir,
+                recon_bin_edges,
             )
             sig_kl_json = self._save_loss_distribution_data(
                 sig_kl_losses, "kl_divergence", signal_name, plot_data_dir, kl_bin_edges
             )
-            
+
             signal_recon_jsons.append(sig_recon_json)
             signal_kl_jsons.append(sig_kl_json)
             signal_legend_labels.append(signal_name)
-            
+
             # Save ROC curve data
             sig_recon_roc_json = self._save_roc_curve_data(
-                bg_recon_losses, sig_recon_losses, "reconstruction", signal_name, plot_data_dir
+                bg_recon_losses,
+                sig_recon_losses,
+                "reconstruction",
+                signal_name,
+                plot_data_dir,
             )
             sig_kl_roc_json = self._save_roc_curve_data(
                 bg_kl_losses, sig_kl_losses, "kl_divergence", signal_name, plot_data_dir
             )
-            
+
             signal_recon_roc_jsons.append(sig_recon_roc_json)
             signal_kl_roc_jsons.append(sig_kl_roc_json)
-        
+
         # Create combined two-panel loss distribution plot
         try:
             # Import here to avoid circular imports
-            from hep_foundation.data.dataset_visualizer import create_combined_two_panel_loss_plot_from_json
-            
+            from hep_foundation.data.dataset_visualizer import (
+                create_combined_two_panel_loss_plot_from_json,
+            )
+
             if signal_recon_jsons and signal_kl_jsons:
                 recon_json_paths = [bg_recon_json] + signal_recon_jsons
                 kl_json_paths = [bg_kl_json] + signal_kl_jsons
                 legend_labels = ["Background"] + signal_legend_labels
-                
+
                 combined_plot_path = plots_dir / "combined_loss_distributions.png"
                 create_combined_two_panel_loss_plot_from_json(
                     recon_json_paths=recon_json_paths,
                     kl_json_paths=kl_json_paths,
                     output_plot_path=str(combined_plot_path),
                     legend_labels=legend_labels,
-                    title_prefix="Loss Distributions"
+                    title_prefix="Loss Distributions",
                 )
-                self.logger.info(f"Saved combined two-panel loss distribution plot to {combined_plot_path}")
-                
+                self.logger.info(
+                    f"Saved combined two-panel loss distribution plot to {combined_plot_path}"
+                )
+
         except ImportError:
-            self.logger.error("Failed to import create_combined_two_panel_loss_plot_from_json for combined loss plots")
+            self.logger.error(
+                "Failed to import create_combined_two_panel_loss_plot_from_json for combined loss plots"
+            )
         except Exception as e:
             self.logger.error(f"Failed to create combined loss distribution plots: {e}")
-            
+
         # Create combined ROC curves plot
         try:
             # Import here to avoid circular imports
-            from hep_foundation.data.dataset_visualizer import create_combined_roc_curves_plot_from_json
-            
+            from hep_foundation.data.dataset_visualizer import (
+                create_combined_roc_curves_plot_from_json,
+            )
+
             if signal_recon_roc_jsons and signal_kl_roc_jsons:
                 combined_roc_plot_path = plots_dir / "combined_roc_curves.png"
                 create_combined_roc_curves_plot_from_json(
@@ -1075,12 +1113,16 @@ class AnomalyDetectionEvaluator:
                     kl_roc_json_paths=signal_kl_roc_jsons,
                     output_plot_path=str(combined_roc_plot_path),
                     legend_labels=signal_legend_labels,
-                    title_prefix="ROC Curves"
+                    title_prefix="ROC Curves",
                 )
-                self.logger.info(f"Saved combined ROC curves plot to {combined_roc_plot_path}")
-                
+                self.logger.info(
+                    f"Saved combined ROC curves plot to {combined_roc_plot_path}"
+                )
+
         except ImportError:
-            self.logger.error("Failed to import create_combined_roc_curves_plot_from_json for ROC curves")
+            self.logger.error(
+                "Failed to import create_combined_roc_curves_plot_from_json for ROC curves"
+            )
         except Exception as e:
             self.logger.error(f"Failed to create combined ROC curves plots: {e}")
 
@@ -1135,7 +1177,7 @@ class AnomalyDetectionEvaluator:
         # Calculate losses for each signal dataset and store for combined plotting
         signal_results = {}
         signal_loss_data = {}  # For combined plotting
-        
+
         for signal_name, signal_dataset in self.signal_datasets.items():
             self.logger.info(f"Calculating losses for signal dataset: {signal_name}")
             sig_recon_losses, sig_kl_losses = self._calculate_losses(signal_dataset)
@@ -1176,8 +1218,6 @@ class AnomalyDetectionEvaluator:
                 "data_directory": str(test_dir / "plot_data"),
             }
         }
-
-
 
         return test_results
 

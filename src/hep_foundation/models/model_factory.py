@@ -1,4 +1,5 @@
 from typing import Union
+
 from .autoencoder import AutoEncoder, AutoEncoderConfig
 from .base_model import BaseModel, ModelConfig
 from .dnn_predictor import DNNPredictor, DNNPredictorConfig

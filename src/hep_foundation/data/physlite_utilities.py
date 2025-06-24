@@ -6,8 +6,8 @@ from typing import Any, Optional
 
 # Import functions to check and retrieve derived feature definitions
 from hep_foundation.data.physlite_derived_features import (
-    is_derived_feature,
     get_derived_feature,
+    is_derived_feature,
 )
 
 logger = logging.getLogger(__name__)
@@ -16,8 +16,14 @@ logger = logging.getLogger(__name__)
 try:
     # Use importlib.resources for robust path finding within the package
     # The path should be relative to the package root (hep_foundation)
-    json_path_str = str(resources.files('hep_foundation').joinpath('data/physlite_branch_index.json'))
-    with resources.files('hep_foundation').joinpath('data/physlite_branch_index.json').open('rt') as f:
+    json_path_str = str(
+        resources.files("hep_foundation").joinpath("data/physlite_branch_index.json")
+    )
+    with (
+        resources.files("hep_foundation")
+        .joinpath("data/physlite_branch_index.json")
+        .open("rt") as f
+    ):
         data = json.load(f)
         PHYSLITE_BRANCHES = data["physlite_branches"]
         logger.info(f"Successfully loaded PhysLite branch index from {json_path_str}")
@@ -68,13 +74,16 @@ def get_branch_info(
             branch_info_dict = derived_feature.get_branch_info_dict()
             # Determine the branch type from the derived feature's shape
             branch_type = _determine_branch_type(branch_info_dict)
-            logger.info(f"[debug] Branch '{branch_name}' identified as derived: type={branch_type}, info={branch_info_dict}")
+            logger.info(
+                f"[debug] Branch '{branch_name}' identified as derived: type={branch_type}, info={branch_info_dict}"
+            )
             return True, branch_type, branch_info_dict
         else:
             # Should not happen if is_derived_feature is True, but handle defensively
-            logger.warning(f"Branch '{branch_name}' flagged as derived but definition not found.")
+            logger.warning(
+                f"Branch '{branch_name}' flagged as derived but definition not found."
+            )
             return False, BranchType.UNKNOWN, None
-
 
     # If not derived, proceed to check the PhysLite index file
     if not PHYSLITE_BRANCHES:
@@ -85,7 +94,7 @@ def get_branch_info(
         )
 
     # Extract category and feature name for index lookup
-    branch_name_str: str = branch_name # Ensure it's a string
+    branch_name_str: str = branch_name  # Ensure it's a string
     category: Optional[str] = None
     feature: str = branch_name_str
 
@@ -97,13 +106,15 @@ def get_branch_info(
     if category:
         if category in PHYSLITE_BRANCHES and feature in PHYSLITE_BRANCHES[category]:
             branch_info = PHYSLITE_BRANCHES[category][feature]
-    else: # Assume 'Other' category if no dot
+    else:  # Assume 'Other' category if no dot
         if "Other" in PHYSLITE_BRANCHES and feature in PHYSLITE_BRANCHES["Other"]:
-             branch_info = PHYSLITE_BRANCHES["Other"][feature]
+            branch_info = PHYSLITE_BRANCHES["Other"][feature]
 
     if not branch_info:
         # It wasn't derived and wasn't found in the index
-        logger.warning(f"Branch '{branch_name}' not found in PHYSLITE_BRANCHES index and is not a known derived feature.")
+        logger.warning(
+            f"Branch '{branch_name}' not found in PHYSLITE_BRANCHES index and is not a known derived feature."
+        )
         return False, BranchType.UNKNOWN, None
 
     # Check status (only for branches found in the index)
@@ -530,7 +541,7 @@ class PhysliteSelectionConfig:
             for selector in aggregator.input_branches:
                 # --- Determine feature multiplicity (k) from branch shape ---
                 branch_shape = selector.branch.get_shape()
-                k = 1 # Default to 1 feature
+                k = 1  # Default to 1 feature
                 if branch_shape is not None:
                     if len(branch_shape) == 1:
                         # Shape like (-1,) or (N,) -> k=1 feature per track
@@ -540,15 +551,21 @@ class PhysliteSelectionConfig:
                         # Use the second dimension as k
                         k = branch_shape[1]
                         if k <= 0:
-                             # Handle cases like shape [-1, 0] or [-1, -1] if they occur
-                             logger.warning(f"Branch '{selector.branch.name}' has non-positive inner dimension {k} in shape {branch_shape}. Assuming k=1.")
-                             k = 1
+                            # Handle cases like shape [-1, 0] or [-1, -1] if they occur
+                            logger.warning(
+                                f"Branch '{selector.branch.name}' has non-positive inner dimension {k} in shape {branch_shape}. Assuming k=1."
+                            )
+                            k = 1
                     else:
                         # Unexpected shape dimensions (e.g., 0D or 3D+ for an aggregator input)
-                        logger.warning(f"Branch '{selector.branch.name}' has unexpected shape {branch_shape} for feature size calculation. Assuming k=1.")
+                        logger.warning(
+                            f"Branch '{selector.branch.name}' has unexpected shape {branch_shape} for feature size calculation. Assuming k=1."
+                        )
                         k = 1
                 else:
-                     logger.warning(f"Branch '{selector.branch.name}' has no shape info available. Assuming k=1.")
+                    logger.warning(
+                        f"Branch '{selector.branch.name}' has no shape info available. Assuming k=1."
+                    )
 
                 aggregator_feature_count_per_track += k
 

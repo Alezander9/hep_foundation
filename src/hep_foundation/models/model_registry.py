@@ -112,7 +112,7 @@ class ModelRegistry:
         """
         Register new experiment with complete dataset configuration
         Returns the experiment directory name (which serves as the experiment ID)
-        
+
         Args:
             name: Name of the experiment
             dataset_config: DatasetConfig object or dataset_id string (for backward compatibility)
@@ -125,16 +125,18 @@ class ModelRegistry:
         exp_dir = self._create_experiment_folders(name)
 
         # Handle both DatasetConfig objects and dataset_id strings for backward compatibility
-        if hasattr(dataset_config, 'to_dict'):
+        if hasattr(dataset_config, "to_dict"):
             # It's a DatasetConfig object
-            dataset_config_dict = dataset_config.to_dict()
+            # dataset_config_dict = dataset_config.to_dict()  # Unused variable
+            pass
         elif isinstance(dataset_config, str):
             # It's a dataset_id string (backward compatibility)
-            dataset_config_dict = {"dataset_id": dataset_config}
-            self.logger.warning("Using dataset_id string is deprecated. Please pass DatasetConfig object instead.")
+            self.logger.warning(
+                "Using dataset_id string is deprecated. Please pass DatasetConfig object instead."
+            )
         else:
             # Assume it's already a dictionary
-            dataset_config_dict = dataset_config
+            pass
 
         # Collect experiment info (machine/environment info)
         experiment_info = {
@@ -148,21 +150,24 @@ class ModelRegistry:
         # Save experiment info as separate JSON file for machine/environment details
         with open(exp_dir / "_experiment_info.json", "w") as f:
             json.dump(experiment_info, f, indent=2, default=self.ensure_serializable)
-        self.logger.info(f"Experiment info saved to: {exp_dir / '_experiment_info.json'}")
+        self.logger.info(
+            f"Experiment info saved to: {exp_dir / '_experiment_info.json'}"
+        )
 
         # Save the source YAML config file for reproducibility
         if source_config_file:
             import shutil
             from pathlib import Path
+
             source_path = Path(source_config_file)
             if source_path.exists():
                 config_dest = exp_dir / "_experiment_config.yaml"
                 shutil.copy2(source_path, config_dest)
                 self.logger.info(f"Source config file saved as: {config_dest}")
             else:
-                self.logger.warning(f"Source config file not found: {source_config_file}")
-
-
+                self.logger.warning(
+                    f"Source config file not found: {source_config_file}"
+                )
 
         return exp_dir.name
 
@@ -202,7 +207,9 @@ class ModelRegistry:
                 experiment_info = json.load(f)
             experiment_info["status"] = "completed"
             with open(exp_info_path, "w") as f:
-                json.dump(experiment_info, f, indent=2, default=self.ensure_serializable)
+                json.dump(
+                    experiment_info, f, indent=2, default=self.ensure_serializable
+                )
 
         # Save training history to CSV
         history_dir = exp_dir / "training"
@@ -354,7 +361,9 @@ class ModelRegistry:
                 with open(exp_info_path) as f:
                     experiment_data["experiment_info"] = json.load(f)
             except json.JSONDecodeError:
-                self.logger.warning(f"Invalid JSON format in experiment info file for {experiment_id}")
+                self.logger.warning(
+                    f"Invalid JSON format in experiment info file for {experiment_id}"
+                )
 
         # Load training results if available
         metrics_path = exp_dir / "training" / "final_metrics.json"
@@ -363,9 +372,9 @@ class ModelRegistry:
                 with open(metrics_path) as f:
                     experiment_data["training_results"] = json.load(f)
             except json.JSONDecodeError:
-                self.logger.warning(f"Invalid JSON format in training metrics file for {experiment_id}")
-
-
+                self.logger.warning(
+                    f"Invalid JSON format in training metrics file for {experiment_id}"
+                )
 
         # Note: Configuration is available in _experiment_config.yaml for reproducibility
         config_path = exp_dir / "_experiment_config.yaml"

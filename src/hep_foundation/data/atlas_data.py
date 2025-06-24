@@ -19,10 +19,10 @@ _atlas_index_data = None
 def _load_atlas_index() -> dict:
     """Load the ATLAS index data from the JSON file."""
     global _atlas_index_data
-    
+
     if _atlas_index_data is not None:
         return _atlas_index_data
-    
+
     try:
         # Try to load from package resources first
         try:
@@ -33,7 +33,7 @@ def _load_atlas_index() -> dict:
             file_path = Path(__file__).parent / "atlas_index.json"
             with open(file_path) as f:
                 _atlas_index_data = json.load(f)
-                
+
         return _atlas_index_data
     except Exception as e:
         logger.error(f"Failed to load ATLAS index data: {e}")
@@ -42,7 +42,7 @@ def _load_atlas_index() -> dict:
 
 def get_run_numbers() -> list[str]:
     """Get the list of ATLAS run numbers.
-    
+
     Returns:
         List[str]: A list of ATLAS run numbers.
     """
@@ -53,13 +53,13 @@ def get_run_numbers() -> list[str]:
 
 def get_catalog_count(run_number: str) -> int:
     """Get the number of catalogs for a run number.
-    
+
     Args:
         run_number (str): The ATLAS run number.
-        
+
     Returns:
         int: The number of catalogs for the run.
-        
+
     Raises:
         ValueError: If the run number is not found.
     """
@@ -71,13 +71,13 @@ def get_catalog_count(run_number: str) -> int:
 
 def get_signal_catalog(signal_key: str) -> str:
     """Get the catalog file name for a signal key.
-    
+
     Args:
         signal_key (str): The signal key (e.g., 'zprime_tt', 'wprime_qq').
-        
+
     Returns:
         str: The catalog file name.
-        
+
     Raises:
         ValueError: If the signal key is not found.
     """
@@ -89,9 +89,9 @@ def get_signal_catalog(signal_key: str) -> str:
 
 def get_signal_catalog_keys() -> list[str]:
     """Get all available signal catalog keys.
-    
+
     Returns:
         List[str]: A list of signal catalog keys.
     """
     atlas_data = _load_atlas_index()
-    return list(atlas_data["signal_catalogs"].keys()) 
+    return list(atlas_data["signal_catalogs"].keys())
