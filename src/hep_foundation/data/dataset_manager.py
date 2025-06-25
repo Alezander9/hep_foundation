@@ -115,7 +115,12 @@ class DatasetManager:
         self.logger.info(f"Generated dataset ID: {result}")
         return result
 
-    def save_dataset_config(self, dataset_id: str, config: "DatasetConfig"):
+    def save_dataset_config(
+        self,
+        dataset_id: str,
+        config: "DatasetConfig",
+        processing_stats: Optional[dict] = None,
+    ):
         """Save dataset configuration as separate config and info files"""
         # Get paths
         dataset_dir = self.get_dataset_dir(dataset_id)
@@ -153,6 +158,10 @@ class DatasetManager:
                 "h5py": h5py.__version__,
             },
         }
+
+        # Add processing stats if provided
+        if processing_stats is not None:
+            dataset_info["processing_stats"] = processing_stats
 
         # Save metadata as JSON
         import json
@@ -220,14 +229,6 @@ class DatasetManager:
         dataset_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            # Save configuration first
-            dataset_config_path, dataset_info_path = self.save_dataset_config(
-                dataset_id, dataset_config
-            )
-            self.logger.info(
-                f"Saved configuration to: {dataset_config_path} and {dataset_info_path}"
-            )
-
             # Process all runs
             all_inputs = []
             all_labels = []
@@ -269,6 +270,7 @@ class DatasetManager:
                     total_stats["total_events"] += stats["total_events"]
                     total_stats["processed_events"] += stats["processed_events"]
                     total_stats["total_features"] += stats["total_features"]
+                    total_stats["processing_time"] += stats["processing_time"]
                 except Exception as e:
                     self.logger.error(f"Error unpacking process_data result: {str(e)}")
                     raise
@@ -375,12 +377,23 @@ class DatasetManager:
                     }
                 )
 
+            # Save configuration with processing stats
+            dataset_config_path, dataset_info_path = self.save_dataset_config(
+                dataset_id, dataset_config, total_stats
+            )
+            self.logger.info(
+                f"Saved configuration with processing stats to: {dataset_config_path} and {dataset_info_path}"
+            )
+
             return dataset_id, dataset_path
 
         except Exception as e:
             # Clean up on failure
             if dataset_path.exists():
                 dataset_path.unlink()
+            # Check if config paths were created before trying to clean them up
+            dataset_config_path = dataset_dir / "_dataset_config.yaml"
+            dataset_info_path = dataset_dir / "_dataset_info.json"
             if dataset_config_path.exists():
                 dataset_config_path.unlink()
             if dataset_info_path.exists():
