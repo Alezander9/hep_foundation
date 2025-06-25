@@ -1,0 +1,26 @@
+{
+    "name": "HEP Foundation Dev Container",
+    "image": "nvcr.io/nvidia/tensorflow:25.02-tf2-py3",
+    "mounts": [
+        "source=${localWorkspaceFolder},target=/workspace/repo,type=bind,consistency=cached"
+    ],
+    "runArgs": [
+        "--gpus=all",
+        "--ipc=host",
+        "--ulimit=memlock=-1",
+        "--ulimit=stack=67108864"
+    ],
+    "workspaceFolder": "/workspace/repo",
+    "settings": {
+        "python.defaultInterpreterPath": "/usr/bin/python3"
+    },
+    "extensions": [
+        "ms-python.python",
+        "ms-python.pylint",
+        "ms-python.flake8",
+        "charliermarsh.ruff",
+        "ms-vscode-remote.remote-containers"
+    ],
+    "postCreateCommand": "cd /workspace/repo && pip install qkeras seaborn uproot pytest && pip install -e . --no-deps",
+    "remoteUser": "root"
+}

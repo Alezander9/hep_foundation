@@ -18,23 +18,23 @@ plt.rcParams["text.usetex"] = False
 # High contrast colors for complex plots with multiple overlapping elements
 # Use when data series need to be clearly distinguished in the same plot space
 HIGH_CONTRAST_COLORS: list[str] = [
-    "dodgerblue",  # Strong blue
-    "crimson",  # Deep red
-    "forestgreen",  # Rich green
-    "darkorange",  # Bright orange
-    "dimgrey",  # Neutral grey
-    "purple",  # Deep purple
-    "orchid",  # Light purple
+    "dodgerblue",  # Strong blue #0370DB
+    "crimson",  # Deep red #BA0020
+    "forestgreen",  # Rich green #076C07
+    "darkorange",  # Bright orange #DB6D00
+    "dimgrey",  # Neutral grey #4B4B4B
+    "purple",  # Deep purple #610061
+    "orchid",  # Light purple #B752B4
 ]
 
 # Aesthetic gradient for simple plots or subplots
 # Use when data is spatially separated or for sequential/progressive data
 AESTHETIC_COLORS: list[tuple[float, float, float]] = [
-    (4 / 256, 87 / 256, 172 / 256),  # Deep blue
-    (48 / 256, 143 / 256, 172 / 256),  # Light blue
-    (55 / 256, 189 / 256, 121 / 256),  # Bright green
-    (167 / 256, 226 / 256, 55 / 256),  # Light green
-    (244 / 256, 230 / 256, 4 / 256),  # Yellow
+    (4 / 256, 87 / 256, 172 / 256),  # Deep blue #0457AC
+    (48 / 256, 143 / 256, 172 / 256),  # Light blue #308FAC
+    (55 / 256, 189 / 256, 121 / 256),  # Bright green #37BD79
+    (167 / 256, 226 / 256, 55 / 256),  # Light green #A7E237
+    (244 / 256, 230 / 256, 4 / 256),  # Yellow #F4E604
 ]
 
 # ============================================================================
