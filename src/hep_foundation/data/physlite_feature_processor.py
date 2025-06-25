@@ -1455,7 +1455,10 @@ class PhysliteFeatureProcessor:
 
             # Add metadata including event count for legend display
             raw_histogram_data_for_file["_metadata"] = {
+                "total_events": stats["total_events"],
                 "total_processed_events": stats["processed_events"],
+                "total_features": stats["total_features"],
+                "processing_time": stats["processing_time"],
                 "total_sampled_events": overall_plot_samples_count,
                 "signal_key": signal_key if signal_key else "background",
                 "run_number": run_number if run_number else None,
