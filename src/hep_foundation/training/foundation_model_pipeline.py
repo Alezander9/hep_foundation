@@ -408,21 +408,20 @@ class FoundationModelPipeline:
                 task_config.input.get_total_feature_size(),
             )  # Must be a tuple
 
-            # Convert configs to dictionaries for registry storage
-            model_config_dict = model_config.to_dict()
-            training_config_dict = training_config.to_dict()
             # Get source config file path if available
             # Note: This should be passed explicitly when calling train_foundation_model
             source_config_file = getattr(self, "_source_config_file", None)
 
             experiment_id = registry.register_experiment(
                 name="Foundation_VAE_Model",
-                dataset_config=dataset_config,
-                model_config=model_config_dict,
-                training_config=training_config_dict,
+                dataset_id=dataset_id,
                 description="Training a foundation VAE model for feature encoding",
                 source_config_file=source_config_file,
             )
+
+            # Convert configs to dictionaries for model trainer
+            model_config_dict = model_config.to_dict()
+            training_config_dict = training_config.to_dict()
             self.logger.info(f"Created experiment: {experiment_id}")
 
             # 5. Create and Build Model

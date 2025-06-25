@@ -103,44 +103,27 @@ class ModelRegistry:
     def register_experiment(
         self,
         name: str,
-        dataset_config: Any,
-        model_config: dict,
-        training_config: dict,
+        dataset_id: str,
         description: str = "",
         source_config_file: str = None,
     ) -> str:
         """
-        Register new experiment with complete dataset configuration
+        Register new experiment
         Returns the experiment directory name (which serves as the experiment ID)
 
         Args:
             name: Name of the experiment
-            dataset_config: DatasetConfig object or dataset_id string (for backward compatibility)
-            model_config: Model configuration dictionary
-            training_config: Training configuration dictionary
+            dataset_id: ID of the dataset used for this experiment
             description: Optional experiment description
-            source_config_file: Path to the source YAML config file
+            source_config_file: Path to the source YAML config file containing all configurations
         """
         # Create experiment directory and folder structure
         exp_dir = self._create_experiment_folders(name)
 
-        # Handle both DatasetConfig objects and dataset_id strings for backward compatibility
-        if hasattr(dataset_config, "to_dict"):
-            # It's a DatasetConfig object
-            # dataset_config_dict = dataset_config.to_dict()  # Unused variable
-            pass
-        elif isinstance(dataset_config, str):
-            # It's a dataset_id string (backward compatibility)
-            self.logger.warning(
-                "Using dataset_id string is deprecated. Please pass DatasetConfig object instead."
-            )
-        else:
-            # Assume it's already a dictionary
-            pass
-
         # Collect experiment info (machine/environment info)
         experiment_info = {
             "name": name,
+            "dataset_id": dataset_id,
             "description": description,
             "timestamp": str(datetime.now()),
             "status": "created",
