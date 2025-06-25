@@ -61,7 +61,7 @@ python scripts/model_pipeline.py
 - `src/hep_foundation/`: Core package code
 - `scripts/`: Example scripts
 - `experiments/`: Output directory for model registry and results
-- `processed_datasets/`: Storage for processed datasets
+- `_processed_datasets/`: Storage for processed datasets
 
 ## Dependencies
 Core requirements are automatically handled by `uv pip install -e .` using `pyproject.toml`.

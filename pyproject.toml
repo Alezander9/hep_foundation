@@ -3,7 +3,7 @@ name = "hep-foundation"
 version = "0.1.0"
 description = "A python package for training foundation models on high energy physics data"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.9"
 
 authors = [
     { name="Alexander Yue", email="alexyue@stanford.edu" },
@@ -11,16 +11,15 @@ authors = [
 
 
 dependencies = [
-    "numpy==2.1.3",
+    "numpy==1.24.3",
+    "psutil>=7.0.0",
+    "pyyaml>=6.0.2",
+    "qkeras>=0.9.0",
     "requests>=2.32.3",
+    "seaborn>=0.13.2",
+    "tensorflow==2.13.1",
     "tqdm>=4.67.1",
     "uproot>=5.6.0",
-    "matplotlib>=3.10.3",
-    "psutil>=7.0.0",
-    "seaborn>=0.13.2",
-    "tensorflow>=2.19.0",
-    "keras>=3.10.0",
-    "pyyaml>=6.0.2",
 ]
 
 [project.urls]
@@ -43,7 +42,7 @@ line-length = 88
 # See https://docs.astral.sh/ruff/rules/
 select = ["E", "F", "I", "UP"]
 # We ignore the line length limit rule E501
-ignore = ["E501"] 
+ignore = ["E501"]
 
 # Allow unused variables when starting with underscores.
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
@@ -61,4 +60,5 @@ dev = [
     "pytest>=8.3.5",
     "ruff>=0.11.6",
     "pytest-cov>=6.1.1",
+    "pre-commit>=4.2.0",
 ]

@@ -1,0 +1,112 @@
+# Test Pipeline Configuration
+# Minimal settings optimized for fast automated testing
+name: "test_foundation_vae"
+description: "Automated test configuration for foundation model pipeline"
+version: "1.0"
+created_by: "automated_test"
+
+# Dataset Configuration - minimal for fast testing
+dataset:
+  run_numbers: ["00298967", "00311481"]  # Just 2 runs for speed
+  signal_keys: ["zprime_tt", "zprime_bb"]  # 2 signals for testing
+  catalog_limit: 2  # Very small for testing
+  validation_fraction: 0.1
+  test_fraction: 0.1
+  shuffle_buffer: 100  # Small buffer
+  plot_distributions: true  # Keep plots for verification
+  include_labels: true
+
+# Task Configuration - matches existing test setup
+task:
+  event_filters: {}
+
+  input_features: []
+
+  input_array_aggregators:
+    - input_branches:
+        - "InDetTrackParticlesAuxDyn.d0"
+        - "InDetTrackParticlesAuxDyn.z0"
+        - "InDetTrackParticlesAuxDyn.phi"
+        - "derived.InDetTrackParticlesAuxDyn.eta"
+        - "derived.InDetTrackParticlesAuxDyn.pt"
+        - "derived.InDetTrackParticlesAuxDyn.reducedChiSquared"
+      filter_branches: []
+      sort_by_branch: null
+      min_length: 10
+      max_length: 30
+
+  label_features:
+    - []
+
+  label_array_aggregators:
+    - - input_branches:
+          - "MET_Core_AnalysisMETAuxDyn.mpx"
+          - "MET_Core_AnalysisMETAuxDyn.mpy"
+          - "MET_Core_AnalysisMETAuxDyn.sumet"
+        filter_branches: []
+        sort_by_branch: null
+        min_length: 1
+        max_length: 1
+
+# Model Configurations - minimal for fast testing
+models:
+  vae:
+    model_type: "variational_autoencoder"
+    architecture:
+      latent_dim: 2  # Very small latent space for testing
+      encoder_layers: [8]  # Single small layer
+      decoder_layers: [8]  # Single small layer
+      activation: "relu"
+      name: "test_vae"
+    hyperparameters:
+      quant_bits: 8
+      beta_schedule:
+        start: 0.01
+        end: 0.1
+        warmup_epochs: 1
+        cycle_epochs: 1
+
+  dnn:
+    model_type: "dnn_predictor"
+    architecture:
+      hidden_layers: [8]  # Single small layer
+      label_index: 0
+      activation: "relu"
+      output_activation: "linear"
+      name: "test_dnn"
+    hyperparameters:
+      quant_bits: 8
+      dropout_rate: 0.1
+      l2_regularization: 0.00001  # 1e-5
+
+# Training Configurations - short for fast testing
+training:
+  vae:
+    batch_size: 1024
+    learning_rate: 0.001
+    epochs: 10  # Short training for testing
+    early_stopping:
+      patience: 2
+      min_delta: 0.001
+    plot_training: true
+
+  dnn:
+    batch_size: 1024
+    learning_rate: 0.001
+    epochs: 10
+    early_stopping:
+      patience: 2
+      min_delta: 0.001
+    plot_training: true
+
+# Evaluation Settings - minimal for testing
+evaluation:
+  regression_data_sizes: [1000, 2000]  # Small sizes for testing
+  fixed_epochs: 3  # Very few epochs for testing
+  anomaly_eval_batch_size: 512  # Smaller for testing
+
+# Pipeline Settings - test-specific paths
+pipeline:
+  delete_catalogs: false  # Keep for debugging during tests
+  experiments_output_dir: "test_foundation_experiments"  # Will be overridden by test fixture
+  processed_data_parent_dir: null  # Will be set by test fixture

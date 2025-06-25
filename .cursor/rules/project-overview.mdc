@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description:
+globs:
 alwaysApply: true
 ---
 # HEP Foundation Project Overview
@@ -31,4 +31,4 @@ We are building a foundation model for particle physics. This project analyzes H
   - Console output by default, optional file output
   - Configurable log levels (default: INFO)
   - logger.debug should be used for temporary logging to understand an issue
-  - Auto-initialized on package import
+  - Auto-initialized on package import (see src/hep_foundation/__init__.py)

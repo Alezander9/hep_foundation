@@ -33,7 +33,9 @@ class ATLASFileManager:
         self.signal_catalog_counts = {}  # For signal data
 
         # Signal types mapping - get from atlas_data module
-        self.signal_types = {key: get_signal_catalog(key) for key in get_signal_catalog_keys()}
+        self.signal_types = {
+            key: get_signal_catalog(key) for key in get_signal_catalog_keys()
+        }
 
     def get_version(self) -> str:
         """Return the version of the ATLASFileManager"""
@@ -186,7 +188,9 @@ class ATLASFileManager:
                 return output_path
             return output_path if output_path.exists() else None
         except Exception as e:
-            self.logger.error(f"Failed to download {signal_key} catalog {index}: {str(e)}")
+            self.logger.error(
+                f"Failed to download {signal_key} catalog {index}: {str(e)}"
+            )
             if output_path.exists():
                 output_path.unlink()
             return None

@@ -1,4 +1,4 @@
-# This file was used to generate the atlas_index.json file. 
+# This file was used to generate the atlas_index.json file.
 # However it is no longer needed as the data does not change.
 # The script is kept here for reference.
 

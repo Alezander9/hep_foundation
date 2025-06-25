@@ -1,7 +1,7 @@
 import hashlib
 import json
 import platform
-from dataclasses import dataclass
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Union
@@ -9,53 +9,11 @@ from typing import Optional, Union
 import h5py
 import numpy as np
 import tensorflow as tf
-import shutil
 
+from hep_foundation.config.dataset_config import DatasetConfig
 from hep_foundation.config.logging_config import get_logger
 from hep_foundation.data.atlas_file_manager import ATLASFileManager
 from hep_foundation.data.physlite_feature_processor import PhysliteFeatureProcessor
-from hep_foundation.data.task_config import TaskConfig
-from hep_foundation.utils.utils import ConfigSerializer
-
-
-@dataclass
-class DatasetConfig:
-    """Configuration for dataset processing"""
-
-    run_numbers: list[str]
-    signal_keys: Optional[list[str]]
-    catalog_limit: int
-    validation_fraction: float
-    test_fraction: float
-    shuffle_buffer: int
-    plot_distributions: bool
-    include_labels: bool = True
-    task_config: Optional[TaskConfig] = None
-
-    def validate(self) -> None:
-        """Validate dataset configuration parameters"""
-        if not self.run_numbers:
-            raise ValueError("run_numbers cannot be empty")
-        if self.catalog_limit < 1:
-            raise ValueError("catalog_limit must be positive")
-        if not 0 <= self.validation_fraction + self.test_fraction < 1:
-            raise ValueError("Sum of validation and test fractions must be less than 1")
-        if self.task_config is None:
-            raise ValueError("task_config must be provided")
-
-    def to_dict(self) -> dict:
-        """Convert DatasetConfig to dictionary for serialization"""
-        return {
-            "run_numbers": self.run_numbers,
-            "signal_keys": self.signal_keys,
-            "catalog_limit": self.catalog_limit,
-            "validation_fraction": self.validation_fraction,
-            "test_fraction": self.test_fraction,
-            "shuffle_buffer": self.shuffle_buffer,
-            "plot_distributions": self.plot_distributions,
-            "include_labels": self.include_labels,
-            "task_config": self.task_config.to_dict() if self.task_config else None,
-        }
 
 
 class DatasetManager:
@@ -63,7 +21,7 @@ class DatasetManager:
 
     def __init__(
         self,
-        base_dir: Union[str, Path] = "processed_datasets",
+        base_dir: Union[str, Path] = "_processed_datasets",
         atlas_manager: Optional[ATLASFileManager] = None,
     ):
         # Setup logging at INFO level
@@ -83,10 +41,10 @@ class DatasetManager:
 
     def get_dataset_dir(self, dataset_id: str) -> Path:
         """Get the directory path for a specific dataset.
-        
+
         Args:
             dataset_id: The ID of the dataset
-            
+
         Returns:
             Path to the dataset directory
         """
@@ -94,20 +52,20 @@ class DatasetManager:
 
     def get_dataset_paths(self, dataset_id: str) -> tuple[Path, Path]:
         """Get all relevant paths for a dataset.
-        
+
         Args:
             dataset_id: The ID of the dataset
-            
+
         Returns:
             Tuple containing:
             - Path to the dataset HDF5 file
-            - Path to the config file
+            - Path to the dataset config file
         """
         dataset_dir = self.get_dataset_dir(dataset_id)
-        return (
-            dataset_dir / "dataset.h5",  # dataset path
-            dataset_dir / "config.yaml",  # config path
-        )
+        dataset_path = dataset_dir / "dataset.h5"
+        config_path = dataset_dir / "_dataset_config.yaml"
+
+        return dataset_path, config_path
 
     def get_current_dataset_id(self) -> str:
         """Get ID of currently loaded dataset"""
@@ -132,12 +90,8 @@ class DatasetManager:
         if not isinstance(config, DatasetConfig):
             raise ValueError("config must be a DatasetConfig object")
 
-        config_dict = {
-            "run_numbers": config.run_numbers,
-            "signal_keys": config.signal_keys,
-            "catalog_limit": config.catalog_limit,
-            "task_config": config.task_config.to_dict() if config.task_config else None,
-        }
+        # Use the dynamic to_dict() method
+        config_dict = config.to_dict()
 
         # Create a descriptive ID based on dataset type
         if config_dict.get("run_numbers"):
@@ -161,24 +115,41 @@ class DatasetManager:
         self.logger.info(f"Generated dataset ID: {result}")
         return result
 
-    def save_dataset_config(self, dataset_id: str, config: Union[dict, TaskConfig]):
-        """Save full dataset configuration"""
+    def save_dataset_config(
+        self,
+        dataset_id: str,
+        config: "DatasetConfig",
+        processing_stats: Optional[dict] = None,
+    ):
+        """Save dataset configuration as separate config and info files"""
         # Get paths
         dataset_dir = self.get_dataset_dir(dataset_id)
-        config_path = dataset_dir / "config.yaml"
-        
+        dataset_config_path = dataset_dir / "_dataset_config.yaml"
+        dataset_info_path = dataset_dir / "_dataset_info.json"
+
         # Ensure directory exists
         dataset_dir.mkdir(parents=True, exist_ok=True)
 
-        # Convert TaskConfig to dict if needed
-        if isinstance(config, TaskConfig):
-            config = config.to_dict()
+        # Extract clean configuration using to_dict() methods (dynamic!)
+        config_dict = config.to_dict()
 
-        # Prepare configuration
-        full_config = {
+        # Separate dataset config from task config
+        task_config_dict = config_dict.pop("task_config")  # Remove and get task config
+        dataset_config_dict = config_dict  # Everything else is dataset config
+
+        # Create clean config YAML (like the source configs)
+        clean_config = {"dataset": dataset_config_dict, "task": task_config_dict}
+
+        # Save clean config as YAML
+        import yaml
+
+        with open(dataset_config_path, "w") as f:
+            yaml.dump(clean_config, f, default_flow_style=False, indent=2)
+
+        # Prepare metadata info
+        dataset_info = {
             "dataset_id": dataset_id,
             "creation_date": str(datetime.now()),
-            "config": config,
             "atlas_version": self.atlas_manager.get_version(),
             "software_versions": {
                 "python": platform.python_version(),
@@ -188,21 +159,45 @@ class DatasetManager:
             },
         }
 
-        # Save using our serializer
-        ConfigSerializer.to_yaml(full_config, config_path)
-        return config_path
+        # Add processing stats if provided
+        if processing_stats is not None:
+            dataset_info["processing_stats"] = processing_stats
+
+        # Save metadata as JSON
+        import json
+
+        with open(dataset_info_path, "w") as f:
+            json.dump(dataset_info, f, indent=2)
+
+        self.logger.info(f"Saved dataset config to: {dataset_config_path}")
+        self.logger.info(f"Saved dataset info to: {dataset_info_path}")
+
+        return dataset_config_path, dataset_info_path
 
     def get_dataset_info(self, dataset_id: str) -> dict:
-        """Get full dataset information including recreation parameters"""
-        config_path = self.get_dataset_dir(dataset_id) / "config.yaml"
-        self.logger.info(f"Looking for config at: {config_path}")  # Debug print
-        if not config_path.exists():
-            self.logger.info(
-                f"Available configs: {list(self.get_dataset_dir(dataset_id).glob('*.yaml'))}"
-            )  # Debug print
-            raise ValueError(f"No configuration found for dataset {dataset_id}")
+        """Get dataset information from separate config and info files"""
+        dataset_dir = self.get_dataset_dir(dataset_id)
+        dataset_config_path = dataset_dir / "_dataset_config.yaml"
+        dataset_info_path = dataset_dir / "_dataset_info.json"
 
-        return ConfigSerializer.from_yaml(config_path)
+        # Check for required files
+        if not dataset_config_path.exists():
+            raise ValueError(f"Dataset config file not found: {dataset_config_path}")
+
+        if not dataset_info_path.exists():
+            raise ValueError(f"Dataset info file not found: {dataset_info_path}")
+
+        # Load both files and combine
+        import json
+
+        import yaml
+
+        with open(dataset_config_path) as f:
+            dataset_config = yaml.safe_load(f)
+        with open(dataset_info_path) as f:
+            dataset_info = json.load(f)
+
+        return {**dataset_info, "config": dataset_config}
 
     def _create_atlas_dataset(
         self,
@@ -229,15 +224,11 @@ class DatasetManager:
         dataset_id = self.generate_dataset_id(dataset_config)
         dataset_dir = self.get_dataset_dir(dataset_id)
         dataset_path, config_path = self.get_dataset_paths(dataset_id)
-        
+
         # Create directory structure
         dataset_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            # Save configuration first
-            self.save_dataset_config(dataset_id, dataset_config)
-            self.logger.info(f"Saved configuration to: {config_path}")
-
             # Process all runs
             all_inputs = []
             all_labels = []
@@ -247,6 +238,16 @@ class DatasetManager:
                 "total_features": 0,
                 "processing_time": 0,
             }
+
+            # Prepare bin edges metadata path for coordinated histogram binning
+            bin_edges_metadata_path = None
+            if dataset_config.plot_distributions and plot_output:
+                # Create plot_data folder at dataset root level (not inside plots)
+                plot_data_dir = dataset_dir / "plot_data"
+                plot_data_dir.mkdir(parents=True, exist_ok=True)
+                bin_edges_metadata_path = (
+                    plot_data_dir / "background_bin_edges_metadata.json"
+                )
 
             first_event_logged = False
             for run_number in dataset_config.run_numbers:
@@ -260,6 +261,7 @@ class DatasetManager:
                         plot_distributions=dataset_config.plot_distributions,
                         plot_output=plot_output,
                         first_event_logged=first_event_logged,
+                        bin_edges_metadata_path=bin_edges_metadata_path,
                     )
                     first_event_logged = True
                     inputs, labels, stats = result
@@ -268,6 +270,7 @@ class DatasetManager:
                     total_stats["total_events"] += stats["total_events"]
                     total_stats["processed_events"] += stats["processed_events"]
                     total_stats["total_features"] += stats["total_features"]
+                    total_stats["processing_time"] += stats["processing_time"]
                 except Exception as e:
                     self.logger.error(f"Error unpacking process_data result: {str(e)}")
                     raise
@@ -374,14 +377,27 @@ class DatasetManager:
                     }
                 )
 
+            # Save configuration with processing stats
+            dataset_config_path, dataset_info_path = self.save_dataset_config(
+                dataset_id, dataset_config, total_stats
+            )
+            self.logger.info(
+                f"Saved configuration with processing stats to: {dataset_config_path} and {dataset_info_path}"
+            )
+
             return dataset_id, dataset_path
 
         except Exception as e:
             # Clean up on failure
             if dataset_path.exists():
                 dataset_path.unlink()
-            if config_path.exists():
-                config_path.unlink()
+            # Check if config paths were created before trying to clean them up
+            dataset_config_path = dataset_dir / "_dataset_config.yaml"
+            dataset_info_path = dataset_dir / "_dataset_info.json"
+            if dataset_config_path.exists():
+                dataset_config_path.unlink()
+            if dataset_info_path.exists():
+                dataset_info_path.unlink()
             if plot_output and plot_output.exists():
                 shutil.rmtree(plot_output)
             if dataset_dir.exists() and not any(dataset_dir.iterdir()):
@@ -390,27 +406,27 @@ class DatasetManager:
 
     def get_signal_dataset_paths(self, dataset_id: str) -> tuple[Path, Path]:
         """Get all relevant paths for a signal dataset.
-        
+
         Args:
             dataset_id: The ID of the dataset
-            
+
         Returns:
             Tuple containing:
             - Path to the dataset HDF5 file
-            - Path to the config file
+            - Path to the dataset config file
         """
         dataset_dir = self.get_dataset_dir(dataset_id)
         dataset_path = dataset_dir / "signal_dataset.h5"
-        config_path = dataset_dir / "config.yaml"
-        
+        config_path = dataset_dir / "_dataset_config.yaml"
+
         self.logger.info(f"[Debug] Signal dataset directory: {dataset_dir}")
         self.logger.info(f"[Debug] Signal dataset path: {dataset_path}")
         self.logger.info(f"[Debug] Signal config path: {config_path}")
-        
+
         return dataset_path, config_path
 
     def _create_signal_dataset(
-        self, 
+        self,
         dataset_config: DatasetConfig,
         background_hist_data_path: Optional[Path] = None,
     ) -> tuple[str, Path]:
@@ -427,37 +443,60 @@ class DatasetManager:
             - Path to created dataset
         """
         self.logger.info("[Debug] Creating new signal dataset")
-        
+
         # Generate dataset ID and paths
         dataset_id = self.generate_dataset_id(dataset_config)
         dataset_dir = self.get_dataset_dir(dataset_id)
         dataset_dir.mkdir(parents=True, exist_ok=True)
-        
+
         dataset_path, config_path = self.get_signal_dataset_paths(dataset_id)
-        
+
         self.logger.info(f"[Debug] Generated dataset ID: {dataset_id}")
-        self.logger.info(f"[Debug] Signal keys to process: {dataset_config.signal_keys}")
+        self.logger.info(
+            f"[Debug] Signal keys to process: {dataset_config.signal_keys}"
+        )
         self.logger.info(f"[Debug] Will create dataset at: {dataset_path}")
-        
+
         collected_signal_hist_data_paths = []
         collected_signal_legend_labels = []
 
         try:
             with h5py.File(dataset_path, "w") as f:
-                self.logger.info("[Debug] Created HDF5 file, processing signal types...")
+                self.logger.info(
+                    "[Debug] Created HDF5 file, processing signal types..."
+                )
                 first_event_logged = False
                 for signal_key in dataset_config.signal_keys:
                     self.logger.info(f"[Debug] Processing signal type: {signal_key}")
 
                     plot_output_for_signal_json = None
+                    bin_edges_metadata_path = None
                     if dataset_config.plot_distributions:
                         plots_dir = dataset_dir / "plots"
                         plots_dir.mkdir(parents=True, exist_ok=True)
-                        # This plot_output is for _process_data to know where to save the JSON.
-                        # _process_data itself won't make the PNG for signals.
-                        plot_output_for_signal_json = plots_dir / f"{signal_key}_dataset_features.png" 
-                        self.logger.info(f"[Debug] plot_output for signal JSON data: {plot_output_for_signal_json}")
-                    
+                        plot_data_dir = dataset_dir / "plot_data"
+                        plot_data_dir.mkdir(parents=True, exist_ok=True)
+
+                        # This plot_output is for _process_data to determine the JSON filename
+                        # The actual JSON will be saved in plot_data folder
+                        plot_output_for_signal_json = (
+                            plots_dir / f"{signal_key}_dataset_features.png"
+                        )
+                        self.logger.info(
+                            f"[Debug] plot_output for signal JSON data naming: {plot_output_for_signal_json}"
+                        )
+
+                        # Use background bin edges metadata if available
+                        if background_hist_data_path:
+                            # Look for bin edges metadata in the plot_data folder at dataset root level
+                            # background_hist_data_path is in dataset_dir/plot_data/filename.json
+                            # so background_hist_data_path.parent is dataset_dir/plot_data
+                            background_plot_data_dir = background_hist_data_path.parent
+                            bin_edges_metadata_path = (
+                                background_plot_data_dir
+                                / "background_bin_edges_metadata.json"
+                            )
+
                     # Process data for this signal type
                     # IMPORTANT: Ensure plot_distributions=dataset_config.plot_distributions
                     # so that _process_data generates the _hist_data.json files.
@@ -465,13 +504,16 @@ class DatasetManager:
                         task_config=dataset_config.task_config,
                         signal_key=signal_key,
                         delete_catalogs=False,  # Always keep signal catalogs
-                        plot_distributions=dataset_config.plot_distributions, 
-                        plot_output=plot_output_for_signal_json, # Pass path for JSON saving
+                        plot_distributions=dataset_config.plot_distributions,
+                        plot_output=plot_output_for_signal_json,  # Pass path for JSON saving
                         first_event_logged=first_event_logged,
+                        bin_edges_metadata_path=bin_edges_metadata_path,
                     )
                     first_event_logged = True
                     if not inputs:
-                        self.logger.warning(f"No events passed selection for {signal_key}")
+                        self.logger.warning(
+                            f"No events passed selection for {signal_key}"
+                        )
                         continue
 
                     # Create signal-specific group
@@ -490,13 +532,13 @@ class DatasetManager:
 
                     for name, values in scalar_features.items():
                         features_group.create_dataset(
-                            f"scalar/{name}", 
-                            data=np.array(values), 
-                            compression="gzip"
+                            f"scalar/{name}", data=np.array(values), compression="gzip"
                         )
 
                     # Save aggregated features
-                    for agg_name, agg_data_val in inputs[0]["aggregated_features"].items(): # Renamed agg_data to agg_data_val
+                    for agg_name, agg_data_val in inputs[0][
+                        "aggregated_features"
+                    ].items():  # Renamed agg_data to agg_data_val
                         stacked_data = np.stack(
                             [
                                 input_data["aggregated_features"][agg_name]
@@ -517,20 +559,32 @@ class DatasetManager:
                         for label_idx, label_config in enumerate(
                             dataset_config.task_config.labels
                         ):
-                            label_subgroup = labels_group.create_group(f"config_{label_idx}")
+                            label_subgroup = labels_group.create_group(
+                                f"config_{label_idx}"
+                            )
 
                             # Get all label data for this configuration
                             label_data = [label_set[label_idx] for label_set in labels]
 
                             # Save scalar features
-                            scalar_features_label = { # Use different var name
-                                name: [] for name in label_data[0]["scalar_features"].keys()
+                            scalar_features_label = {  # Use different var name
+                                name: []
+                                for name in label_data[0]["scalar_features"].keys()
                             }
                             for event_labels in label_data:
-                                for name, value in event_labels["scalar_features"].items():
-                                    scalar_features_label[name].append(value) # Use different var name
+                                for name, value in event_labels[
+                                    "scalar_features"
+                                ].items():
+                                    scalar_features_label[name].append(
+                                        value
+                                    )  # Use different var name
 
-                            for name, values in scalar_features_label.items(): # Use different var name
+                            for (
+                                name,
+                                values,
+                            ) in (
+                                scalar_features_label.items()
+                            ):  # Use different var name
                                 label_subgroup.create_dataset(
                                     f"scalar/{name}",
                                     data=np.array(values),
@@ -538,18 +592,22 @@ class DatasetManager:
                                 )
 
                             # Save aggregated features if any exist
-                            for agg_name_label, agg_data_label_val in label_data[0][ # Renamed vars
+                            for agg_name_label, agg_data_label_val in label_data[
+                                0
+                            ][  # Renamed vars
                                 "aggregated_features"
                             ].items():
-                                stacked_data_label = np.stack( # Renamed var
+                                stacked_data_label = np.stack(  # Renamed var
                                     [
-                                        event_labels["aggregated_features"][agg_name_label]
+                                        event_labels["aggregated_features"][
+                                            agg_name_label
+                                        ]
                                         for event_labels in label_data
                                     ]
                                 )
                                 label_subgroup.create_dataset(
                                     f"aggregated/{agg_name_label}",
-                                    data=stacked_data_label, # Renamed var
+                                    data=stacked_data_label,  # Renamed var
                                     compression="gzip",
                                 )
 
@@ -561,55 +619,97 @@ class DatasetManager:
                     # Store signal-specific attributes
                     signal_group.attrs.update(
                         {
-                            "has_labels": bool(labels and dataset_config.task_config.labels),
+                            "has_labels": bool(
+                                labels and dataset_config.task_config.labels
+                            ),
                             "normalization_params": json.dumps(norm_params),
                             "processing_stats": json.dumps(stats),
                         }
                     )
-                    
+
                     # Collect histogram data path for this signal for the combined plot
-                    if dataset_config.plot_distributions and plot_output_for_signal_json:
-                        signal_json_path = plot_output_for_signal_json.with_name(plot_output_for_signal_json.stem + "_hist_data.json")
+                    if (
+                        dataset_config.plot_distributions
+                        and plot_output_for_signal_json
+                    ):
+                        # Look for JSON file in plot_data folder
+                        plot_data_dir = dataset_dir / "plot_data"
+                        signal_json_path = plot_data_dir / (
+                            plot_output_for_signal_json.stem + "_hist_data.json"
+                        )
                         if signal_json_path.exists():
                             collected_signal_hist_data_paths.append(signal_json_path)
                             collected_signal_legend_labels.append(signal_key)
                         else:
-                            self.logger.warning(f"Signal hist_data.json for {signal_key} not found at {signal_json_path} after processing.")
-
+                            self.logger.warning(
+                                f"Signal hist_data.json for {signal_key} not found at {signal_json_path} after processing."
+                            )
 
                 # Store global attributes
                 f.attrs.update(
                     {"dataset_id": dataset_id, "creation_date": str(datetime.now())}
                 )
-            
+
             # --- Create combined comparison plot AFTER all signals are processed ---
-            if dataset_config.plot_distributions and background_hist_data_path and background_hist_data_path.exists() and collected_signal_hist_data_paths:
-                self.logger.info("Creating combined input feature distribution comparison plot for background vs. signals.")
-                hist_data_paths_for_plot = [background_hist_data_path] + collected_signal_hist_data_paths
-                legend_labels_for_plot = ["Background (ATLAS)"] + collected_signal_legend_labels
-                
-                comparison_plot_output_dir = dataset_dir / "plots" # Ensure this dir exists
+            if (
+                dataset_config.plot_distributions
+                and background_hist_data_path
+                and background_hist_data_path.exists()
+                and collected_signal_hist_data_paths
+            ):
+                self.logger.info(
+                    "Creating combined input feature distribution comparison plot for background vs. signals."
+                )
+                hist_data_paths_for_plot = [
+                    background_hist_data_path
+                ] + collected_signal_hist_data_paths
+                legend_labels_for_plot = [
+                    "Background (ATLAS)"
+                ] + collected_signal_legend_labels
+
+                comparison_plot_output_dir = (
+                    dataset_dir / "plots"
+                )  # Ensure this dir exists
                 comparison_plot_output_dir.mkdir(parents=True, exist_ok=True)
-                comparison_plot_output_path = comparison_plot_output_dir / "comparison_input_features_background_vs_signals.png"
+                comparison_plot_output_path = (
+                    comparison_plot_output_dir
+                    / "comparison_input_features_background_vs_signals.png"
+                )
 
                 try:
-                    from hep_foundation.data.dataset_visualizer import create_plot_from_hist_data 
+                    from hep_foundation.data.dataset_visualizer import (
+                        create_plot_from_hist_data,
+                    )
+
                     create_plot_from_hist_data(
                         hist_data_paths=hist_data_paths_for_plot,
                         output_plot_path=str(comparison_plot_output_path),
                         legend_labels=legend_labels_for_plot,
-                        title_prefix="Input Features: Background vs Signals"
+                        title_prefix="Input Features: Background vs Signals",
                     )
-                    self.logger.info(f"Saved combined comparison plot to {comparison_plot_output_path}")
+                    self.logger.info(
+                        f"Saved combined comparison plot to {comparison_plot_output_path}"
+                    )
                 except ImportError:
-                    self.logger.error("Failed to import create_plot_from_hist_data. Ensure dataset_visualizer is accessible.")
+                    self.logger.error(
+                        "Failed to import create_plot_from_hist_data. Ensure dataset_visualizer is accessible."
+                    )
                 except Exception as e_comp_plot:
-                    self.logger.error(f"Failed to create combined comparison plot: {e_comp_plot}")
+                    self.logger.error(
+                        f"Failed to create combined comparison plot: {e_comp_plot}"
+                    )
             elif dataset_config.plot_distributions:
-                if not background_hist_data_path or not background_hist_data_path.exists():
-                    self.logger.warning("Background histogram data not provided or not found for combined plot in _create_signal_dataset.")
+                if (
+                    not background_hist_data_path
+                    or not background_hist_data_path.exists()
+                ):
+                    self.logger.warning(
+                        "Background histogram data not provided or not found for combined plot in _create_signal_dataset."
+                    )
                 if not collected_signal_hist_data_paths:
-                    self.logger.warning("No signal histogram data found for combined plot in _create_signal_dataset.")
+                    self.logger.warning(
+                        "No signal histogram data found for combined plot in _create_signal_dataset."
+                    )
             # --- End of combined plot logic ---
 
             return dataset_id, dataset_path
@@ -673,7 +773,10 @@ class DatasetManager:
             self.current_dataset_path = (
                 self.get_dataset_dir(self.current_dataset_id) / "dataset.h5"
             )
-            plot_output = self.get_dataset_dir(self.current_dataset_id) / "plots/atlas_dataset_features.png"
+            plot_output = (
+                self.get_dataset_dir(self.current_dataset_id)
+                / "plots/atlas_dataset_features.png"
+            )
 
             if not self.current_dataset_path.exists():
                 self.current_dataset_id, self.current_dataset_path = (
@@ -795,7 +898,9 @@ class DatasetManager:
                     dataset = dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
                     signal_datasets[signal_key] = dataset
 
-            self.logger.info(f"Successfully loaded {len(signal_datasets)} signal datasets")
+            self.logger.info(
+                f"Successfully loaded {len(signal_datasets)} signal datasets"
+            )
             return signal_datasets
 
         except Exception as e:

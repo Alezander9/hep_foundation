@@ -81,13 +81,13 @@ def get_branch_info(
                 # if do_debug_print:
                 #     print(f"\\n---> Processing Branch: {full_branch}")
                 # --- END DEBUG ---
-                do_debug_print = False # Disable debug prints
+                do_debug_print = False  # Disable debug prints
 
                 try:
                     # Get the uproot branch object itself
                     uproot_branch = tree[full_branch]
                     root_typename = uproot_branch.typename
-                    is_likely_vector = "vector" in root_typename.lower()
+                    # is_likely_vector = "vector" in root_typename.lower()  # Unused variable
 
                     # if do_debug_print:
                     #     print(f"  ROOT Typename: {root_typename}")
@@ -100,10 +100,14 @@ def get_branch_info(
 
                     if do_debug_print:
                         # Limit printing potentially large arrays
-                        array_repr = str(arrays[full_branch][:5]) # Print first 5 entries
+                        array_repr = str(
+                            arrays[full_branch][:5]
+                        )  # Print first 5 entries
                         if len(arrays[full_branch]) > 5:
                             array_repr += "... (truncated)"
-                        print(f"  Read Array Sample (first {min(5, max_entries)} entries): {array_repr}")
+                        print(
+                            f"  Read Array Sample (first {min(5, max_entries)} entries): {array_repr}"
+                        )
                         print(f"  Read Array Length: {len(arrays[full_branch])}")
 
                     if full_branch in arrays:
@@ -113,10 +117,12 @@ def get_branch_info(
                             first_entry = sample[0]
                             shape = None
                             item_type = "unknown"
-                            status = "success" # Assume success unless changed
+                            status = "success"  # Assume success unless changed
 
                             if do_debug_print:
-                                print(f"  First Entry: {str(first_entry)[:100] + ('... (truncated)' if len(str(first_entry))>100 else '')}") # Limit print length
+                                print(
+                                    f"  First Entry: {str(first_entry)[:100] + ('... (truncated)' if len(str(first_entry)) > 100 else '')}"
+                                )  # Limit print length
                                 print(f"  Type of First Entry: {type(first_entry)}")
                                 has_shape_attr = hasattr(first_entry, "shape")
                                 print(f"  Has 'shape' attribute: {has_shape_attr}")
@@ -126,7 +132,10 @@ def get_branch_info(
                                 print(f"  Is list or tuple: {is_list_tuple}")
 
                             # --- New Shape and Type Inference Logic ---
-                            if hasattr(first_entry, "shape") and first_entry.shape != ():
+                            if (
+                                hasattr(first_entry, "shape")
+                                and first_entry.shape != ()
+                            ):
                                 # Case 1: First entry is a NumPy array (e.g., from std::vector<float>, but also fixed-size arrays)
                                 # Shape per object/track is first_entry.shape
                                 # Overall shape is (-1,) + first_entry.shape
@@ -137,13 +146,20 @@ def get_branch_info(
                                 # If the ROOT type is like vector<T> (not nested) AND the inferred shape is (-1, k != 1),
                                 # assume it's scalar-per-track and force shape to (-1, 1).
                                 # This corrects for cases where the first event had k > 1 tracks.
-                                is_simple_vector = "vector<" in root_typename and "vector<vector" not in root_typename
-                                if is_simple_vector and len(temp_shape) == 2 and temp_shape[1] != 1:
+                                is_simple_vector = (
+                                    "vector<" in root_typename
+                                    and "vector<vector" not in root_typename
+                                )
+                                if (
+                                    is_simple_vector
+                                    and len(temp_shape) == 2
+                                    and temp_shape[1] != 1
+                                ):
                                     # if do_debug_print:
                                     #     print(f"    Correcting shape for simple vector: {temp_shape} -> (-1, 1)")
                                     shape = (-1, 1)
                                 else:
-                                    shape = temp_shape # Use originally inferred shape
+                                    shape = temp_shape  # Use originally inferred shape
 
                             elif isinstance(first_entry, (list, tuple)):
                                 # Case 2: First entry is a Python sequence (less common with uproot np/stl, but possible)
@@ -152,22 +168,28 @@ def get_branch_info(
                                     shape = (-1, k)
                                     # Infer type from the first element of the sequence
                                     element = first_entry[0]
-                                    if hasattr(element, "dtype"): # Check if elements are numpy types
+                                    if hasattr(
+                                        element, "dtype"
+                                    ):  # Check if elements are numpy types
                                         item_type = str(element.dtype)
                                     else:
                                         item_type = type(element).__name__
                                 else:
                                     # Sequence is empty, cannot determine k or element type fully
-                                    shape = (-1, -1) # Indicate unknown inner dimension
+                                    shape = (-1, -1)  # Indicate unknown inner dimension
                                     item_type = "unknown_empty_sequence"
                                     # Might want to read more entries if this happens often
 
                             elif isinstance(first_entry, uproot.containers.STLVector):
                                 # Case 3: First entry is an uproot STLVector (from nested vectors like vector<vector<float>>)
                                 try:
-                                    num_tracks = len(first_entry) # Number of tracks in this event
-                                    k = -1 # Features per track, default to -1 (unknown)
-                                    shape = (-1, -1) # Default shape
+                                    num_tracks = len(
+                                        first_entry
+                                    )  # Number of tracks in this event
+                                    k = (
+                                        -1
+                                    )  # Features per track, default to -1 (unknown)
+                                    shape = (-1, -1)  # Default shape
                                     item_type = "unknown_stl_vector_element"
 
                                     if num_tracks > 0:
@@ -176,34 +198,47 @@ def get_branch_info(
                                         try:
                                             # k is the length of the INNER vector (features per track)
                                             k = len(inner_vector)
-                                            shape = (-1, k) # Set shape based on inner length
+                                            shape = (
+                                                -1,
+                                                k,
+                                            )  # Set shape based on inner length
 
                                             # Try to determine item_type from first element of inner_vector
                                             if k > 0:
                                                 inner_element = inner_vector[0]
-                                                if isinstance(inner_element, uproot.containers.STLVector):
-                                                    item_type = "deeply_nested_stl_vector" # vector<vector<vector<T>>>?
+                                                if isinstance(
+                                                    inner_element,
+                                                    uproot.containers.STLVector,
+                                                ):
+                                                    item_type = "deeply_nested_stl_vector"  # vector<vector<vector<T>>>?
                                                 elif hasattr(inner_element, "dtype"):
                                                     item_type = str(inner_element.dtype)
                                                 else:
-                                                    item_type = type(inner_element).__name__
+                                                    item_type = type(
+                                                        inner_element
+                                                    ).__name__
                                             else:
-                                                item_type = "unknown_empty_inner_stl_vector"
+                                                item_type = (
+                                                    "unknown_empty_inner_stl_vector"
+                                                )
 
-                                        except Exception as e_inner:
-                                            k = -1 # Mark inner dimension as unknown on error
+                                        except Exception:
+                                            k = -1  # Mark inner dimension as unknown on error
                                             shape = (-1, k)
                                             item_type = "unknown_error_inner_stl_vector"
                                             status = "error_inner_stl_processing"
                                     else:
                                         # num_tracks is 0 for this event
-                                        shape = (-1, 0) # Shape is Nx0
+                                        shape = (-1, 0)  # Shape is Nx0
                                         item_type = "unknown_empty_outer_stl_vector"
 
-                                except Exception as e_outer:
+                                except Exception:
                                     # if do_debug_print:
                                     #     print(f"    Error processing outer STLVector: {e_outer}")
-                                    shape = (-1, -1) # Indicate unknown inner dimension on error
+                                    shape = (
+                                        -1,
+                                        -1,
+                                    )  # Indicate unknown inner dimension on error
                                     item_type = "unknown_stl_vector_error"
                                     status = "error_outer_stl_processing"
 
@@ -211,8 +246,10 @@ def get_branch_info(
                                 # Case 4: First entry is a scalar, and not clearly per-object (assume event-level)
                                 shape = ()
                                 item_type = type(first_entry).__name__
-                                if item_type == 'float': item_type = 'float64'
-                                if item_type == 'int': item_type = 'int64'
+                                if item_type == "float":
+                                    item_type = "float64"
+                                if item_type == "int":
+                                    item_type = "int64"
 
                             if do_debug_print:
                                 print(f"  Determined Shape: {shape}")
@@ -222,7 +259,9 @@ def get_branch_info(
                             # Record shape information
                             branch_info[cat][feat]["shape"] = shape
                             branch_info[cat][feat]["dtype"] = item_type
-                            branch_info[cat][feat]["status"] = status # Use status determined above
+                            branch_info[cat][feat]["status"] = (
+                                status  # Use status determined above
+                            )
 
                             # --- Debug Fallback Logic Print ---
                             original_item_type = item_type
@@ -231,25 +270,37 @@ def get_branch_info(
                             # Fallback for type using ROOT typename if primary methods fail
                             if item_type.startswith("unknown"):
                                 if "<" in root_typename and ">" in root_typename:
-                                    parsed_type = root_typename.split("<")[1].split(">")[0]
+                                    parsed_type = root_typename.split("<")[1].split(
+                                        ">"
+                                    )[0]
                                     # Basic cleanup for common types
-                                    if parsed_type.endswith("_t"): parsed_type = parsed_type[:-2]
-                                    if parsed_type == "double": parsed_type = "float64"
-                                    elif parsed_type == "float": parsed_type = "float32"
-                                    elif parsed_type == "unsigned int": parsed_type = "uint32" # Example
-                                    elif parsed_type == "int": parsed_type = "int32" # Example
+                                    if parsed_type.endswith("_t"):
+                                        parsed_type = parsed_type[:-2]
+                                    if parsed_type == "double":
+                                        parsed_type = "float64"
+                                    elif parsed_type == "float":
+                                        parsed_type = "float32"
+                                    elif parsed_type == "unsigned int":
+                                        parsed_type = "uint32"  # Example
+                                    elif parsed_type == "int":
+                                        parsed_type = "int32"  # Example
                                     # Add more mappings as needed
                                     item_type = parsed_type
                                 else:
-                                     # If it's not a template, it might be a simple type name itself
-                                     if root_typename == "double": item_type = "float64"
-                                     elif root_typename == "float": item_type = "float32"
-                                     elif root_typename == "int": item_type = "int32"
-                                     # Add more ROOT primitive types
+                                    # If it's not a template, it might be a simple type name itself
+                                    if root_typename == "double":
+                                        item_type = "float64"
+                                    elif root_typename == "float":
+                                        item_type = "float32"
+                                    elif root_typename == "int":
+                                        item_type = "int32"
+                                    # Add more ROOT primitive types
 
                             # --- Debug Fallback Logic Print ---
                             if do_debug_print and item_type != original_item_type:
-                                print(f"  Fallback Dtype Applied: {item_type} (was {original_item_type})")
+                                print(
+                                    f"  Fallback Dtype Applied: {item_type} (was {original_item_type})"
+                                )
                             # --- End Debug Fallback Logic Print ---
 
                             # Update dict if fallback changed dtype
@@ -258,8 +309,8 @@ def get_branch_info(
                             # --- End New Logic ---
                         else:
                             branch_info[cat][feat]["status"] = "empty"
-                            branch_info[cat][feat]["shape"] = None # No shape if empty
-                            branch_info[cat][feat]["dtype"] = None # No dtype if empty
+                            branch_info[cat][feat]["shape"] = None  # No shape if empty
+                            branch_info[cat][feat]["dtype"] = None  # No dtype if empty
                             print(f"Branch {full_branch} has no entries")
 
                 except Exception as e:
@@ -405,10 +456,10 @@ def save_branch_dictionary(
         except ImportError:
             # Simple fallback if running script directly from scripts/
             import sys
+
             script_dir = Path(__file__).parent.parent
             sys.path.append(str(script_dir))
             from hep_foundation.data.atlas_file_manager import ATLASFileManager
-
 
         atlas_manager = ATLASFileManager()
         catalog_path = atlas_manager.get_run_catalog_path(run_number, catalog_index)
@@ -438,7 +489,6 @@ def save_branch_dictionary(
         # return None # Skip saving file in debug mode
         # --- END DEBUG ---
 
-
         # Prepare output file path
         if output_dir is None:
             # Default to src/hep_foundation relative to project root
@@ -448,9 +498,8 @@ def save_branch_dictionary(
         else:
             output_dir = Path(output_dir)
 
-        output_dir.mkdir(parents=True, exist_ok=True) # Ensure directory exists
+        output_dir.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
         output_path = output_dir / "physlite_branch_index.json"
-
 
         # Count success rate (based on successful shape/dtype extraction)
         total_branches = sum(len(features) for features in branch_info.values())
@@ -469,11 +518,12 @@ def save_branch_dictionary(
             for feature, info in features.items():
                 serializable_branch_info[category][feature] = {
                     # Convert shape tuple to list for JSON
-                    'shape': list(info.get("shape")) if info.get("shape") is not None else None,
-                    'dtype': info.get("dtype", "unknown"),
-                    'status': info.get("status", "unknown")
+                    "shape": list(info.get("shape"))
+                    if info.get("shape") is not None
+                    else None,
+                    "dtype": info.get("dtype", "unknown"),
+                    "status": info.get("status", "unknown"),
                 }
-
 
         # Save as a JSON file
         print(f"Saving branch information dictionary to {output_path}...")
@@ -483,11 +533,11 @@ def save_branch_dictionary(
                 "catalog_index": catalog_index,
                 "success_rate": f"{successful_branches}/{total_branches} ({success_rate:.1%})",
             },
-            "physlite_branches": serializable_branch_info
+            "physlite_branches": serializable_branch_info,
         }
 
         with open(output_path, "w") as f:
-            json.dump(metadata, f, indent=4) # Use indent for readability
+            json.dump(metadata, f, indent=4)  # Use indent for readability
 
         print(f"Branch information dictionary saved to {output_path}")
         print(
@@ -498,7 +548,8 @@ def save_branch_dictionary(
     except Exception as e:
         print(f"Error in save_branch_dictionary: {str(e)}")
         import traceback
-        traceback.print_exc() # Print full traceback for debugging
+
+        traceback.print_exc()  # Print full traceback for debugging
         return None
 
 

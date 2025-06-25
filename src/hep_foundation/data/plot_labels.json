@@ -1,20 +1,20 @@
 {
   "InDetTrackParticlesAuxDyn.definingParametersCovMatrixDiag": [
-    "cov(d0,d0)", 
-    "cov(z0,z0)", 
-    "cov(phi,phi)", 
-    "cov(theta,theta)", 
+    "cov(d0,d0)",
+    "cov(z0,z0)",
+    "cov(phi,phi)",
+    "cov(theta,theta)",
     "cov(qOp,qOp)"
   ],
   "InDetTrackParticlesAuxDyn.definingParametersCovMatrixOffDiag": [
-    "cov(d0,z0)", 
-    "cov(d0,phi)", 
-    "cov(d0,theta)", 
+    "cov(d0,z0)",
+    "cov(d0,phi)",
+    "cov(d0,theta)",
     "cov(d0,qOp)",
-    "cov(z0,phi)", 
-    "cov(z0,theta)", 
+    "cov(z0,phi)",
+    "cov(z0,theta)",
     "cov(z0,qOp)",
-    "cov(phi,theta)", 
+    "cov(phi,theta)",
     "cov(phi,qOp)",
     "cov(theta,qOp)"
   ],
@@ -24,4 +24,4 @@
   "derived.InDetTrackParticlesAuxDyn.pt": "Track pT",
   "derived.InDetTrackParticlesAuxDyn.eta": "Track Eta",
   "derived.InDetTrackParticlesAuxDyn.reducedChiSquared": "Track Reduced Chi2"
-} 
+}

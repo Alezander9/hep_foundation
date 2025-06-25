@@ -199,6 +199,9 @@ class BetaSchedule(keras.callbacks.Callback):
         self.warmup_epochs = warmup_epochs
         self.cycle_epochs = cycle_epochs
 
+        # Initialize logger
+        self.logger = get_logger(__name__)
+
     def on_epoch_begin(self, epoch: int, logs: Optional[dict] = None):
         if epoch < self.warmup_epochs:
             beta = self.beta_start
@@ -305,7 +308,7 @@ class VariationalAutoEncoder(BaseModel):
             encoder_inputs, [z_mean, z_log_var, z], name="encoder"
         )
         self.logger.info("Built encoder model")
-        
+
         # Create deterministic encoder (only z_mean output) for downstream tasks
         self.deterministic_encoder = keras.Model(
             encoder_inputs, z_mean, name="deterministic_encoder"
@@ -428,13 +431,30 @@ class VariationalAutoEncoder(BaseModel):
                     linewidth=LINE_WIDTHS["thick"],
                 )
                 if "total_loss" in self._history:
+                    # Fix: Use a color from the available high_contrast palette instead of invalid "bright" palette
+                    # Get a fourth color by extending the high_contrast palette
+                    extended_colors = get_color_cycle("high_contrast", 4)
                     ax1.plot(
                         epochs,
                         self._history["total_loss"],
-                        color=get_color_cycle("bright", 4)[3],
+                        color=extended_colors[3],
                         label="Total Loss",
                         linewidth=LINE_WIDTHS["thick"],
                     )
+
+                # Debug: Print some loss values to help diagnose the overlap issue
+                if len(self._history["reconstruction_loss"]) > 0:
+                    self.logger.debug(
+                        f"Sample reconstruction loss values: {self._history['reconstruction_loss'][:3]}..."
+                    )
+                    if "total_loss" in self._history:
+                        self.logger.debug(
+                            f"Sample total loss values: {self._history['total_loss'][:3]}..."
+                        )
+                    if "kl_loss" in self._history:
+                        self.logger.debug(
+                            f"Sample KL loss values: {self._history['kl_loss'][:3]}..."
+                        )
 
                 betas = self._calculate_beta_schedule(len(epochs))
                 ax2.plot(
@@ -445,6 +465,9 @@ class VariationalAutoEncoder(BaseModel):
                     label="Beta",
                     linewidth=LINE_WIDTHS["thick"],
                 )
+
+                # Debug: Print some beta values to help diagnose if beta is always 0
+                self.logger.debug(f"Sample beta values: {betas[:5]}...")
 
                 ax1.set_xlabel("Epoch", fontsize=FONT_SIZES["large"])
                 ax1.set_ylabel(
@@ -611,29 +634,14 @@ class AnomalyDetectionEvaluator:
         # Setup self.logger
         self.logger = get_logger(__name__)
 
-        # Verify experiment data exists
-        self.experiment_data_path = self.experiment_path / "experiment_data.json"
-        if not self.experiment_data_path.exists():
-            raise ValueError(f"No experiment data found at {self.experiment_data_path}")
+        # Load experiment info from the new file structure
+        self.experiment_info_path = self.experiment_path / "_experiment_info.json"
+        if not self.experiment_info_path.exists():
+            raise ValueError(f"No experiment info found at {self.experiment_info_path}")
 
-        # Load existing experiment data
-        with open(self.experiment_data_path) as f:
-            self.experiment_data = json.load(f)
-
-        # Initialize test results storage
-        self.test_results = {}
-
-    def _update_experiment_data(self, test_results: dict) -> None:
-        """Update experiment data with new test results"""
-        # Add or update test results in experiment data
-        if "test_results" not in self.experiment_data:
-            self.experiment_data["test_results"] = {}
-
-        self.experiment_data["test_results"].update(test_results)
-
-        # Save updated experiment data
-        with open(self.experiment_data_path, "w") as f:
-            json.dump(self.experiment_data, f, indent=2)
+        # Load existing experiment info
+        with open(self.experiment_info_path) as f:
+            self.experiment_info = json.load(f)
 
     def _calculate_losses(
         self, dataset: tf.data.Dataset
@@ -782,6 +790,342 @@ class AnomalyDetectionEvaluator:
 
         return metrics
 
+    def _save_loss_distribution_data(
+        self,
+        losses: np.ndarray,
+        loss_type: str,
+        signal_name: str,
+        plot_data_dir: Path,
+        bin_edges: np.ndarray = None,
+    ) -> Path:
+        """
+        Save loss distribution data as JSON for later combined plotting.
+
+        Args:
+            losses: Array of loss values
+            loss_type: Type of loss ('reconstruction' or 'kl_divergence')
+            signal_name: Name of the signal dataset ('background' for background data)
+            plot_data_dir: Directory to save the JSON file
+            bin_edges: Optional pre-calculated bin edges for coordinated binning
+
+        Returns:
+            Path to the saved JSON file
+        """
+        # Calculate histogram data
+        if losses.size == 0:
+            counts = []
+            if bin_edges is not None:
+                bin_edges_list = bin_edges.tolist()
+            else:
+                bin_edges_list = []
+        else:
+            if bin_edges is not None:
+                # Use provided bin edges for coordinated binning
+                counts, _ = np.histogram(losses, bins=bin_edges, density=True)
+                bin_edges_list = bin_edges.tolist()
+            else:
+                # Fallback to individual percentile-based range
+                p0_1, p99_9 = np.percentile(losses, [0.1, 99.9])
+                if p0_1 == p99_9:
+                    p0_1 -= 0.5
+                    p99_9 += 0.5
+                plot_range = (p0_1, p99_9)
+
+                counts, calculated_bin_edges = np.histogram(
+                    losses, bins=50, range=plot_range, density=True
+                )
+                bin_edges_list = calculated_bin_edges.tolist()
+
+        # Create JSON data structure
+        loss_data = {
+            loss_type: {
+                "counts": counts.tolist() if hasattr(counts, "tolist") else counts,
+                "bin_edges": bin_edges_list,
+                "n_events": len(losses),
+                "mean": float(np.mean(losses)) if losses.size > 0 else 0.0,
+                "std": float(np.std(losses)) if losses.size > 0 else 0.0,
+            }
+        }
+
+        # Save to JSON file
+        json_filename = f"loss_distributions_{signal_name}_{loss_type}_data.json"
+        json_path = plot_data_dir / json_filename
+
+        with open(json_path, "w") as f:
+            json.dump(loss_data, f, indent=2)
+
+        self.logger.info(
+            f"Saved {loss_type} loss distribution data for {signal_name} to {json_path}"
+        )
+        return json_path
+
+    def _save_roc_curve_data(
+        self,
+        bg_losses: np.ndarray,
+        sig_losses: np.ndarray,
+        loss_type: str,
+        signal_name: str,
+        plot_data_dir: Path,
+    ) -> Path:
+        """
+        Save ROC curve data as JSON for later combined plotting.
+
+        Args:
+            bg_losses: Background loss values
+            sig_losses: Signal loss values
+            loss_type: Type of loss ('reconstruction' or 'kl_divergence')
+            signal_name: Name of the signal dataset
+            plot_data_dir: Directory to save the JSON file
+
+        Returns:
+            Path to the saved JSON file
+        """
+        from sklearn.metrics import auc, roc_curve
+
+        # Create labels and scores for ROC calculation
+        labels = np.concatenate([np.zeros(len(bg_losses)), np.ones(len(sig_losses))])
+        scores = np.concatenate([bg_losses, sig_losses])
+
+        # Calculate ROC curve
+        fpr, tpr, thresholds = roc_curve(labels, scores)
+        roc_auc = auc(fpr, tpr)
+
+        # Downsample to reduce file size (keep max 50 points)
+        if len(fpr) > 50:
+            indices = np.linspace(0, len(fpr) - 1, 50).astype(int)
+            # Always include endpoints
+            if indices[0] != 0:
+                indices[0] = 0
+            if indices[-1] != len(fpr) - 1:
+                indices[-1] = len(fpr) - 1
+            fpr = fpr[indices]
+            tpr = tpr[indices]
+            thresholds = thresholds[indices] if len(thresholds) > 0 else []
+
+        # Create JSON data structure
+        roc_data = {
+            loss_type: {
+                "fpr": fpr.tolist(),
+                "tpr": tpr.tolist(),
+                "thresholds": thresholds.tolist() if len(thresholds) > 0 else [],
+                "auc": float(roc_auc),
+                "n_background": len(bg_losses),
+                "n_signal": len(sig_losses),
+            }
+        }
+
+        # Save to JSON file
+        json_filename = f"roc_curves_{signal_name}_{loss_type}_data.json"
+        json_path = plot_data_dir / json_filename
+
+        with open(json_path, "w") as f:
+            json.dump(roc_data, f, indent=2)
+
+        self.logger.info(
+            f"Saved {loss_type} ROC curve data for {signal_name} to {json_path}"
+        )
+        return json_path
+
+    def _create_combined_loss_distribution_plots(
+        self,
+        bg_recon_losses: np.ndarray,
+        bg_kl_losses: np.ndarray,
+        signal_loss_data: dict,
+        test_dir: Path,
+    ) -> None:
+        """
+        Create combined loss distribution plots for all signals together.
+
+        Args:
+            bg_recon_losses: Background reconstruction losses
+            bg_kl_losses: Background KL divergence losses
+            signal_loss_data: Dictionary mapping signal names to their loss arrays
+            test_dir: Base testing directory (contains plot_data/ and plots/ subdirectories)
+        """
+        self.logger.info("Creating combined loss distribution plots...")
+
+        # Create plot_data and plots directories
+        plot_data_dir = test_dir / "plot_data"
+        plot_data_dir.mkdir(parents=True, exist_ok=True)
+        plots_dir = test_dir / "plots"
+        plots_dir.mkdir(parents=True, exist_ok=True)
+
+        # Calculate global bin edges for coordinated binning
+        self.logger.info(
+            "Calculating global bin edges for coordinated loss distribution binning..."
+        )
+
+        # Collect all reconstruction losses
+        all_recon_losses = [bg_recon_losses]
+        for signal_name, (sig_recon_losses, _) in signal_loss_data.items():
+            all_recon_losses.append(sig_recon_losses)
+        combined_recon_losses = np.concatenate(all_recon_losses)
+
+        # Collect all KL losses
+        all_kl_losses = [bg_kl_losses]
+        for signal_name, (_, sig_kl_losses) in signal_loss_data.items():
+            all_kl_losses.append(sig_kl_losses)
+        combined_kl_losses = np.concatenate(all_kl_losses)
+
+        # Calculate global bin edges (0.1 to 99.9 percentiles)
+        recon_p0_1, recon_p99_9 = np.percentile(combined_recon_losses, [0.1, 99.9])
+        if recon_p0_1 == recon_p99_9:
+            recon_p0_1 -= 0.5
+            recon_p99_9 += 0.5
+        recon_bin_edges = np.linspace(recon_p0_1, recon_p99_9, 51)  # 50 bins
+
+        kl_p0_1, kl_p99_9 = np.percentile(combined_kl_losses, [0.1, 99.9])
+        if kl_p0_1 == kl_p99_9:
+            kl_p0_1 -= 0.5
+            kl_p99_9 += 0.5
+        kl_bin_edges = np.linspace(kl_p0_1, kl_p99_9, 51)  # 50 bins
+
+        self.logger.info(
+            f"Reconstruction loss bin range: [{recon_p0_1:.3f}, {recon_p99_9:.3f}] (covers 99.8% of all data)"
+        )
+        self.logger.info(
+            f"KL divergence loss bin range: [{kl_p0_1:.3f}, {kl_p99_9:.3f}] (covers 99.8% of all data)"
+        )
+        self.logger.info(
+            "Using coordinated bin edges to ensure perfect histogram alignment"
+        )
+
+        # Save bin edges metadata for reference
+        bin_edges_metadata = {
+            "reconstruction_loss": {
+                "bin_edges": recon_bin_edges.tolist(),
+                "percentile_range": [0.1, 99.9],
+                "data_range": [float(recon_p0_1), float(recon_p99_9)],
+                "n_bins": len(recon_bin_edges) - 1,
+                "total_events": len(combined_recon_losses),
+            },
+            "kl_divergence": {
+                "bin_edges": kl_bin_edges.tolist(),
+                "percentile_range": [0.1, 99.9],
+                "data_range": [float(kl_p0_1), float(kl_p99_9)],
+                "n_bins": len(kl_bin_edges) - 1,
+                "total_events": len(combined_kl_losses),
+            },
+            "timestamp": str(datetime.now()),
+            "datasets": ["background"] + list(signal_loss_data.keys()),
+        }
+
+        bin_edges_metadata_path = plot_data_dir / "loss_bin_edges_metadata.json"
+        with open(bin_edges_metadata_path, "w") as f:
+            json.dump(bin_edges_metadata, f, indent=2)
+        self.logger.info(f"Saved loss bin edges metadata to {bin_edges_metadata_path}")
+
+        # Save background loss distribution data with coordinated bin edges
+        bg_recon_json = self._save_loss_distribution_data(
+            bg_recon_losses,
+            "reconstruction",
+            "background",
+            plot_data_dir,
+            recon_bin_edges,
+        )
+        bg_kl_json = self._save_loss_distribution_data(
+            bg_kl_losses, "kl_divergence", "background", plot_data_dir, kl_bin_edges
+        )
+
+        # Save signal loss distribution data and collect paths
+        signal_recon_jsons = []
+        signal_kl_jsons = []
+        signal_legend_labels = []
+
+        # Save ROC curve data for each signal
+        signal_recon_roc_jsons = []
+        signal_kl_roc_jsons = []
+
+        for signal_name, (sig_recon_losses, sig_kl_losses) in signal_loss_data.items():
+            # Save loss distribution data with coordinated bin edges
+            sig_recon_json = self._save_loss_distribution_data(
+                sig_recon_losses,
+                "reconstruction",
+                signal_name,
+                plot_data_dir,
+                recon_bin_edges,
+            )
+            sig_kl_json = self._save_loss_distribution_data(
+                sig_kl_losses, "kl_divergence", signal_name, plot_data_dir, kl_bin_edges
+            )
+
+            signal_recon_jsons.append(sig_recon_json)
+            signal_kl_jsons.append(sig_kl_json)
+            signal_legend_labels.append(signal_name)
+
+            # Save ROC curve data
+            sig_recon_roc_json = self._save_roc_curve_data(
+                bg_recon_losses,
+                sig_recon_losses,
+                "reconstruction",
+                signal_name,
+                plot_data_dir,
+            )
+            sig_kl_roc_json = self._save_roc_curve_data(
+                bg_kl_losses, sig_kl_losses, "kl_divergence", signal_name, plot_data_dir
+            )
+
+            signal_recon_roc_jsons.append(sig_recon_roc_json)
+            signal_kl_roc_jsons.append(sig_kl_roc_json)
+
+        # Create combined two-panel loss distribution plot
+        try:
+            # Import here to avoid circular imports
+            from hep_foundation.data.dataset_visualizer import (
+                create_combined_two_panel_loss_plot_from_json,
+            )
+
+            if signal_recon_jsons and signal_kl_jsons:
+                recon_json_paths = [bg_recon_json] + signal_recon_jsons
+                kl_json_paths = [bg_kl_json] + signal_kl_jsons
+                legend_labels = ["Background"] + signal_legend_labels
+
+                combined_plot_path = plots_dir / "combined_loss_distributions.png"
+                create_combined_two_panel_loss_plot_from_json(
+                    recon_json_paths=recon_json_paths,
+                    kl_json_paths=kl_json_paths,
+                    output_plot_path=str(combined_plot_path),
+                    legend_labels=legend_labels,
+                    title_prefix="Loss Distributions",
+                )
+                self.logger.info(
+                    f"Saved combined two-panel loss distribution plot to {combined_plot_path}"
+                )
+
+        except ImportError:
+            self.logger.error(
+                "Failed to import create_combined_two_panel_loss_plot_from_json for combined loss plots"
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to create combined loss distribution plots: {e}")
+
+        # Create combined ROC curves plot
+        try:
+            # Import here to avoid circular imports
+            from hep_foundation.data.dataset_visualizer import (
+                create_combined_roc_curves_plot_from_json,
+            )
+
+            if signal_recon_roc_jsons and signal_kl_roc_jsons:
+                combined_roc_plot_path = plots_dir / "combined_roc_curves.png"
+                create_combined_roc_curves_plot_from_json(
+                    recon_roc_json_paths=signal_recon_roc_jsons,
+                    kl_roc_json_paths=signal_kl_roc_jsons,
+                    output_plot_path=str(combined_roc_plot_path),
+                    legend_labels=signal_legend_labels,
+                    title_prefix="ROC Curves",
+                )
+                self.logger.info(
+                    f"Saved combined ROC curves plot to {combined_roc_plot_path}"
+                )
+
+        except ImportError:
+            self.logger.error(
+                "Failed to import create_combined_roc_curves_plot_from_json for ROC curves"
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to create combined ROC curves plots: {e}")
+
     def run_anomaly_detection_test(self) -> dict:
         """
         Evaluate model's anomaly detection capabilities
@@ -800,8 +1144,6 @@ class AnomalyDetectionEvaluator:
         # Create testing/anomaly_detection directory
         test_dir = self.testing_path / "anomaly_detection"
         test_dir.mkdir(parents=True, exist_ok=True)
-        plots_dir = test_dir / "plots"
-        plots_dir.mkdir(parents=True, exist_ok=True)
 
         # Log dataset info before testing
         self.logger.info("Dataset information before testing:")
@@ -832,11 +1174,16 @@ class AnomalyDetectionEvaluator:
         self.logger.info("Calculating losses for background dataset...")
         bg_recon_losses, bg_kl_losses = self._calculate_losses(self.test_dataset)
 
-        # Calculate losses for each signal dataset
+        # Calculate losses for each signal dataset and store for combined plotting
         signal_results = {}
+        signal_loss_data = {}  # For combined plotting
+
         for signal_name, signal_dataset in self.signal_datasets.items():
             self.logger.info(f"Calculating losses for signal dataset: {signal_name}")
             sig_recon_losses, sig_kl_losses = self._calculate_losses(signal_dataset)
+
+            # Store for combined plotting
+            signal_loss_data[signal_name] = (sig_recon_losses, sig_kl_losses)
 
             # Calculate separation metrics
             recon_metrics = self._calculate_separation_metrics(
@@ -852,14 +1199,13 @@ class AnomalyDetectionEvaluator:
                 "n_events": len(sig_recon_losses),
             }
 
-            # Create comparison plots
-            self._plot_loss_distributions(
+        # Create combined loss distribution plots (replaces individual plots)
+        if signal_loss_data:
+            self._create_combined_loss_distribution_plots(
                 bg_recon_losses,
-                sig_recon_losses,
                 bg_kl_losses,
-                sig_kl_losses,
-                signal_name,
-                plots_dir,
+                signal_loss_data,
+                test_dir,
             )
 
         # Prepare test results
@@ -868,12 +1214,10 @@ class AnomalyDetectionEvaluator:
                 "timestamp": str(datetime.now()),
                 "background_events": len(bg_recon_losses),
                 "signal_results": signal_results,
-                "plots_directory": str(plots_dir),
+                "plots_directory": str(test_dir / "plots"),
+                "data_directory": str(test_dir / "plot_data"),
             }
         }
-
-        # Update experiment data with test results
-        self._update_experiment_data(test_results)
 
         return test_results
 

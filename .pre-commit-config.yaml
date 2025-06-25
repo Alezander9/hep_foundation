@@ -1,0 +1,54 @@
+repos:
+  # Basic file and formatting checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      # Remove trailing whitespace
+      - id: trailing-whitespace
+      # Ensure files end with newline
+      - id: end-of-file-fixer
+      # Check YAML files are valid
+      - id: check-yaml
+      # Check TOML files are valid
+      - id: check-toml
+      # Check JSON files are valid
+      - id: check-json
+      # Prevent committing large files
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      # Check for merge conflict markers
+      - id: check-merge-conflict
+      # Check Python AST is valid
+      - id: check-ast
+      # Require literal syntax when initializing empty/zero builtins
+      - id: check-builtin-literals
+      # Check docstring is first in file
+      - id: check-docstring-first
+      # Check executable files have shebangs
+      - id: check-executables-have-shebangs
+      # Mixed line endings check
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+
+  # Spell checking
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.3.0
+    hooks:
+      - id: codespell
+        additional_dependencies:
+          - tomli
+        args: [
+          '--ignore-words-list=nd,te,ue,hist,tha,manuel,fpr',  # Common false positives in scientific code
+          '--skip=*.lock,*.json',  # Skip lock files and data files
+        ]
+
+  # Python code formatting and linting (your existing ruff setup)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Ruff version
+    rev: v0.11.6
+    hooks:
+      # Run the linter
+      - id: ruff
+        args: [--fix]
+      # Run the formatter
+      - id: ruff-format

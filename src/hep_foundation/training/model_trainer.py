@@ -1,5 +1,4 @@
 import time
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -11,47 +10,6 @@ import tensorflow as tf
 from hep_foundation.config.logging_config import get_logger
 from hep_foundation.models.base_model import BaseModel
 from hep_foundation.models.dnn_predictor import DNNPredictor
-
-
-@dataclass
-class TrainingConfig:
-    """Configuration for model training"""
-
-    batch_size: int
-    epochs: int
-    learning_rate: float
-    early_stopping: dict[str, Any]
-    plot_training: bool
-
-    def __init__(
-        self,
-        batch_size: int,
-        learning_rate: float,
-        epochs: int,
-        early_stopping_patience: int,
-        early_stopping_min_delta: float,
-        plot_training: bool,
-    ):
-        self.logger = get_logger(__name__)
-        self.batch_size = batch_size
-        self.epochs = epochs
-        self.learning_rate = learning_rate
-        self.early_stopping = {
-            "patience": early_stopping_patience,
-            "min_delta": early_stopping_min_delta,
-        }
-        self.plot_training = plot_training
-
-    def validate(self) -> None:
-        """Validate training configuration parameters"""
-        if self.learning_rate <= 0:
-            raise ValueError("learning_rate must be positive")
-        if self.epochs < 1:
-            raise ValueError("epochs must be positive")
-        if self.early_stopping["patience"] < 0:
-            raise ValueError("early_stopping_patience must be non-negative")
-        if self.early_stopping["min_delta"] < 0:
-            raise ValueError("early_stopping_min_delta must be non-negative")
 
 
 class TrainingProgressCallback(tf.keras.callbacks.Callback):
@@ -122,11 +80,20 @@ class ModelTrainer:
 
         # Check if this is a predictor model (either DNNPredictor or CustomKerasModelWrapper for regression)
         is_predictor = isinstance(self.model, DNNPredictor)
-        
+
         # For CustomKerasModelWrapper, check if it's being used for regression
         if isinstance(self.model, CustomKerasModelWrapper):
-            model_name = getattr(self.model, 'name', '').lower()
-            is_predictor = any(term in model_name for term in ['regressor', 'predictor', 'from_scratch', 'fine_tuned', 'fixed_encoder'])
+            model_name = getattr(self.model, "name", "").lower()
+            is_predictor = any(
+                term in model_name
+                for term in [
+                    "regressor",
+                    "predictor",
+                    "from_scratch",
+                    "fine_tuned",
+                    "fixed_encoder",
+                ]
+            )
 
         # Different compilation settings based on model type
         if is_predictor:
@@ -157,16 +124,25 @@ class ModelTrainer:
         """
         # Import here to avoid circular imports
         from hep_foundation.models.base_model import CustomKerasModelWrapper
-        
+
         # Check if this is a predictor model (either DNNPredictor or CustomKerasModelWrapper for regression)
         is_predictor = isinstance(self.model, DNNPredictor)
-        
+
         # For CustomKerasModelWrapper, check if it's being used for regression
         # We can identify this by checking if the model name contains regression-related terms
         if isinstance(self.model, CustomKerasModelWrapper):
-            model_name = getattr(self.model, 'name', '').lower()
-            is_predictor = any(term in model_name for term in ['regressor', 'predictor', 'from_scratch', 'fine_tuned', 'fixed_encoder'])
-        
+            model_name = getattr(self.model, "name", "").lower()
+            is_predictor = any(
+                term in model_name
+                for term in [
+                    "regressor",
+                    "predictor",
+                    "from_scratch",
+                    "fine_tuned",
+                    "fixed_encoder",
+                ]
+            )
+
         if is_predictor:
             # For predictor models, use features as input and select correct label as target
             def prepare_predictor_data(
@@ -180,11 +156,11 @@ class ModelTrainer:
 
                 # Select the correct label set based on label_index
                 # For CustomKerasModelWrapper, we assume label_index 0 (first label set)
-                if hasattr(self.model, 'label_index'):
+                if hasattr(self.model, "label_index"):
                     label_index = self.model.label_index
                 else:
                     label_index = 0  # Default for CustomKerasModelWrapper
-                    
+
                 if isinstance(labels, (list, tuple)):
                     target_labels = labels[label_index]
                 else:
