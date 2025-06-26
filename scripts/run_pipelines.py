@@ -278,10 +278,10 @@ class PipelineconfigProcessor:
 
             if success:
                 successful_count += 1
-                self.logger.info(f"✓ config {i} completed successfully")
+                self.logger.info(f"config {i} completed successfully")
             else:
                 failed_count += 1
-                self.logger.error(f"✗ config {i} failed")
+                self.logger.error(f"config {i} failed")
 
         # Final summary
         self.logger.info("\n" + "=" * 100)
