@@ -2,7 +2,8 @@
     "name": "HEP Foundation Dev Container",
     "image": "nvcr.io/nvidia/tensorflow:25.02-tf2-py3",
     "mounts": [
-        "source=${localWorkspaceFolder},target=/workspace/repo,type=bind,consistency=cached"
+        "source=${localWorkspaceFolder},target=/workspace/repo,type=bind,consistency=cached",
+        "source=${localEnv:HOME}${localEnv:USERPROFILE}/.ssh,target=/root/.ssh,type=bind,consistency=cached"
     ],
     "runArgs": [
         "--gpus=all",
@@ -21,6 +22,6 @@
         "charliermarsh.ruff",
         "ms-vscode-remote.remote-containers"
     ],
-    "postCreateCommand": "cd /workspace/repo && pip install qkeras seaborn uproot pytest && pip install -e . --no-deps",
+    "postCreateCommand": "cd /workspace/repo && pip install qkeras seaborn uproot pytest && pip install -e . --no-deps && chmod 600 /root/.ssh/* && chmod 700 /root/.ssh",
     "remoteUser": "root"
 }
