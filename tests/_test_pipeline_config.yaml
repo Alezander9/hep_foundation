@@ -102,6 +102,7 @@ training:
 # Evaluation Settings - minimal for testing
 evaluation:
   regression_data_sizes: [1000, 2000]  # Small sizes for testing
+  signal_classification_data_sizes: [1000, 2000]  # Small sizes for testing
   fixed_epochs: 3  # Very few epochs for testing
   anomaly_eval_batch_size: 512  # Smaller for testing
 

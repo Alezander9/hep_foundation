@@ -206,9 +206,13 @@ class PipelineConfigLoader:
         self, evaluation_dict: dict[str, Any]
     ) -> EvaluationConfig:
         """Create EvaluationConfig from dictionary."""
+        regression_data_sizes = evaluation_dict.get(
+            "regression_data_sizes", [1000, 2000, 5000]
+        )
         return EvaluationConfig(
-            regression_data_sizes=evaluation_dict.get(
-                "regression_data_sizes", [1000, 2000, 5000]
+            regression_data_sizes=regression_data_sizes,
+            signal_classification_data_sizes=evaluation_dict.get(
+                "signal_classification_data_sizes", regression_data_sizes
             ),
             fixed_epochs=evaluation_dict.get("fixed_epochs", 10),
             anomaly_eval_batch_size=evaluation_dict.get(
