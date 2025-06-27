@@ -81,7 +81,7 @@ class ModelTrainer:
         # Check if this is a predictor model (either DNNPredictor or CustomKerasModelWrapper for regression)
         is_predictor = isinstance(self.model, DNNPredictor)
 
-        # For CustomKerasModelWrapper, check if it's being used for regression
+        # For CustomKerasModelWrapper, check if it's being used for regression or classification
         if isinstance(self.model, CustomKerasModelWrapper):
             model_name = getattr(self.model, "name", "").lower()
             is_predictor = any(
@@ -89,6 +89,7 @@ class ModelTrainer:
                 for term in [
                     "regressor",
                     "predictor",
+                    "classifier",
                     "from_scratch",
                     "fine_tuned",
                     "fixed_encoder",
@@ -97,12 +98,30 @@ class ModelTrainer:
 
         # Different compilation settings based on model type
         if is_predictor:
-            self.model.model.compile(
-                optimizer=self.optimizer,
-                loss="mse",
-                metrics=["mse", "mae"],  # Add mean absolute error for regression
-                run_eagerly=True,
-            )
+            # Check if this is a classification model
+            model_name = getattr(self.model, "name", "").lower()
+            is_classifier = "classifier" in model_name
+
+            if is_classifier:
+                # Binary classification compilation
+                self.model.model.compile(
+                    optimizer=self.optimizer,
+                    loss="binary_crossentropy",
+                    metrics=[
+                        "binary_accuracy",
+                        tf.keras.metrics.Precision(),
+                        tf.keras.metrics.Recall(),
+                    ],
+                    run_eagerly=True,
+                )
+            else:
+                # Regression compilation
+                self.model.model.compile(
+                    optimizer=self.optimizer,
+                    loss="mse",
+                    metrics=["mse", "mae"],  # Add mean absolute error for regression
+                    run_eagerly=True,
+                )
         else:
             # Original compilation for autoencoders
             self.model.model.compile(
@@ -128,8 +147,8 @@ class ModelTrainer:
         # Check if this is a predictor model (either DNNPredictor or CustomKerasModelWrapper for regression)
         is_predictor = isinstance(self.model, DNNPredictor)
 
-        # For CustomKerasModelWrapper, check if it's being used for regression
-        # We can identify this by checking if the model name contains regression-related terms
+        # For CustomKerasModelWrapper, check if it's being used for regression or classification
+        # We can identify this by checking if the model name contains regression/classification-related terms
         if isinstance(self.model, CustomKerasModelWrapper):
             model_name = getattr(self.model, "name", "").lower()
             is_predictor = any(
@@ -137,6 +156,7 @@ class ModelTrainer:
                 for term in [
                     "regressor",
                     "predictor",
+                    "classifier",
                     "from_scratch",
                     "fine_tuned",
                     "fixed_encoder",

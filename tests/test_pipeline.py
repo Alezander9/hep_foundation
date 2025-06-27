@@ -184,6 +184,33 @@ def test_run_full_pipeline(pipeline, test_configs, experiment_dir):
             f"Regression data efficiency plot {plot_file} not found"
         )
 
+        # Check signal classification evaluation outputs
+        classification_dir = latest_model_dir / "testing" / "signal_classification"
+        assert classification_dir.exists(), (
+            f"Signal classification evaluation dir {classification_dir} not found"
+        )
+
+        classification_results_file = (
+            classification_dir / "signal_classification_data_efficiency_results.json"
+        )
+        assert classification_results_file.exists(), (
+            f"Signal classification data efficiency results file {classification_results_file} not found"
+        )
+
+        classification_loss_plot = (
+            classification_dir / "signal_classification_loss_plot.png"
+        )
+        assert classification_loss_plot.exists(), (
+            f"Signal classification loss plot {classification_loss_plot} not found"
+        )
+
+        classification_accuracy_plot = (
+            classification_dir / "signal_classification_accuracy_plot.png"
+        )
+        assert classification_accuracy_plot.exists(), (
+            f"Signal classification accuracy plot {classification_accuracy_plot} not found"
+        )
+
         logger.info(
             f"Full pipeline test completed successfully. Model saved at: {latest_model_dir}"
         )

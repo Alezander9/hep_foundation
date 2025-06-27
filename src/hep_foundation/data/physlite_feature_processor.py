@@ -1299,12 +1299,12 @@ class PhysliteFeatureProcessor:
 
                                     # Log processed data only for the very first event and set the flag
                                     if not first_event_logged and evt_idx == 0:
-                                        self.logger.info(
-                                            f"First event processed input_features_for_dataset: {input_features_for_dataset}"
-                                        )
-                                        self.logger.info(
-                                            f"First event processed label_features_for_dataset: {label_features_for_dataset}"
-                                        )
+                                        # self.logger.info(
+                                        #     f"First event processed input_features_for_dataset: {input_features_for_dataset}"
+                                        # )
+                                        # self.logger.info(
+                                        #     f"First event processed label_features_for_dataset: {label_features_for_dataset}"
+                                        # )
                                         first_event_logged = True  # Set flag after logging the first processed event
 
                                     catalog_stats["processed"] += 1
@@ -1455,11 +1455,11 @@ class PhysliteFeatureProcessor:
 
             # Add metadata including event count for legend display
             raw_histogram_data_for_file["_metadata"] = {
-                "total_events": stats["total_events"],
-                "total_processed_events": stats["processed_events"],
-                "total_features": stats["total_features"],
-                "processing_time": stats["processing_time"],
-                "total_sampled_events": overall_plot_samples_count,
+                "total_events": int(stats["total_events"]),
+                "total_processed_events": int(stats["processed_events"]),
+                "total_features": int(stats["total_features"]),
+                "processing_time": float(stats["processing_time"]),
+                "total_sampled_events": int(overall_plot_samples_count),
                 "signal_key": signal_key if signal_key else "background",
                 "run_number": run_number if run_number else None,
             }

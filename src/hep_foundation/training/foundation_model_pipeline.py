@@ -121,7 +121,7 @@ class FoundationModelPipeline:
             bool: Success status for anomaly/regression processes
             str: Foundation model path for train process, or None if training failed
         """
-        valid_processes = ["train", "anomaly", "regression"]
+        valid_processes = ["train", "anomaly", "regression", "signal_classification"]
         if process_name not in valid_processes:
             self.logger.error(
                 f"Invalid process name: {process_name}. Must be one of {valid_processes}"
@@ -133,6 +133,7 @@ class FoundationModelPipeline:
             "train": self.train_foundation_model,
             "anomaly": self.evaluate_foundation_model_anomaly_detection,
             "regression": self.evaluate_foundation_model_regression,
+            "signal_classification": self.evaluate_foundation_model_signal_classification,
         }
 
         # Get the method to call
@@ -161,6 +162,16 @@ class FoundationModelPipeline:
                 }
             )
         elif process_name == "regression":
+            common_args.update(
+                {
+                    "dnn_model_config": dnn_model_config,
+                    "dnn_training_config": dnn_training_config,
+                    "foundation_model_path": foundation_model_path,
+                    "data_sizes": data_sizes,
+                    "fixed_epochs": fixed_epochs,
+                }
+            )
+        elif process_name == "signal_classification":
             common_args.update(
                 {
                     "dnn_model_config": dnn_model_config,
@@ -207,13 +218,15 @@ class FoundationModelPipeline:
         """
         self.logger.info("=" * 100)
         self.logger.info("RUNNING FULL FOUNDATION MODEL PIPELINE")
-        self.logger.info("Process: Train → Regression → Anomaly Detection")
+        self.logger.info(
+            "Process: Train → Regression → Signal Classification → Anomaly Detection"
+        )
         self.logger.info("=" * 100)
 
         try:
             # Step 1: Train the foundation model
             self.logger.info("\n" + "=" * 50)
-            self.logger.info("STEP 1/3: TRAINING FOUNDATION MODEL")
+            self.logger.info("STEP 1/4: TRAINING FOUNDATION MODEL")
             self.logger.info("=" * 50)
 
             foundation_model_path = self.run_process(
@@ -237,7 +250,7 @@ class FoundationModelPipeline:
 
             # Step 2: Run regression evaluation
             self.logger.info("\n" + "=" * 50)
-            self.logger.info("STEP 2/3: REGRESSION EVALUATION")
+            self.logger.info("STEP 2/4: REGRESSION EVALUATION")
             self.logger.info("=" * 50)
 
             regression_success = self.run_process(
@@ -258,9 +271,32 @@ class FoundationModelPipeline:
 
             self.logger.info("Regression evaluation completed successfully")
 
-            # Step 3: Run anomaly detection evaluation
+            # Step 3: Run signal classification evaluation
             self.logger.info("\n" + "=" * 50)
-            self.logger.info("STEP 3/3: ANOMALY DETECTION EVALUATION")
+            self.logger.info("STEP 3/4: SIGNAL CLASSIFICATION EVALUATION")
+            self.logger.info("=" * 50)
+
+            signal_classification_success = self.run_process(
+                process_name="signal_classification",
+                dataset_config=dataset_config,
+                task_config=task_config,
+                dnn_model_config=dnn_model_config,
+                dnn_training_config=dnn_training_config,
+                foundation_model_path=foundation_model_path,
+                data_sizes=data_sizes,
+                fixed_epochs=fixed_epochs,
+                delete_catalogs=delete_catalogs,
+            )
+
+            if not signal_classification_success:
+                self.logger.error("Signal classification evaluation failed")
+                return False
+
+            self.logger.info("Signal classification evaluation completed successfully")
+
+            # Step 4: Run anomaly detection evaluation
+            self.logger.info("\n" + "=" * 50)
+            self.logger.info("STEP 4/4: ANOMALY DETECTION EVALUATION")
             self.logger.info("=" * 50)
 
             anomaly_success = self.run_process(
@@ -284,7 +320,7 @@ class FoundationModelPipeline:
             self.logger.info("=" * 100)
             self.logger.info(f"Foundation model: {foundation_model_path}")
             self.logger.info(
-                "All three processes (train → regression → anomaly) completed successfully"
+                "All four processes (train → regression → signal classification → anomaly) completed successfully"
             )
             self.logger.info("=" * 100)
 
@@ -1281,6 +1317,592 @@ class FoundationModelPipeline:
         except Exception as e:
             self.logger.error(
                 f"Regression evaluation failed: {type(e).__name__}: {str(e)}"
+            )
+            self.logger.exception("Detailed traceback:")
+            return False
+
+    def evaluate_foundation_model_signal_classification(
+        self,
+        dataset_config: DatasetConfig,
+        dnn_model_config: DNNPredictorConfig,
+        dnn_training_config: TrainingConfig,
+        task_config: TaskConfig,
+        delete_catalogs: bool = True,
+        foundation_model_path: str = None,
+        data_sizes: list = None,
+        fixed_epochs: int = 10,
+    ) -> bool:
+        """
+        Evaluate foundation model for signal classification using data efficiency study.
+
+        This method creates balanced datasets mixing background and signal data with binary labels,
+        then trains three models (From Scratch, Fine-Tuned, Fixed) on increasing amounts of training data
+        to show how pre-trained weights help with limited signal data.
+
+        Args:
+            dataset_config: Configuration for dataset processing
+            dnn_model_config: Configuration for DNN model
+            dnn_training_config: Configuration for DNN training
+            task_config: Configuration for task processing
+            delete_catalogs: Whether to delete catalogs after processing
+            foundation_model_path: Path to the foundation model encoder
+            data_sizes: List of training data sizes to test (e.g., [1000, 2000, 5000, 10000])
+            fixed_epochs: Number of epochs to train each model for each data size
+        """
+        self.logger.info("=" * 100)
+        self.logger.info(
+            "Evaluating Foundation Model for Signal Classification (Data Efficiency Study)"
+        )
+        self.logger.info("=" * 100)
+
+        if not foundation_model_path:
+            self.logger.error(
+                "Foundation model path must be provided for signal classification evaluation."
+            )
+            return False
+
+        if not dataset_config.signal_keys:
+            self.logger.error(
+                "Signal keys must be configured for signal classification evaluation."
+            )
+            return False
+
+        foundation_model_dir = Path(foundation_model_path)
+        classification_dir = foundation_model_dir / "testing" / "signal_classification"
+        classification_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            # Initialize data manager
+            data_manager = DatasetManager(base_dir=self.processed_datasets_dir)
+
+            # 1. Load background dataset (no labels needed)
+            self.logger.info("Loading background dataset...")
+            background_train, background_val, background_test = (
+                data_manager.load_atlas_datasets(
+                    dataset_config=dataset_config,
+                    validation_fraction=dataset_config.validation_fraction,
+                    test_fraction=dataset_config.test_fraction,
+                    batch_size=dnn_training_config.batch_size,
+                    shuffle_buffer=dataset_config.shuffle_buffer,
+                    include_labels=False,  # No labels needed for background
+                    delete_catalogs=delete_catalogs,
+                )
+            )
+
+            # 2. Prepare background histogram path for comparison plot generation
+            background_hist_data_path_for_comparison = None
+            dataset_id = data_manager.generate_dataset_id(dataset_config)
+            potential_background_hist_path = (
+                data_manager.get_dataset_dir(dataset_id)
+                / "plot_data"
+                / "atlas_dataset_features_hist_data.json"
+            )
+            if potential_background_hist_path.exists():
+                background_hist_data_path_for_comparison = (
+                    potential_background_hist_path
+                )
+                self.logger.info(
+                    f"Found background histogram data for comparison at {potential_background_hist_path}"
+                )
+            else:
+                self.logger.warning(
+                    f"Background histogram data for comparison not found at {potential_background_hist_path}. Comparison plot may be skipped by DatasetManager."
+                )
+
+            # 3. Load first signal dataset
+            signal_key = dataset_config.signal_keys[0]
+            self.logger.info(f"Loading signal dataset: {signal_key}")
+
+            signal_datasets = data_manager.load_signal_datasets(
+                dataset_config=dataset_config,
+                batch_size=dnn_training_config.batch_size,
+                include_labels=False,  # No labels needed for signals
+                background_hist_data_path=background_hist_data_path_for_comparison,  # Pass the path here
+            )
+
+            if signal_key not in signal_datasets:
+                self.logger.error(f"Signal dataset '{signal_key}' not found")
+                return False
+
+            signal_dataset = signal_datasets[signal_key]
+
+            # 4. Create balanced labeled datasets
+            self.logger.info("Creating balanced labeled datasets...")
+
+            def create_balanced_labeled_dataset(bg_dataset, sig_dataset, split_name):
+                """Create a balanced dataset with binary labels"""
+                # Convert to unbatched datasets for easier manipulation
+                bg_unbatched = bg_dataset.unbatch()
+                sig_unbatched = sig_dataset.unbatch()
+
+                # Add labels: 0 for background, 1 for signal
+                bg_labeled = bg_unbatched.map(
+                    lambda x: (x, tf.constant(0.0, dtype=tf.float32))
+                )
+                sig_labeled = sig_unbatched.map(
+                    lambda x: (x, tf.constant(1.0, dtype=tf.float32))
+                )
+
+                # Combine and shuffle
+                combined = bg_labeled.concatenate(sig_labeled)
+                combined = combined.shuffle(buffer_size=10000, seed=42)
+
+                # Rebatch
+                return combined.batch(dnn_training_config.batch_size)
+
+            # Create balanced train, validation, and test datasets
+            labeled_train_dataset = create_balanced_labeled_dataset(
+                background_train, signal_dataset, "train"
+            )
+            labeled_val_dataset = create_balanced_labeled_dataset(
+                background_val, signal_dataset, "validation"
+            )
+            labeled_test_dataset = create_balanced_labeled_dataset(
+                background_test, signal_dataset, "test"
+            )
+
+            # Count total training events
+            total_train_events = 0
+            for batch in labeled_train_dataset:
+                batch_size = tf.shape(batch[0])[0]
+                total_train_events += batch_size.numpy()
+
+            self.logger.info(f"Total training events available: {total_train_events}")
+
+            # Filter data_sizes to only include sizes <= total_train_events
+            data_sizes = [size for size in data_sizes if size <= total_train_events]
+            self.logger.info(f"Data sizes to test: {data_sizes}")
+
+            # 5. Load Pre-trained Foundation Encoder & its Config
+            self.logger.info(
+                f"Loading foundation model configuration from: {foundation_model_dir}"
+            )
+
+            # Load the VAE model config from the YAML config file
+            vae_config_path = foundation_model_dir / "_experiment_config.yaml"
+            if not vae_config_path.exists():
+                self.logger.error(
+                    f"Foundation model config not found at: {vae_config_path}"
+                )
+                return False
+
+            import yaml
+
+            with open(vae_config_path) as f:
+                vae_config_data = yaml.safe_load(f)
+
+            if "models" in vae_config_data and "vae" in vae_config_data["models"]:
+                original_vae_model_config = vae_config_data["models"]["vae"]
+            else:
+                self.logger.error(
+                    f"Could not find VAE model config in: {vae_config_path}"
+                )
+                return False
+
+            vae_arch_config = original_vae_model_config["architecture"]
+            latent_dim = vae_arch_config["latent_dim"]
+            encoder_hidden_layers = vae_arch_config.get("encoder_layers", [])
+            encoder_activation = vae_arch_config.get("activation", "relu")
+
+            # Load the pre-trained deterministic encoder directly
+            pretrained_deterministic_encoder_path = (
+                foundation_model_dir
+                / "models"
+                / "foundation_model"
+                / "deterministic_encoder"
+            )
+            if not pretrained_deterministic_encoder_path.exists():
+                self.logger.error(
+                    f"Pretrained deterministic encoder not found at {pretrained_deterministic_encoder_path}"
+                )
+                return False
+
+            self.logger.info(
+                f"Loading pre-trained deterministic encoder from: {pretrained_deterministic_encoder_path}"
+            )
+            pretrained_deterministic_encoder = tf.keras.models.load_model(
+                pretrained_deterministic_encoder_path
+            )
+
+            self.logger.info(
+                f"Loaded deterministic encoder with output shape: {pretrained_deterministic_encoder.output.shape}"
+            )
+
+            original_input_shape = (task_config.input.get_total_feature_size(),)
+            classification_output_shape = (1,)  # Binary classification
+
+            # Helper function to build classifier head
+            def build_classifier_head(name_suffix: str) -> tf.keras.Model:
+                # Create a copy of the DNN config with modified architecture for binary classification
+                import copy
+
+                classifier_config = copy.deepcopy(dnn_model_config)
+
+                # Update the architecture for the classifier head
+                classifier_config.architecture.update(
+                    {
+                        "input_shape": (latent_dim,),
+                        "output_shape": classification_output_shape,
+                        "output_activation": "sigmoid",  # Binary classification
+                        "name": f"{dnn_model_config.architecture.get('name', 'classifier')}_{name_suffix}",
+                    }
+                )
+
+                classifier_model_wrapper = ModelFactory.create_model(
+                    model_type="dnn_predictor", config=classifier_config
+                )
+                classifier_model_wrapper.build()
+                return classifier_model_wrapper.model
+
+            # Helper function to create subset dataset
+            def create_subset_dataset(dataset, num_events):
+                """Create a subset of the dataset with exactly num_events events"""
+                # Convert to unbatched dataset to count events precisely
+                unbatched = dataset.unbatch()
+                subset = unbatched.take(num_events)
+                # Rebatch with original batch size
+                return subset.batch(dnn_training_config.batch_size)
+
+            # Helper function to train and evaluate a model for a specific data size
+            def train_and_evaluate_for_size(
+                model_name: str,
+                combined_keras_model: tf.keras.Model,
+                train_subset,
+                data_size: int,
+            ):
+                self.logger.info(
+                    f"Training {model_name} model with {data_size} events..."
+                )
+
+                # Wrap the Keras model with CustomKerasModelWrapper for ModelTrainer
+                wrapped_model_for_trainer = CustomKerasModelWrapper(
+                    combined_keras_model, name=f"{model_name}_classifier"
+                )
+
+                trainer_config_dict = {
+                    "batch_size": dnn_training_config.batch_size,
+                    "epochs": fixed_epochs,  # Use fixed epochs for fair comparison
+                    "learning_rate": dnn_training_config.learning_rate,
+                    "early_stopping": {
+                        "patience": fixed_epochs + 1,
+                        "min_delta": 0,
+                    },  # Disable early stopping
+                }
+
+                trainer = ModelTrainer(
+                    model=wrapped_model_for_trainer, training_config=trainer_config_dict
+                )
+
+                # Train without plots to speed up
+                _ = trainer.train(  # Unused return value
+                    dataset=train_subset,
+                    validation_data=labeled_val_dataset,
+                    callbacks=[],  # No callbacks for speed
+                    plot_training=False,
+                )
+
+                # Evaluate on test set
+                test_metrics = trainer.evaluate(labeled_test_dataset)
+                test_loss = test_metrics.get("test_loss", 0.0)
+                test_accuracy = test_metrics.get("test_binary_accuracy", 0.0)
+
+                self.logger.info(
+                    f"{model_name} with {data_size} events - Test Loss: {test_loss:.6f}, Test Accuracy: {test_accuracy:.6f}"
+                )
+                return test_loss, test_accuracy
+
+            # Store results for plotting
+            results = {
+                "data_sizes": data_sizes,
+                "From_Scratch_loss": [],
+                "Fine_Tuned_loss": [],
+                "Fixed_Encoder_loss": [],
+                "From_Scratch_accuracy": [],
+                "Fine_Tuned_accuracy": [],
+                "Fixed_Encoder_accuracy": [],
+            }
+
+            # 5. Run experiments for each data size
+            for data_size in data_sizes:
+                self.logger.info(f"\n{'=' * 50}")
+                self.logger.info(f"Training with {data_size} events")
+                self.logger.info(f"{'=' * 50}")
+
+                # Create subset of training data
+                train_subset = create_subset_dataset(labeled_train_dataset, data_size)
+
+                # --- Model 1: From Scratch ---
+                self.logger.info("Building From Scratch model...")
+                scratch_encoder_layers = []
+                for units in encoder_hidden_layers:
+                    scratch_encoder_layers.append(
+                        tf.keras.layers.Dense(units, activation=encoder_activation)
+                    )
+                scratch_encoder_layers.append(
+                    tf.keras.layers.Dense(latent_dim, name="scratch_latent_space")
+                )
+
+                scratch_encoder_part = tf.keras.Sequential(
+                    scratch_encoder_layers, name="scratch_encoder"
+                )
+                scratch_classifier_dnn = build_classifier_head("from_scratch")
+
+                model_inputs = tf.keras.Input(
+                    shape=original_input_shape, name="input_features"
+                )
+                encoded_scratch = scratch_encoder_part(model_inputs)
+                predictions_scratch = scratch_classifier_dnn(encoded_scratch)
+                model_from_scratch = tf.keras.Model(
+                    inputs=model_inputs,
+                    outputs=predictions_scratch,
+                    name="Classifier_From_Scratch",
+                )
+
+                scratch_loss, scratch_accuracy = train_and_evaluate_for_size(
+                    "From_Scratch", model_from_scratch, train_subset, data_size
+                )
+                results["From_Scratch_loss"].append(scratch_loss)
+                results["From_Scratch_accuracy"].append(scratch_accuracy)
+
+                # --- Model 2: Fine-Tuned ---
+                self.logger.info("Building Fine-Tuned model...")
+                fine_tuned_input = tf.keras.Input(
+                    shape=original_input_shape, name="fine_tuned_input"
+                )
+                fine_tuned_encoded = pretrained_deterministic_encoder(fine_tuned_input)
+                fine_tuned_encoder_part = tf.keras.Model(
+                    inputs=fine_tuned_input,
+                    outputs=fine_tuned_encoded,
+                    name="fine_tuned_pretrained_encoder",
+                )
+                fine_tuned_encoder_part.trainable = True
+
+                fine_tuned_classifier_dnn = build_classifier_head("fine_tuned")
+
+                model_inputs_ft = tf.keras.Input(
+                    shape=original_input_shape, name="input_features_ft"
+                )
+                encoded_ft = fine_tuned_encoder_part(model_inputs_ft)
+                predictions_ft = fine_tuned_classifier_dnn(encoded_ft)
+                model_fine_tuned = tf.keras.Model(
+                    inputs=model_inputs_ft,
+                    outputs=predictions_ft,
+                    name="Classifier_Fine_Tuned",
+                )
+
+                finetuned_loss, finetuned_accuracy = train_and_evaluate_for_size(
+                    "Fine_Tuned", model_fine_tuned, train_subset, data_size
+                )
+                results["Fine_Tuned_loss"].append(finetuned_loss)
+                results["Fine_Tuned_accuracy"].append(finetuned_accuracy)
+
+                # --- Model 3: Fixed Encoder ---
+                self.logger.info("Building Fixed Encoder model...")
+                fixed_input = tf.keras.Input(
+                    shape=original_input_shape, name="fixed_input"
+                )
+                fixed_encoded = pretrained_deterministic_encoder(fixed_input)
+                fixed_encoder_part = tf.keras.Model(
+                    inputs=fixed_input,
+                    outputs=fixed_encoded,
+                    name="fixed_pretrained_encoder",
+                )
+                fixed_encoder_part.trainable = False
+
+                fixed_classifier_dnn = build_classifier_head("fixed_encoder")
+
+                model_inputs_fx = tf.keras.Input(
+                    shape=original_input_shape, name="input_features_fx"
+                )
+                encoded_fx = fixed_encoder_part(model_inputs_fx)
+                predictions_fx = fixed_classifier_dnn(encoded_fx)
+                model_fixed = tf.keras.Model(
+                    inputs=model_inputs_fx,
+                    outputs=predictions_fx,
+                    name="Classifier_Fixed_Encoder",
+                )
+
+                fixed_loss, fixed_accuracy = train_and_evaluate_for_size(
+                    "Fixed_Encoder", model_fixed, train_subset, data_size
+                )
+                results["Fixed_Encoder_loss"].append(fixed_loss)
+                results["Fixed_Encoder_accuracy"].append(fixed_accuracy)
+
+            # 6. Save results and create plots
+            self.logger.info("Creating data efficiency plots...")
+
+            # Save results to JSON
+            results_file = (
+                classification_dir
+                / "signal_classification_data_efficiency_results.json"
+            )
+            with open(results_file, "w") as f:
+                json.dump(results, f, indent=2)
+            self.logger.info(f"Results saved to: {results_file}")
+
+            # Create the plots
+            try:
+                import matplotlib.pyplot as plt
+
+                from hep_foundation.utils.plot_utils import (
+                    FONT_SIZES,
+                    LINE_WIDTHS,
+                    get_color_cycle,
+                    get_figure_size,
+                    set_science_style,
+                )
+
+                set_science_style(use_tex=False)
+                colors = get_color_cycle("high_contrast")
+
+                # Plot 1: Loss comparison
+                plt.figure(figsize=get_figure_size("single", ratio=1.2))
+
+                plt.loglog(
+                    results["data_sizes"],
+                    results["From_Scratch_loss"],
+                    "o-",
+                    color=colors[0],
+                    linewidth=LINE_WIDTHS["thick"],
+                    markersize=8,
+                    label="From Scratch",
+                )
+                plt.loglog(
+                    results["data_sizes"],
+                    results["Fine_Tuned_loss"],
+                    "s-",
+                    color=colors[1],
+                    linewidth=LINE_WIDTHS["thick"],
+                    markersize=8,
+                    label="Fine-Tuned",
+                )
+                plt.loglog(
+                    results["data_sizes"],
+                    results["Fixed_Encoder_loss"],
+                    "^-",
+                    color=colors[2],
+                    linewidth=LINE_WIDTHS["thick"],
+                    markersize=8,
+                    label="Fixed Encoder",
+                )
+
+                plt.xlabel("Number of Training Events", fontsize=FONT_SIZES["large"])
+                plt.ylabel(
+                    "Test Loss (Binary Crossentropy)", fontsize=FONT_SIZES["large"]
+                )
+                plt.title(
+                    f"Signal Classification Data Efficiency: Loss\n(Signal: {signal_key})",
+                    fontsize=FONT_SIZES["xlarge"],
+                )
+                plt.legend(fontsize=FONT_SIZES["normal"], loc="upper right")
+                plt.grid(True, alpha=0.3, which="both")
+
+                # Save loss plot
+                loss_plot_file = (
+                    classification_dir / "signal_classification_loss_plot.png"
+                )
+                plt.savefig(loss_plot_file, dpi=300, bbox_inches="tight")
+                plt.close()
+
+                # Plot 2: Accuracy comparison
+                plt.figure(figsize=get_figure_size("single", ratio=1.2))
+
+                plt.semilogx(
+                    results["data_sizes"],
+                    results["From_Scratch_accuracy"],
+                    "o-",
+                    color=colors[0],
+                    linewidth=LINE_WIDTHS["thick"],
+                    markersize=8,
+                    label="From Scratch",
+                )
+                plt.semilogx(
+                    results["data_sizes"],
+                    results["Fine_Tuned_accuracy"],
+                    "s-",
+                    color=colors[1],
+                    linewidth=LINE_WIDTHS["thick"],
+                    markersize=8,
+                    label="Fine-Tuned",
+                )
+                plt.semilogx(
+                    results["data_sizes"],
+                    results["Fixed_Encoder_accuracy"],
+                    "^-",
+                    color=colors[2],
+                    linewidth=LINE_WIDTHS["thick"],
+                    markersize=8,
+                    label="Fixed Encoder",
+                )
+
+                plt.xlabel("Number of Training Events", fontsize=FONT_SIZES["large"])
+                plt.ylabel("Test Accuracy", fontsize=FONT_SIZES["large"])
+                plt.title(
+                    f"Signal Classification Data Efficiency: Accuracy\n(Signal: {signal_key})",
+                    fontsize=FONT_SIZES["xlarge"],
+                )
+                plt.legend(fontsize=FONT_SIZES["normal"], loc="lower right")
+                plt.grid(True, alpha=0.3, which="both")
+                plt.ylim(0, 1)  # Accuracy is between 0 and 1
+
+                # Save accuracy plot
+                accuracy_plot_file = (
+                    classification_dir / "signal_classification_accuracy_plot.png"
+                )
+                plt.savefig(accuracy_plot_file, dpi=300, bbox_inches="tight")
+                plt.close()
+
+                self.logger.info(f"Loss plot saved to: {loss_plot_file}")
+                self.logger.info(f"Accuracy plot saved to: {accuracy_plot_file}")
+
+            except Exception as e:
+                self.logger.error(f"Failed to create plots: {str(e)}")
+
+            # 7. Display summary
+            self.logger.info("=" * 100)
+            self.logger.info("Signal Classification Evaluation Results Summary")
+            self.logger.info("=" * 100)
+            self.logger.info(f"Signal Dataset: {signal_key}")
+
+            for i, data_size in enumerate(results["data_sizes"]):
+                self.logger.info(f"Training Events: {data_size}")
+                self.logger.info(
+                    f"  From Scratch:  Loss: {results['From_Scratch_loss'][i]:.6f}, Accuracy: {results['From_Scratch_accuracy'][i]:.6f}"
+                )
+                self.logger.info(
+                    f"  Fine-Tuned:    Loss: {results['Fine_Tuned_loss'][i]:.6f}, Accuracy: {results['Fine_Tuned_accuracy'][i]:.6f}"
+                )
+                self.logger.info(
+                    f"  Fixed Encoder: Loss: {results['Fixed_Encoder_loss'][i]:.6f}, Accuracy: {results['Fixed_Encoder_accuracy'][i]:.6f}"
+                )
+
+                # Calculate improvement ratios for accuracy
+                scratch_acc = results["From_Scratch_accuracy"][i]
+                if scratch_acc < 1.0:  # Avoid division issues
+                    ft_acc_improvement = (
+                        (results["Fine_Tuned_accuracy"][i] - scratch_acc)
+                        / (1.0 - scratch_acc)
+                        * 100
+                    )
+                    fx_acc_improvement = (
+                        (results["Fixed_Encoder_accuracy"][i] - scratch_acc)
+                        / (1.0 - scratch_acc)
+                        * 100
+                    )
+                    self.logger.info(
+                        f"  Fine-Tuned accuracy improvement: {ft_acc_improvement:.1f}%"
+                    )
+                    self.logger.info(
+                        f"  Fixed accuracy improvement: {fx_acc_improvement:.1f}%"
+                    )
+                self.logger.info("")
+
+            self.logger.info("Signal classification evaluation completed successfully")
+            return True
+
+        except Exception as e:
+            self.logger.error(
+                f"Signal classification evaluation failed: {type(e).__name__}: {str(e)}"
             )
             self.logger.exception("Detailed traceback:")
             return False
