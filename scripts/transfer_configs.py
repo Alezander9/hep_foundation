@@ -122,9 +122,13 @@ class StreamlinedConfigTransfer:
             self.logger.error("No valid config files to transfer")
             return False
 
+        # Create remote config directory path
+        system_config = self.transfer_manager.get_system_config(system)
+        remote_config_path = f"{system_config.path}_experiment_config_stack"
+
         # Transfer files using the shared transfer utility
         success = transfer_client.transfer_files_scp(
-            files=valid_configs, dry_run=dry_run
+            files=valid_configs, remote_path=remote_config_path, dry_run=dry_run
         )
 
         if success and not dry_run and delete_after_transfer:

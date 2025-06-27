@@ -237,7 +237,7 @@ class RemoteTransfer:
             [
                 "-e",
                 f"ssh -i {self.config.ssh_key}",
-                f"{local_dir}/",  # trailing slash important for rsync
+                f"{local_dir}",  # no trailing slash to preserve directory structure
                 f"{self.config.user}@{self.config.host}:{target_path}/",
             ]
         )
