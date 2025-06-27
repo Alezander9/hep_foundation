@@ -1409,7 +1409,7 @@ class FoundationModelPipeline:
                     f"Background histogram data for comparison not found at {potential_background_hist_path}. Comparison plot may be skipped by DatasetManager."
                 )
 
-            # 3. Load first signal dataset
+            # 3. Load first signal dataset (later we will repeat this for all signal keys)
             signal_key = dataset_config.signal_keys[0]
             self.logger.info(f"Loading signal dataset: {signal_key}")
 
