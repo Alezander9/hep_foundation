@@ -39,6 +39,33 @@ class DatasetManager:
         self.current_dataset_path = None
         self.current_dataset_info = None
 
+    @staticmethod
+    def _convert_numpy_types(obj):
+        """
+        Recursively convert NumPy scalar types to native Python types for JSON serialization.
+
+        Args:
+            obj: Object that might contain NumPy types
+
+        Returns:
+            Object with NumPy types converted to native Python types
+        """
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, dict):
+            return {
+                key: DatasetManager._convert_numpy_types(value)
+                for key, value in obj.items()
+            }
+        elif isinstance(obj, (list, tuple)):
+            return [DatasetManager._convert_numpy_types(item) for item in obj]
+        else:
+            return obj
+
     def get_dataset_dir(self, dataset_id: str) -> Path:
         """Get the directory path for a specific dataset.
 
@@ -161,7 +188,9 @@ class DatasetManager:
 
         # Add processing stats if provided
         if processing_stats is not None:
-            dataset_info["processing_stats"] = processing_stats
+            dataset_info["processing_stats"] = self._convert_numpy_types(
+                processing_stats
+            )
 
         # Save metadata as JSON
         import json
@@ -373,7 +402,9 @@ class DatasetManager:
                             all_labels and dataset_config.task_config.labels
                         ),
                         "normalization_params": json.dumps(norm_params),
-                        "processing_stats": json.dumps(total_stats),
+                        "processing_stats": json.dumps(
+                            self._convert_numpy_types(total_stats)
+                        ),
                     }
                 )
 
@@ -623,7 +654,9 @@ class DatasetManager:
                                 labels and dataset_config.task_config.labels
                             ),
                             "normalization_params": json.dumps(norm_params),
-                            "processing_stats": json.dumps(stats),
+                            "processing_stats": json.dumps(
+                                self._convert_numpy_types(stats)
+                            ),
                         }
                     )
 

@@ -947,7 +947,11 @@ class FoundationModelPipeline:
             self.logger.info(f"Total training events available: {total_train_events}")
 
             # Filter data_sizes to only include sizes <= total_train_events
-            data_sizes = [size for size in data_sizes if size <= total_train_events]
+            data_sizes = [
+                size
+                for size in (data_sizes or [total_train_events])
+                if size <= total_train_events
+            ]
             self.logger.info(f"Data sizes to test: {data_sizes}")
 
             # 2. Load Pre-trained Foundation Encoder & its Config
@@ -1470,7 +1474,11 @@ class FoundationModelPipeline:
             self.logger.info(f"Total training events available: {total_train_events}")
 
             # Filter data_sizes to only include sizes <= total_train_events
-            data_sizes = [size for size in data_sizes if size <= total_train_events]
+            data_sizes = [
+                size
+                for size in (data_sizes or [total_train_events])
+                if size <= total_train_events
+            ]
             self.logger.info(f"Data sizes to test: {data_sizes}")
 
             # 5. Load Pre-trained Foundation Encoder & its Config
