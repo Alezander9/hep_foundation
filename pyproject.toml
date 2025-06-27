@@ -62,3 +62,9 @@ dev = [
     "pytest-cov>=6.1.1",
     "pre-commit>=4.2.0",
 ]
+transfer = [
+    # Minimal dependencies for file transfer scripts
+    # Most imports are standard library (argparse, pathlib, os, subprocess, etc.)
+    # Only need pyyaml for config loading
+    "pyyaml>=6.0.2",
+]
