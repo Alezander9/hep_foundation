@@ -1120,7 +1120,13 @@ class FoundationModelPipeline:
             }
 
             # Identify the largest data size for plotting
-            largest_data_size = max(data_sizes)
+            if not data_sizes:
+                self.logger.warning(
+                    "No valid data sizes remain after filtering. Using total training events as fallback."
+                )
+                largest_data_size = total_train_events
+            else:
+                largest_data_size = max(data_sizes)
 
             # Create training plots directory for the reference model
             training_plots_dir = regression_dir / "training_plots"

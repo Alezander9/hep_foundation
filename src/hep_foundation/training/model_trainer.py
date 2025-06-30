@@ -261,7 +261,10 @@ class ModelTrainer:
         # Record start time
         self.training_start_time = datetime.now()
 
+        # Set up plots directory with defaults if needed
         if plot_training and plots_dir is None:
+            plots_dir = Path("experiments/plots")
+        elif plot_result and plots_dir is None:
             plots_dir = Path("experiments/plots")
 
         if plot_training:
