@@ -164,6 +164,22 @@ def test_run_full_pipeline(pipeline, test_configs, experiment_dir):
             f"Experiment info file not found at {experiment_info_path}"
         )
 
+        # Check foundation model training plots
+        training_dir = latest_model_dir / "training"
+        assert training_dir.exists(), (
+            f"Foundation model training dir {training_dir} not found"
+        )
+
+        foundation_training_history_plot = training_dir / "training_history.png"
+        assert foundation_training_history_plot.exists(), (
+            f"Foundation model training history plot {foundation_training_history_plot} not found"
+        )
+
+        foundation_result_plot = training_dir / "result_reconstruction_error.png"
+        assert foundation_result_plot.exists(), (
+            f"Foundation model result plot {foundation_result_plot} not found"
+        )
+
         # Check anomaly detection outputs
         anomaly_dir = latest_model_dir / "testing" / "anomaly_detection"
         assert anomaly_dir.exists(), f"Anomaly detection dir {anomaly_dir} not found"
@@ -182,6 +198,22 @@ def test_run_full_pipeline(pipeline, test_configs, experiment_dir):
         plot_file = regression_dir / "regression_data_efficiency_plot.png"
         assert plot_file.exists(), (
             f"Regression data efficiency plot {plot_file} not found"
+        )
+
+        # Check regression training plots (reference case)
+        training_plots_dir = regression_dir / "training_plots"
+        assert training_plots_dir.exists(), (
+            f"Regression training plots dir {training_plots_dir} not found"
+        )
+
+        training_history_plot = training_plots_dir / "training_history.png"
+        assert training_history_plot.exists(), (
+            f"Regression training history plot {training_history_plot} not found"
+        )
+
+        training_result_plot = training_plots_dir / "result_absolute_error.png"
+        assert training_result_plot.exists(), (
+            f"Regression training result plot {training_result_plot} not found"
         )
 
         # Check signal classification evaluation outputs

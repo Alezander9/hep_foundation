@@ -517,7 +517,11 @@ class FoundationModelPipeline:
                     validation_data=val_dataset,
                     callbacks=callbacks,
                     plot_training=True,
+                    plot_result=True,
                     plots_dir=self.experiments_output_dir / experiment_id / "training",
+                    plot_training_title="Foundation Model Training History",
+                    plot_result_title="Foundation Model Reconstruction Results",
+                    test_dataset=test_dataset,
                 )
 
                 # Evaluate Model
@@ -1054,6 +1058,11 @@ class FoundationModelPipeline:
                 combined_keras_model: tf.keras.Model,
                 train_subset,
                 data_size: int,
+                plot_training: bool = False,
+                plot_result: bool = False,
+                plots_dir: Optional[Path] = None,
+                plot_training_title: Optional[str] = None,
+                plot_result_title: Optional[str] = None,
             ):
                 self.logger.info(
                     f"Training {model_name} model with {data_size} events..."
@@ -1078,12 +1087,17 @@ class FoundationModelPipeline:
                     model=wrapped_model_for_trainer, training_config=trainer_config_dict
                 )
 
-                # Train without plots to speed up
+                # Train with optional plotting
                 _ = trainer.train(  # Unused return value
                     dataset=train_subset,
                     validation_data=val_dataset,
                     callbacks=[],  # No callbacks for speed
-                    plot_training=False,
+                    plot_training=plot_training,
+                    plot_result=plot_result,
+                    plots_dir=plots_dir,
+                    plot_training_title=plot_training_title,
+                    plot_result_title=plot_result_title,
+                    test_dataset=test_dataset,
                 )
 
                 # Evaluate on test set
@@ -1104,6 +1118,13 @@ class FoundationModelPipeline:
                 "Fine_Tuned": [],
                 "Fixed_Encoder": [],
             }
+
+            # Identify the largest data size for plotting
+            largest_data_size = max(data_sizes)
+
+            # Create training plots directory for the reference model
+            training_plots_dir = regression_dir / "training_plots"
+            training_plots_dir.mkdir(parents=True, exist_ok=True)
 
             # 3. Run experiments for each data size
             for data_size in data_sizes:
@@ -1141,8 +1162,35 @@ class FoundationModelPipeline:
                     name="Regressor_From_Scratch",
                 )
 
+                # Enable plotting for the largest "From Scratch" model as reference
+                should_plot = data_size == largest_data_size
+                plots_dir = training_plots_dir if should_plot else None
+                plot_training_title = (
+                    f"Training History (From Scratch model with {data_size:,} events)"
+                    if should_plot
+                    else None
+                )
+                plot_result_title = (
+                    f"Result Distribution (From Scratch model with {data_size:,} events)"
+                    if should_plot
+                    else None
+                )
+
+                if should_plot:
+                    self.logger.info(
+                        f"Enabling training and result plots for From Scratch model with {data_size} events (largest size)"
+                    )
+
                 scratch_loss = train_and_evaluate_for_size(
-                    "From_Scratch", model_from_scratch, train_subset, data_size
+                    "From_Scratch",
+                    model_from_scratch,
+                    train_subset,
+                    data_size,
+                    plot_training=should_plot,
+                    plot_result=should_plot,
+                    plots_dir=plots_dir,
+                    plot_training_title=plot_training_title,
+                    plot_result_title=plot_result_title,
                 )
                 results["From_Scratch"].append(scratch_loss)
 
