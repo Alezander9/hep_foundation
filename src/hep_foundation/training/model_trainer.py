@@ -503,8 +503,18 @@ class ModelTrainer:
                 events_to_sample = min(
                     len(batch_predictions), max_raw_samples - raw_sample_count
                 )
-                predictions.extend(batch_predictions[:events_to_sample].flatten())
-                targets.extend(labels[:events_to_sample].flatten())
+
+                # Convert to numpy if needed before flattening
+                pred_sample = batch_predictions[:events_to_sample]
+                target_sample = labels[:events_to_sample]
+
+                if hasattr(pred_sample, "numpy"):
+                    pred_sample = pred_sample.numpy()
+                if hasattr(target_sample, "numpy"):
+                    target_sample = target_sample.numpy()
+
+                predictions.extend(pred_sample.flatten())
+                targets.extend(target_sample.flatten())
                 raw_sample_count += events_to_sample
 
             predictions = np.array(predictions)
@@ -576,12 +586,13 @@ class ModelTrainer:
 
             stats_text = f"Mean: {mean_val:.3f}\nStd: {std_val:.3f}\nMedian: {median_val:.3f}\nSamples: {len(metric_values)}"
             plt.text(
-                0.02,
+                0.98,
                 0.98,
                 stats_text,
                 transform=plt.gca().transAxes,
                 verticalalignment="top",
-                bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.8),
+                horizontalalignment="right",
+                bbox=dict(boxstyle="round", facecolor="white", alpha=0.9),
                 fontsize=FONT_SIZES["small"],
             )
 
