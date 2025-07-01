@@ -149,6 +149,73 @@ class ModelTrainer:
                 metrics=["mse"],
             )
 
+    def build_and_compile_model(self, input_shape: tuple):
+        """Build and compile the model within the strategy scope for multi-GPU training"""
+        # Import here to avoid circular imports
+        from hep_foundation.models.base_model import CustomKerasModelWrapper
+
+        # Check if model is already built
+        if self.model.model is not None:
+            self.logger.info("Model already built, proceeding with compilation...")
+            self.compile_model()
+            return
+
+        # Build the model
+        self.logger.info(f"Building model with input shape: {input_shape}")
+        self.model.build(input_shape)
+
+        # Check if this is a predictor model (either DNNPredictor or CustomKerasModelWrapper for regression)
+        is_predictor = isinstance(self.model, DNNPredictor)
+
+        # For CustomKerasModelWrapper, check if it's being used for regression or classification
+        if isinstance(self.model, CustomKerasModelWrapper):
+            model_name = getattr(self.model, "name", "").lower()
+            is_predictor = any(
+                term in model_name
+                for term in [
+                    "regressor",
+                    "predictor",
+                    "classifier",
+                    "from_scratch",
+                    "fine_tuned",
+                    "fixed_encoder",
+                ]
+            )
+
+        # Different compilation settings based on model type
+        if is_predictor:
+            # Check if this is a classification model
+            model_name = getattr(self.model, "name", "").lower()
+            is_classifier = "classifier" in model_name
+
+            if is_classifier:
+                # Binary classification compilation
+                self.model.model.compile(
+                    optimizer=self.optimizer,
+                    loss="binary_crossentropy",
+                    metrics=[
+                        "binary_accuracy",
+                        tf.keras.metrics.Precision(),
+                        tf.keras.metrics.Recall(),
+                    ],
+                )
+            else:
+                # Regression compilation
+                self.model.model.compile(
+                    optimizer=self.optimizer,
+                    loss="mse",
+                    metrics=["mse", "mae"],  # Add mean absolute error for regression
+                )
+        else:
+            # Original compilation for autoencoders
+            self.model.model.compile(
+                optimizer=self.optimizer,
+                loss=self.loss,
+                metrics=["mse"],
+            )
+
+        self.logger.info("Model built and compiled successfully")
+
     def prepare_dataset(self, dataset: tf.data.Dataset) -> tf.data.Dataset:
         """
         Prepare dataset based on model type
@@ -299,9 +366,6 @@ class ModelTrainer:
             plots_dir.mkdir(parents=True, exist_ok=True)
             self.logger.info(f"Will save training plots to: {plots_dir}")
 
-        if self.model.model is None:
-            raise ValueError("Model not built yet")
-
         self.logger.info("Preparing datasets for training...")
 
         try:
@@ -311,25 +375,34 @@ class ModelTrainer:
             if validation_data is not None:
                 validation_data = self.prepare_dataset(validation_data)
 
-            # Log dataset size and shapes for debugging
-            self.logger.info(f"Training dataset batches: {train_dataset.cardinality()}")
+            # Determine input shape from the dataset
+            input_shape = None
             for batch in train_dataset.take(1):
                 features, targets = batch
+                # Get the shape without the batch dimension
+                input_shape = features.shape[1:]
                 self.logger.info("Training dataset batch shapes:")
                 self.logger.info(f"  Features: {features.shape}")
                 self.logger.info(f"  Targets: {targets.shape}")
+                self.logger.info(f"  Inferred input shape: {input_shape}")
                 break
+
+            if input_shape is None:
+                raise ValueError("Could not determine input shape from dataset")
+
+            # Log dataset size for debugging
+            self.logger.info(f"Training dataset batches: {train_dataset.cardinality()}")
 
         except Exception as e:
             self.logger.error(f"Error preparing datasets: {str(e)}")
             raise
 
-        # Compile model (with multi-GPU strategy if available)
+        # Build and compile model (with multi-GPU strategy if available)
         if self.strategy:
             with self.strategy.scope():
-                self.compile_model()
+                self.build_and_compile_model(input_shape)
         else:
-            self.compile_model()
+            self.build_and_compile_model(input_shape)
 
         # Setup callbacks
         if callbacks is None:
@@ -685,12 +758,31 @@ class ModelTrainer:
 
     def evaluate(self, dataset: tf.data.Dataset) -> dict[str, float]:
         """Evaluate with enhanced metrics tracking"""
-        if self.model.model is None:
-            raise ValueError("Model not built yet")
-
         try:
             # Prepare test dataset
             test_dataset = self.prepare_dataset(dataset)
+
+            # If model is not built yet, build and compile it
+            if self.model.model is None:
+                # Determine input shape from the dataset
+                input_shape = None
+                for batch in test_dataset.take(1):
+                    features, targets = batch
+                    input_shape = features.shape[1:]
+                    self.logger.info(
+                        f"Building model for evaluation with input shape: {input_shape}"
+                    )
+                    break
+
+                if input_shape is None:
+                    raise ValueError("Could not determine input shape from dataset")
+
+                # Build and compile model (with multi-GPU strategy if available)
+                if self.strategy:
+                    with self.strategy.scope():
+                        self.build_and_compile_model(input_shape)
+                else:
+                    self.build_and_compile_model(input_shape)
 
             # Evaluate and get results
             results = self.model.model.evaluate(

@@ -460,13 +460,13 @@ class FoundationModelPipeline:
             training_config_dict = training_config.to_dict()
             self.logger.info(f"Created experiment: {experiment_id}")
 
-            # 5. Create and Build Model
+            # 5. Create Model (building will happen in ModelTrainer within strategy scope)
             self.logger.info("Creating model...")
             try:
                 model = ModelFactory.create_model(
                     model_type="variational_autoencoder", config=model_config
                 )
-                model.build()
+                # Note: model.build() will be called by ModelTrainer within strategy scope
             except Exception as e:
                 self.logger.error(f"Model creation failed: {str(e)}")
                 self.logger.error(
@@ -474,8 +474,8 @@ class FoundationModelPipeline:
                 )
                 raise
 
-            self.logger.info("Model created")
-            self.logger.info(model.model.summary())
+            self.logger.info("Model created (will be built during training)")
+            # Model summary will be available after building in ModelTrainer
 
             # 6. Train Model
             self.logger.info("Setting up model and callbacks...")
@@ -827,16 +827,17 @@ class FoundationModelPipeline:
                     "cycle_epochs": 0,
                 }
 
-            # Create VAE model
+            # Create VAE model (building will happen when needed)
             vae_config = VAEConfig(
                 model_type=original_model_config["model_type"],
                 architecture=original_model_config["architecture"],
                 hyperparameters=original_model_config["hyperparameters"],
             )
             model = VariationalAutoEncoder(config=vae_config)
-            model.build(
-                input_shape=tuple(original_model_config["architecture"]["input_shape"])
-            )
+
+            # Build model to load weights (for evaluation, we can build directly)
+            input_shape = tuple(original_model_config["architecture"]["input_shape"])
+            model.build(input_shape)
 
             # Load weights
             self.logger.info(f"Loading model weights from: {model_weights_path}")

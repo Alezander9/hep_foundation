@@ -175,10 +175,10 @@ def train_regression_model():
         model_wrapper = ModelFactory.create_model(
             model_type="dnn_predictor", config=model_config
         )
-        model_wrapper.build()
+        # Note: model.build() will be called by ModelTrainer within strategy scope
 
         logger.info("Model created successfully")
-        logger.info(model_wrapper.model.summary())
+        # Model summary will be available after building in ModelTrainer
 
         # 5. Train model
         logger.info("Starting training...")
