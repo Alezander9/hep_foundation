@@ -7,6 +7,7 @@ from typing import Any, Optional
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
+from tensorflow.keras import mixed_precision
 
 from hep_foundation.config.logging_config import get_logger
 from hep_foundation.models.base_model import BaseModel
@@ -52,6 +53,25 @@ class ModelTrainer:
         self.logger = get_logger(__name__)
         self.model = model
         self.config = training_config
+
+        # Enable mixed precision for A100 GPUs (1.5-2x speedup)
+        if training_config.get("mixed_precision", True):
+            mixed_precision.set_global_policy("mixed_float16")
+            self.logger.info("Enabled mixed precision training (mixed_float16)")
+
+        # Check for multi-GPU setup
+        gpus = tf.config.list_physical_devices("GPU")
+        if len(gpus) > 1 and training_config.get("multi_gpu", True):
+            self.strategy = tf.distribute.MirroredStrategy()
+            self.logger.info(
+                f"Enabled multi-GPU training with {len(gpus)} GPUs using MirroredStrategy"
+            )
+        else:
+            self.strategy = None
+            if len(gpus) > 1:
+                self.logger.info(
+                    f"Found {len(gpus)} GPUs but multi-GPU training disabled in config"
+                )
 
         # Set up training parameters
         self.batch_size = training_config.get("batch_size", 32)
@@ -186,14 +206,25 @@ class ModelTrainer:
 
                 return input_features, target_labels
 
-            return dataset.map(prepare_predictor_data)
+            dataset = dataset.map(
+                prepare_predictor_data, num_parallel_calls=tf.data.AUTOTUNE
+            )
         else:
             # For autoencoders, use input as both input and target
-            return dataset.map(
+            dataset = dataset.map(
                 lambda x, y: (x, x)
                 if isinstance(x, (tf.Tensor, np.ndarray))
-                else (x[0], x[0])
+                else (x[0], x[0]),
+                num_parallel_calls=tf.data.AUTOTUNE,
             )
+
+        # Apply performance optimizations
+        dataset = dataset.cache()  # Cache dataset in memory
+        dataset = dataset.prefetch(
+            tf.data.AUTOTUNE
+        )  # Prefetch next batch while training
+
+        return dataset
 
     def _update_metrics_history(self, epoch_metrics: dict) -> None:
         """Update metrics history with new epoch results"""
@@ -293,8 +324,12 @@ class ModelTrainer:
             self.logger.error(f"Error preparing datasets: {str(e)}")
             raise
 
-        # Compile model
-        self.compile_model()
+        # Compile model (with multi-GPU strategy if available)
+        if self.strategy:
+            with self.strategy.scope():
+                self.compile_model()
+        else:
+            self.compile_model()
 
         # Setup callbacks
         if callbacks is None:
