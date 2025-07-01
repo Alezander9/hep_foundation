@@ -87,10 +87,21 @@ class DerivedFeature:
 
 def theta_to_eta(theta: np.ndarray) -> np.ndarray:
     """Convert polar angle theta (radians) to pseudorapidity eta."""
-    # Add small epsilon to avoid issues at theta=0 or pi
-    epsilon = 1e-9
+    # Add larger epsilon to avoid issues at theta=0 or pi and prevent -inf
+    epsilon = 1e-6
     theta = np.clip(theta, epsilon, np.pi - epsilon)
-    return -np.log(np.tan(theta / 2.0))
+
+    # Additional safeguarding to prevent extreme values
+    tan_half_theta = np.tan(theta / 2.0)
+    # Ensure tan_half_theta is not too close to 0 to prevent -inf
+    tan_half_theta = np.clip(tan_half_theta, epsilon, 1.0 / epsilon)
+
+    eta = -np.log(tan_half_theta)
+
+    # Final clipping to prevent extreme eta values (typical physics range is roughly -5 to 5)
+    eta = np.clip(eta, -10.0, 10.0)
+
+    return eta
 
 
 def calculate_pt(qOverP: np.ndarray, theta: np.ndarray) -> np.ndarray:

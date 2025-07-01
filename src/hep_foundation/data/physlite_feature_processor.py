@@ -1826,36 +1826,58 @@ class PhysliteFeatureProcessor:
         norm_params: dict,
         labels_dict: Optional[dict[str, dict[str, np.ndarray]]] = None,
     ) -> tf.data.Dataset:
-        """
-        Create a normalized TensorFlow dataset from features and optional labels.
-
-        Args:
-            features_dict: Dictionary mapping feature names to their array values
-            norm_params: Dictionary containing normalization parameters
-            labels_dict: Optional dictionary mapping label config names to their feature dictionaries
-
-        Returns:
-            tf.data.Dataset containing normalized features (and labels if provided)
-        """
-        # Get number of events from first feature
+        """Create a normalized TensorFlow dataset from processed features"""
         n_events = next(iter(features_dict.values())).shape[0]
-
-        # Normalize and reshape features
         normalized_features = []
-        for name in sorted(features_dict.keys()):
-            feature_array = features_dict[name]
+
+        # Validate and clean input features before normalization
+        cleaned_features_dict = {}
+        for name, feature_array in features_dict.items():
+            # Check for inf/nan values
+            invalid_mask = ~np.isfinite(feature_array)
+            if np.any(invalid_mask):
+                self.logger.warning(
+                    f"Found {np.sum(invalid_mask)} invalid values in feature '{name}', replacing with median"
+                )
+                # Replace inf/nan with median of valid values
+                valid_values = feature_array[np.isfinite(feature_array)]
+                if len(valid_values) > 0:
+                    replacement_value = np.median(valid_values)
+                else:
+                    replacement_value = 0.0
+                feature_array = feature_array.copy()
+                feature_array[invalid_mask] = replacement_value
+            cleaned_features_dict[name] = feature_array
+
+        for name in sorted(cleaned_features_dict.keys()):
+            feature_array = cleaned_features_dict[name]
             if name.startswith("scalar/"):
                 params = norm_params["features"]["scalar"][name.split("/", 1)[1]]
-                normalized = (feature_array - params["mean"]) / params["std"]
+                # Add epsilon to prevent division by zero
+                std_safe = max(params["std"], 1e-8)
+                normalized = (feature_array - params["mean"]) / std_safe
             else:  # aggregated features
                 params = norm_params["features"]["aggregated"][name.split("/", 1)[1]]
-                normalized = (feature_array - np.array(params["means"])) / np.array(
-                    params["stds"]
-                )
+                # Add epsilon to prevent division by zero
+                stds_safe = np.maximum(np.array(params["stds"]), 1e-8)
+                normalized = (feature_array - np.array(params["means"])) / stds_safe
+
+            # Final safety check - clip extreme values
+            normalized = np.clip(normalized, -10.0, 10.0)
             normalized_features.append(normalized.reshape(n_events, -1))
 
         # Concatenate normalized features
         all_features = np.concatenate(normalized_features, axis=1)
+
+        # Final validation
+        if not np.all(np.isfinite(all_features)):
+            self.logger.error(
+                "Still have invalid values after cleaning - this should not happen!"
+            )
+            # Emergency cleanup
+            all_features = np.nan_to_num(
+                all_features, nan=0.0, posinf=10.0, neginf=-10.0
+            )
 
         if labels_dict:
             # Create labels organized by configuration (not concatenated)
@@ -1869,18 +1891,37 @@ class PhysliteFeatureProcessor:
 
                 for name in sorted(config_features.keys()):
                     label_array = config_features[name]
+
+                    # Clean labels too
+                    invalid_mask = ~np.isfinite(label_array)
+                    if np.any(invalid_mask):
+                        self.logger.warning(
+                            f"Found invalid values in label '{name}', replacing with median"
+                        )
+                        valid_values = label_array[np.isfinite(label_array)]
+                        replacement_value = (
+                            np.median(valid_values) if len(valid_values) > 0 else 0.0
+                        )
+                        label_array = label_array.copy()
+                        label_array[invalid_mask] = replacement_value
+
                     if name.startswith("scalar/"):
                         params = norm_params["labels"][int(config_name.split("_")[1])][
                             "scalar"
                         ][name.split("/", 1)[1]]
-                        normalized = (label_array - params["mean"]) / params["std"]
+                        std_safe = max(params["std"], 1e-8)
+                        normalized = (label_array - params["mean"]) / std_safe
                     else:  # aggregated features
                         params = norm_params["labels"][int(config_name.split("_")[1])][
                             "aggregated"
                         ][name.split("/", 1)[1]]
+                        stds_safe = np.maximum(np.array(params["stds"]), 1e-8)
                         normalized = (
                             label_array - np.array(params["means"])
-                        ) / np.array(params["stds"])
+                        ) / stds_safe
+
+                    # Clip extreme label values
+                    normalized = np.clip(normalized, -10.0, 10.0)
                     normalized_config_labels.append(normalized.reshape(n_events, -1))
 
                 # Concatenate features within this config
