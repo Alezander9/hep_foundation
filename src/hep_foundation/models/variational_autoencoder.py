@@ -155,11 +155,10 @@ class VAELayer(keras.layers.Layer):
         z_mean, z_log_var, z = self.encoder(features)
         reconstruction = self.decoder(z)
 
-        # Flatten input and reconstruction for loss calculation
-        flat_inputs = tf.reshape(features, [-1, tf.reduce_prod(features.shape[1:])])
-        flat_reconstruction = tf.reshape(
-            reconstruction, [-1, tf.reduce_prod(reconstruction.shape[1:])]
-        )
+        # Use static shape to avoid retracing
+        input_shape = tf.shape(features)
+        flat_inputs = tf.reshape(features, [input_shape[0], -1])
+        flat_reconstruction = tf.reshape(reconstruction, [input_shape[0], -1])
 
         # Calculate losses (reduce to scalar values)
         reconstruction_loss = tf.reduce_mean(
@@ -687,11 +686,10 @@ class AnomalyDetectionEvaluator:
             # Get reconstructions
             reconstructions = self.model.decoder(z)
 
-            # Flatten input and reconstruction for loss calculation
-            flat_inputs = tf.reshape(features, [-1, tf.reduce_prod(features.shape[1:])])
-            flat_reconstructions = tf.reshape(
-                reconstructions, [-1, tf.reduce_prod(reconstructions.shape[1:])]
-            )
+            # Use static shape to avoid retracing
+            input_shape = tf.shape(features)
+            flat_inputs = tf.reshape(features, [input_shape[0], -1])
+            flat_reconstructions = tf.reshape(reconstructions, [input_shape[0], -1])
 
             # Ensure both tensors are the same type before subtraction
             flat_inputs = tf.cast(flat_inputs, tf.float32)

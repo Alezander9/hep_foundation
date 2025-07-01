@@ -127,7 +127,6 @@ class ModelTrainer:
                 optimizer=self.optimizer,
                 loss=self.loss,
                 metrics=["mse"],
-                run_eagerly=True,
             )
 
     def prepare_dataset(self, dataset: tf.data.Dataset) -> tf.data.Dataset:
