@@ -113,7 +113,6 @@ class ModelTrainer:
                         tf.keras.metrics.Precision(),
                         tf.keras.metrics.Recall(),
                     ],
-                    run_eagerly=True,
                 )
             else:
                 # Regression compilation
@@ -121,7 +120,6 @@ class ModelTrainer:
                     optimizer=self.optimizer,
                     loss="mse",
                     metrics=["mse", "mae"],  # Add mean absolute error for regression
-                    run_eagerly=True,
                 )
         else:
             # Original compilation for autoencoders
