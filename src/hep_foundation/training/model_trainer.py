@@ -74,7 +74,7 @@ class ModelTrainer:
 
         # Check for multi-GPU setup
         gpus = tf.config.list_physical_devices("GPU")
-        if len(gpus) > 1 and training_config.get("multi_gpu", True):
+        if len(gpus) > 1 and training_config.get("multi_gpu", False):
             self.strategy = tf.distribute.MirroredStrategy()
             self.logger.info(
                 f"Enabled multi-GPU training with {len(gpus)} GPUs using MirroredStrategy"
