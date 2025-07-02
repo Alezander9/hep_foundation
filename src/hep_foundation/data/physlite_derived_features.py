@@ -89,17 +89,38 @@ def theta_to_eta(theta: np.ndarray) -> np.ndarray:
     """Convert polar angle theta (radians) to pseudorapidity eta."""
     # Add larger epsilon to avoid issues at theta=0 or pi and prevent -inf
     epsilon = 1e-6
-    theta = np.clip(theta, epsilon, np.pi - epsilon)
+
+    # Check for problematic input values
+    n_extreme_theta = np.sum((theta < epsilon) | (theta > np.pi - epsilon))
+
+    theta_clipped = np.clip(theta, epsilon, np.pi - epsilon)
 
     # Additional safeguarding to prevent extreme values
-    tan_half_theta = np.tan(theta / 2.0)
+    tan_half_theta = np.tan(theta_clipped / 2.0)
     # Ensure tan_half_theta is not too close to 0 to prevent -inf
     tan_half_theta = np.clip(tan_half_theta, epsilon, 1.0 / epsilon)
 
     eta = -np.log(tan_half_theta)
 
+    # Count values that need clipping
+    n_clipped = np.sum((eta < -10.0) | (eta > 10.0))
+
     # Final clipping to prevent extreme eta values (typical physics range is roughly -5 to 5)
     eta = np.clip(eta, -10.0, 10.0)
+
+    # Optional debug logging (only log if there are issues)
+    if n_extreme_theta > 0 or n_clipped > 0:
+        import logging
+
+        logger = logging.getLogger(__name__)
+        if n_extreme_theta > 0:
+            logger.debug(
+                f"eta calculation: {n_extreme_theta} tracks with extreme theta values (clipped)"
+            )
+        if n_clipped > 0:
+            logger.debug(
+                f"eta calculation: {n_clipped} tracks clipped to range [-10, 10]"
+            )
 
     return eta
 
@@ -107,12 +128,53 @@ def theta_to_eta(theta: np.ndarray) -> np.ndarray:
 def calculate_pt(qOverP: np.ndarray, theta: np.ndarray) -> np.ndarray:
     """Calculate pT (in GeV) from qOverP (in MeV⁻¹) and theta (radians)."""
     qOverP_GeV = qOverP / 1000.0  # MeV^-1 to GeV^-1
-    # Handle potential division by zero safely
-    p_GeV = np.full_like(qOverP_GeV, fill_value=np.inf)
-    non_zero_mask = qOverP_GeV != 0
-    if np.any(non_zero_mask):
-        p_GeV[non_zero_mask] = np.abs(1.0 / qOverP_GeV[non_zero_mask])
-    pt_GeV = p_GeV * np.sin(theta)
+
+    # Handle potential division by zero safely with finite values
+    # Use a very large but finite value instead of inf
+    max_pt = 10000.0  # 10 TeV - extremely high but finite pT
+    epsilon = 1e-12  # Small value to avoid exact zero division
+
+    # Check for problematic input values
+    n_zero_qOverP = np.sum(np.abs(qOverP_GeV) < epsilon)
+    n_extreme_theta = np.sum((theta < epsilon) | (theta > np.pi - epsilon))
+
+    # Avoid exact zero by adding small epsilon
+    qOverP_safe = np.where(
+        np.abs(qOverP_GeV) < epsilon, np.sign(qOverP_GeV) * epsilon, qOverP_GeV
+    )
+
+    # Calculate momentum magnitude
+    p_GeV = np.abs(1.0 / qOverP_safe)
+
+    # Ensure theta is also safe for sin calculation
+    theta_safe = np.clip(theta, epsilon, np.pi - epsilon)
+    sin_theta = np.sin(theta_safe)
+
+    # Calculate pT
+    pt_GeV = p_GeV * sin_theta
+
+    # Count values that need clipping
+    n_clipped = np.sum(pt_GeV > max_pt)
+
+    # Clip to reasonable physics range to prevent extreme values
+    pt_GeV = np.clip(pt_GeV, 0.0, max_pt)
+
+    # Optional debug logging (only log if there are issues)
+    if n_zero_qOverP > 0 or n_extreme_theta > 0 or n_clipped > 0:
+        import logging
+
+        logger = logging.getLogger(__name__)
+        if n_zero_qOverP > 0:
+            logger.debug(f"pt calculation: {n_zero_qOverP} tracks with qOverP ≈ 0")
+        if n_extreme_theta > 0:
+            logger.debug(
+                f"pt calculation: {n_extreme_theta} tracks with extreme theta values"
+            )
+        if n_clipped > 0:
+            logger.debug(
+                f"pt calculation: {n_clipped} tracks clipped to max_pt={max_pt} GeV"
+            )
+
     return pt_GeV
 
 
@@ -120,14 +182,55 @@ def calculate_reduced_chi_squared(
     chi_squared: np.ndarray, num_dof: np.ndarray
 ) -> np.ndarray:
     """Calculate chi-squared per degree of freedom."""
-    # Avoid division by zero: return inf where num_dof is zero or less
-    # and chi_squared is non-zero. Return 0 if both are zero.
-    result = np.full_like(chi_squared, fill_value=np.inf, dtype=np.float32)
-    valid_dof_mask = num_dof > 0
+    # Use a large but finite value instead of inf for invalid cases
+    max_reduced_chi2 = 1000.0  # Very large but finite reduced chi-squared
+    epsilon = 1e-8  # Small value to avoid exact zero division
+
+    # Check for problematic input values
+    invalid_dof_mask = num_dof <= epsilon
+    n_invalid_dof = np.sum(invalid_dof_mask)
+    zero_chi_mask = invalid_dof_mask & (np.abs(chi_squared) < epsilon)
+    nonzero_chi_invalid_dof_mask = invalid_dof_mask & (np.abs(chi_squared) >= epsilon)
+    n_zero_chi_zero_dof = np.sum(zero_chi_mask)
+    n_nonzero_chi_invalid_dof = np.sum(nonzero_chi_invalid_dof_mask)
+
+    # Initialize result array
+    result = np.zeros_like(chi_squared, dtype=np.float32)
+
+    # Valid cases: num_dof > 0
+    valid_dof_mask = ~invalid_dof_mask
     result[valid_dof_mask] = chi_squared[valid_dof_mask] / num_dof[valid_dof_mask]
-    # Handle the case where chi_squared is 0 and num_dof is 0 (or less) -> result should be 0
-    zero_chi_zero_dof_mask = (chi_squared == 0) & ~valid_dof_mask
-    result[zero_chi_zero_dof_mask] = 0
+
+    # If chi_squared is also very small/zero, set to 0
+    result[zero_chi_mask] = 0.0
+
+    # If chi_squared is non-zero but num_dof is invalid, set to large finite value
+    result[nonzero_chi_invalid_dof_mask] = max_reduced_chi2
+
+    # Count values that need clipping
+    n_clipped = np.sum(result > max_reduced_chi2)
+
+    # Final clipping to prevent extreme values
+    result = np.clip(result, 0.0, max_reduced_chi2)
+
+    # Optional debug logging (only log if there are issues)
+    if n_invalid_dof > 0 or n_clipped > 0:
+        import logging
+
+        logger = logging.getLogger(__name__)
+        if n_zero_chi_zero_dof > 0:
+            logger.debug(
+                f"reduced χ²: {n_zero_chi_zero_dof} tracks with χ²≈0 and DoF≤0 (set to 0)"
+            )
+        if n_nonzero_chi_invalid_dof > 0:
+            logger.debug(
+                f"reduced χ²: {n_nonzero_chi_invalid_dof} tracks with χ²>0 but DoF≤0 (set to {max_reduced_chi2})"
+            )
+        if n_clipped > 0:
+            logger.debug(
+                f"reduced χ²: {n_clipped} tracks clipped to max={max_reduced_chi2}"
+            )
+
     return result
 
 
