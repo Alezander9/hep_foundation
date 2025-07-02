@@ -690,10 +690,10 @@ class FoundationModelPipeline:
 
             # 1. Load original model configuration and experiment ID
             self.logger.info(f"Loading original model config from: {config_path}")
-            import yaml
+            from hep_foundation.config.config_loader import PipelineConfigLoader
 
-            with open(config_path) as f:
-                original_experiment_data = yaml.safe_load(f)
+            config_loader = PipelineConfigLoader()
+            original_experiment_data = config_loader.load_config(config_path)
 
             # Get the experiment ID from the foundation model path
             foundation_experiment_id = foundation_model_path.name
@@ -972,10 +972,10 @@ class FoundationModelPipeline:
                 )
                 return False
 
-            import yaml
+            from hep_foundation.config.config_loader import PipelineConfigLoader
 
-            with open(vae_config_path) as f:
-                vae_config_data = yaml.safe_load(f)
+            config_loader = PipelineConfigLoader()
+            vae_config_data = config_loader.load_config(vae_config_path)
 
             if "models" in vae_config_data and "vae" in vae_config_data["models"]:
                 original_vae_model_config = vae_config_data["models"]["vae"]
@@ -1549,10 +1549,10 @@ class FoundationModelPipeline:
                 )
                 return False
 
-            import yaml
+            from hep_foundation.config.config_loader import PipelineConfigLoader
 
-            with open(vae_config_path) as f:
-                vae_config_data = yaml.safe_load(f)
+            config_loader = PipelineConfigLoader()
+            vae_config_data = config_loader.load_config(vae_config_path)
 
             if "models" in vae_config_data and "vae" in vae_config_data["models"]:
                 original_vae_model_config = vae_config_data["models"]["vae"]
