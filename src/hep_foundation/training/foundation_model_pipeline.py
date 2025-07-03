@@ -1210,9 +1210,16 @@ class FoundationModelPipeline:
                     shape=original_input_shape, name="fine_tuned_input"
                 )
                 fine_tuned_encoded = pretrained_deterministic_encoder(fine_tuned_input)
+
+                # Add dtype casting to ensure compatibility with QKeras layers
+                # Mixed precision may cause the encoder to output float16, but QKeras expects float32
+                fine_tuned_encoded_cast = tf.keras.layers.Lambda(
+                    lambda x: tf.cast(x, tf.float32), name="dtype_cast_fine_tuned"
+                )(fine_tuned_encoded)
+
                 fine_tuned_encoder_part = tf.keras.Model(
                     inputs=fine_tuned_input,
-                    outputs=fine_tuned_encoded,
+                    outputs=fine_tuned_encoded_cast,
                     name="fine_tuned_pretrained_encoder",
                 )
                 fine_tuned_encoder_part.trainable = True
@@ -1244,9 +1251,16 @@ class FoundationModelPipeline:
                     shape=original_input_shape, name="fixed_input"
                 )
                 fixed_encoded = pretrained_deterministic_encoder(fixed_input)
+
+                # Add dtype casting to ensure compatibility with QKeras layers
+                # Mixed precision may cause the encoder to output float16, but QKeras expects float32
+                fixed_encoded_cast = tf.keras.layers.Lambda(
+                    lambda x: tf.cast(x, tf.float32), name="dtype_cast_fixed"
+                )(fixed_encoded)
+
                 fixed_encoder_part = tf.keras.Model(
                     inputs=fixed_input,
-                    outputs=fixed_encoded,
+                    outputs=fixed_encoded_cast,
                     name="fixed_pretrained_encoder",
                 )
                 fixed_encoder_part.trainable = False
@@ -1733,9 +1747,17 @@ class FoundationModelPipeline:
                     shape=original_input_shape, name="fine_tuned_input"
                 )
                 fine_tuned_encoded = pretrained_deterministic_encoder(fine_tuned_input)
+
+                # Add dtype casting to ensure compatibility with QKeras layers
+                # Mixed precision may cause the encoder to output float16, but QKeras expects float32
+                fine_tuned_encoded_cast = tf.keras.layers.Lambda(
+                    lambda x: tf.cast(x, tf.float32),
+                    name="dtype_cast_fine_tuned_classifier",
+                )(fine_tuned_encoded)
+
                 fine_tuned_encoder_part = tf.keras.Model(
                     inputs=fine_tuned_input,
-                    outputs=fine_tuned_encoded,
+                    outputs=fine_tuned_encoded_cast,
                     name="fine_tuned_pretrained_encoder",
                 )
                 fine_tuned_encoder_part.trainable = True
@@ -1765,9 +1787,16 @@ class FoundationModelPipeline:
                     shape=original_input_shape, name="fixed_input"
                 )
                 fixed_encoded = pretrained_deterministic_encoder(fixed_input)
+
+                # Add dtype casting to ensure compatibility with QKeras layers
+                # Mixed precision may cause the encoder to output float16, but QKeras expects float32
+                fixed_encoded_cast = tf.keras.layers.Lambda(
+                    lambda x: tf.cast(x, tf.float32), name="dtype_cast_fixed_classifier"
+                )(fixed_encoded)
+
                 fixed_encoder_part = tf.keras.Model(
                     inputs=fixed_input,
-                    outputs=fixed_encoded,
+                    outputs=fixed_encoded_cast,
                     name="fixed_pretrained_encoder",
                 )
                 fixed_encoder_part.trainable = False

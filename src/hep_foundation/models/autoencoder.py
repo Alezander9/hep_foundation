@@ -2,7 +2,6 @@ from pathlib import Path
 
 import numpy as np
 import tensorflow as tf
-from qkeras import QActivation, QDense, quantized_bits, quantized_relu
 from tensorflow import keras
 
 from hep_foundation.config.logging_config import get_logger
@@ -117,15 +116,7 @@ class AutoEncoder(BaseModel):
             x = self._add_dense_block(x, units, f"encoder_{i}")
 
         # Latent layer
-        if self.quant_bits:
-            latent = QDense(
-                self.latent_dim,
-                kernel_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                bias_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                name="latent_layer",
-            )(x)
-        else:
-            latent = keras.layers.Dense(self.latent_dim, name="latent_layer")(x)
+        latent = keras.layers.Dense(self.latent_dim, name="latent_layer")(x)
 
         # Optionally normalize latent space
         if self.normalize_latent:
@@ -139,15 +130,7 @@ class AutoEncoder(BaseModel):
             x = self._add_dense_block(x, units, f"decoder_{i}")
 
         # Output layer - reshape back to original dimensions
-        if self.quant_bits:
-            x = QDense(
-                np.prod(input_shape),  # Multiply dimensions to get total size
-                kernel_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                bias_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                name="output_dense",
-            )(x)
-        else:
-            x = keras.layers.Dense(np.prod(input_shape), name="output_dense")(x)
+        x = keras.layers.Dense(np.prod(input_shape), name="output_dense")(x)
 
         # Reshape back to 3D
         outputs = keras.layers.Reshape(input_shape, name="output_reshape")(x)
@@ -157,19 +140,8 @@ class AutoEncoder(BaseModel):
 
     def _add_dense_block(self, x, units: int, prefix: str):
         """Helper to add a dense block with activation and batch norm"""
-        if self.quant_bits:
-            x = QDense(
-                units,
-                kernel_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                bias_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                name=f"{prefix}_dense",
-            )(x)
-            x = QActivation(
-                quantized_relu(self.quant_bits), name=f"{prefix}_activation"
-            )(x)
-        else:
-            x = keras.layers.Dense(units, name=f"{prefix}_dense")(x)
-            x = keras.layers.Activation(self.activation, name=f"{prefix}_activation")(x)
+        x = keras.layers.Dense(units, name=f"{prefix}_dense")(x)
+        x = keras.layers.Activation(self.activation, name=f"{prefix}_activation")(x)
 
         return keras.layers.BatchNormalization(name=f"{prefix}_bn")(x)
 

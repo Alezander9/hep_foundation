@@ -54,19 +54,10 @@ class ModelTrainer:
         self.model = model
         self.config = training_config
 
-        # Check if the model uses quantization
-        uses_quantization = self._model_uses_quantization()
-
-        # Enable mixed precision for A100 GPUs (1.5-2x speedup) but disable if using quantization
-        if training_config.get("mixed_precision", True) and not uses_quantization:
+        # Enable mixed precision for A100 GPUs (1.5-2x speedup)
+        if training_config.get("mixed_precision", True):
             mixed_precision.set_global_policy("mixed_float16")
             self.logger.info("Enabled mixed precision training (mixed_float16)")
-        elif uses_quantization:
-            # Reset to default policy to ensure compatibility with quantization
-            mixed_precision.set_global_policy("float32")
-            self.logger.info(
-                "Mixed precision disabled: Model uses quantization (QKeras), which conflicts with mixed_float16"
-            )
         else:
             # Reset to default policy when mixed precision is disabled
             mixed_precision.set_global_policy("float32")
@@ -103,31 +94,6 @@ class ModelTrainer:
 
         self.training_start_time = None
         self.training_end_time = None
-
-    def _model_uses_quantization(self) -> bool:
-        """Check if the model uses quantization (QKeras layers)"""
-        # Check common quantization indicators in model configuration
-        if hasattr(self.model, "quant_bits") and self.model.quant_bits is not None:
-            return True
-
-        # Check if model config contains quantization settings
-        if hasattr(self.model, "config") and isinstance(self.model.config, dict):
-            # Check hyperparameters for quant_bits
-            hyperparams = self.model.config.get("hyperparameters", {})
-            if hyperparams.get("quant_bits") is not None:
-                return True
-
-        # For BaseModel instances, check if they have quant_bits attribute
-        if hasattr(self.model, "get_config"):
-            try:
-                config = self.model.get_config()
-                if config.get("quant_bits") is not None:
-                    return True
-            except Exception:
-                # Silently ignore any errors when trying to get model config
-                pass
-
-        return False
 
     def compile_model(self):
         """Compile the model with optimizer and loss"""

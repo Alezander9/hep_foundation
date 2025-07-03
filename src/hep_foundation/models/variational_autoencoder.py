@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 import tensorflow as tf
-from qkeras import QActivation, QDense, quantized_bits, quantized_relu
 from sklearn.metrics import auc, roc_curve
 from tensorflow import keras
 
@@ -124,7 +123,8 @@ class Sampling(keras.layers.Layer):
         z_mean, z_log_var = inputs
         batch = tf.shape(z_mean)[0]
         dim = tf.shape(z_mean)[1]
-        epsilon = tf.keras.backend.random_normal(shape=(batch, dim))
+        # Ensure epsilon has the same dtype as inputs (for mixed precision compatibility)
+        epsilon = tf.keras.backend.random_normal(shape=(batch, dim), dtype=z_mean.dtype)
         return z_mean + tf.exp(0.5 * z_log_var) * epsilon
 
 
@@ -169,7 +169,9 @@ class VAELayer(keras.layers.Layer):
             1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var)
         )
 
-        total_loss = reconstruction_loss + self.beta * kl_loss
+        # Ensure beta has the same dtype as losses for mixed precision compatibility
+        beta_cast = tf.cast(self.beta, reconstruction_loss.dtype)
+        total_loss = reconstruction_loss + beta_cast * kl_loss
 
         # Add metrics
         self.add_loss(total_loss)
@@ -262,42 +264,17 @@ class VariationalAutoEncoder(BaseModel):
 
         # Add encoder layers
         for i, units in enumerate(self.encoder_layers):
-            if self.quant_bits:
-                x = QDense(
-                    units,
-                    kernel_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                    bias_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                    name=f"encoder_{i}_dense",
-                )(x)
-                x = QActivation(
-                    quantized_relu(self.quant_bits), name=f"encoder_{i}_activation"
-                )(x)
-            else:
-                x = keras.layers.Dense(units, name=f"encoder_{i}_dense")(x)
-                x = keras.layers.Activation(
-                    self.activation, name=f"encoder_{i}_activation"
-                )(x)
+            x = keras.layers.Dense(units, name=f"encoder_{i}_dense")(x)
+            x = keras.layers.Activation(
+                self.activation, name=f"encoder_{i}_activation"
+            )(x)
             x = keras.layers.BatchNormalization(name=f"encoder_{i}_bn")(x)
 
         self.logger.info("Built encoder layers")
 
         # VAE latent space parameters
-        if self.quant_bits:
-            z_mean = QDense(
-                self.latent_dim,
-                kernel_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                bias_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                name="z_mean",
-            )(x)
-            z_log_var = QDense(
-                self.latent_dim,
-                kernel_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                bias_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                name="z_log_var",
-            )(x)
-        else:
-            z_mean = keras.layers.Dense(self.latent_dim, name="z_mean")(x)
-            z_log_var = keras.layers.Dense(self.latent_dim, name="z_log_var")(x)
+        z_mean = keras.layers.Dense(self.latent_dim, name="z_mean")(x)
+        z_log_var = keras.layers.Dense(self.latent_dim, name="z_log_var")(x)
 
         # Sampling layer
         z = Sampling(name="sampling")([z_mean, z_log_var])
@@ -320,35 +297,16 @@ class VariationalAutoEncoder(BaseModel):
 
         # Add decoder layers
         for i, units in enumerate(self.decoder_layers):
-            if self.quant_bits:
-                x = QDense(
-                    units,
-                    kernel_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                    bias_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                    name=f"decoder_{i}_dense",
-                )(x)
-                x = QActivation(
-                    quantized_relu(self.quant_bits), name=f"decoder_{i}_activation"
-                )(x)
-            else:
-                x = keras.layers.Dense(units, name=f"decoder_{i}_dense")(x)
-                x = keras.layers.Activation(
-                    self.activation, name=f"decoder_{i}_activation"
-                )(x)
+            x = keras.layers.Dense(units, name=f"decoder_{i}_dense")(x)
+            x = keras.layers.Activation(
+                self.activation, name=f"decoder_{i}_activation"
+            )(x)
             x = keras.layers.BatchNormalization(name=f"decoder_{i}_bn")(x)
 
         self.logger.info("Built decoder layers")
 
         # Output layer
-        if self.quant_bits:
-            x = QDense(
-                np.prod(input_shape),
-                kernel_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                bias_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                name="decoder_output",
-            )(x)
-        else:
-            x = keras.layers.Dense(np.prod(input_shape), name="decoder_output")(x)
+        x = keras.layers.Dense(np.prod(input_shape), name="decoder_output")(x)
 
         decoder_outputs = keras.layers.Reshape(input_shape)(x)
 

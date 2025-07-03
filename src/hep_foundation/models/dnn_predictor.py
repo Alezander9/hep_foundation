@@ -2,7 +2,6 @@ from pathlib import Path
 
 import numpy as np
 import tensorflow as tf
-from qkeras import QActivation, QDense, quantized_bits, quantized_relu
 from tensorflow import keras
 
 from hep_foundation.config.logging_config import get_logger
@@ -162,29 +161,15 @@ class DNNPredictor(BaseModel):
 
         # Add hidden layers
         for i, units in enumerate(self.hidden_layers):
-            # Add dense layer with optional quantization
-            if self.quant_bits:
-                x = QDense(
-                    units,
-                    kernel_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                    bias_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                    kernel_regularizer=keras.regularizers.l2(self.l2_regularization)
-                    if self.l2_regularization
-                    else None,
-                    name=f"dense_{i}",
-                )(x)
-                x = QActivation(
-                    quantized_relu(self.quant_bits), name=f"activation_{i}"
-                )(x)
-            else:
-                x = keras.layers.Dense(
-                    units,
-                    activation=self.activation,
-                    kernel_regularizer=keras.regularizers.l2(self.l2_regularization)
-                    if self.l2_regularization
-                    else None,
-                    name=f"dense_{i}",
-                )(x)
+            # Add dense layer
+            x = keras.layers.Dense(
+                units,
+                activation=self.activation,
+                kernel_regularizer=keras.regularizers.l2(self.l2_regularization)
+                if self.l2_regularization
+                else None,
+                name=f"dense_{i}",
+            )(x)
 
             # Add batch normalization
             x = keras.layers.BatchNormalization(name=f"bn_{i}")(x)
@@ -194,19 +179,11 @@ class DNNPredictor(BaseModel):
                 x = keras.layers.Dropout(self.dropout_rate, name=f"dropout_{i}")(x)
 
         # Output layer
-        if self.quant_bits:
-            x = QDense(
-                np.prod(self.output_shape),
-                kernel_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                bias_quantizer=quantized_bits(self.quant_bits, 1, alpha=1.0),
-                name="output_dense",
-            )(x)
-        else:
-            x = keras.layers.Dense(
-                np.prod(self.output_shape),
-                activation=self.output_activation,
-                name="output_dense",
-            )(x)
+        x = keras.layers.Dense(
+            np.prod(self.output_shape),
+            activation=self.output_activation,
+            name="output_dense",
+        )(x)
 
         # Reshape output to match expected shape
         outputs = keras.layers.Reshape(self.output_shape, name="output_reshape")(x)
