@@ -13,15 +13,27 @@
     ],
     "workspaceFolder": "/workspace/repo",
     "settings": {
-        "python.defaultInterpreterPath": "/usr/bin/python3"
+        "python.defaultInterpreterPath": "/usr/bin/python3",
+        "python.linting.enabled": false,
+        "python.linting.pylintEnabled": false,
+        "python.linting.flake8Enabled": false,
+        "ruff.enable": true,
+        "ruff.lint.enable": true,
+        "ruff.format.enable": true,
+        "[python]": {
+            "editor.defaultFormatter": "charliermarsh.ruff",
+            "editor.formatOnSave": true,
+            "editor.codeActionsOnSave": {
+                "source.fixAll.ruff": "explicit",
+                "source.organizeImports.ruff": "explicit"
+            }
+        }
     },
     "extensions": [
         "ms-python.python",
-        "ms-python.pylint",
-        "ms-python.flake8",
         "charliermarsh.ruff",
         "ms-vscode-remote.remote-containers"
     ],
-    "postCreateCommand": "cd /workspace/repo && pip install qkeras seaborn uproot pytest && pip install -e . --no-deps && chmod 600 /root/.ssh/* && chmod 700 /root/.ssh",
+    "postCreateCommand": "cd /workspace/repo && pip install qkeras seaborn uproot pytest ruff && pip install -e . --no-deps && chmod 600 /root/.ssh/* && chmod 700 /root/.ssh",
     "remoteUser": "root"
 }
