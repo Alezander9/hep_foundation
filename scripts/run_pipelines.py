@@ -91,6 +91,7 @@ class PipelineconfigProcessor:
                 "vae_training_config": config["vae_training_config"],
                 "dnn_training_config": config["dnn_training_config"],
                 "task_config": config["task_config"],
+                "pipeline_settings": config.get("pipeline_settings", {}),
                 "source_config_file": config.get("_source_config_file"),
                 "evaluation_config": config.get("evaluation_config"),
             }
@@ -195,6 +196,12 @@ class PipelineconfigProcessor:
             )
             fixed_epochs = evaluation_config.fixed_epochs if evaluation_config else 10
 
+            # Get pipeline settings
+            pipeline_settings = config_config.get("pipeline_settings", {})
+            delete_catalogs = pipeline_settings.get("delete_catalogs", True)
+
+            self.logger.info(f"Pipeline settings - delete_catalogs: {delete_catalogs}")
+
             # Run the full pipeline
             self.logger.info("Starting full pipeline execution...")
             success = pipeline.run_full_pipeline(
@@ -204,7 +211,7 @@ class PipelineconfigProcessor:
                 dnn_model_config=config_config["dnn_model_config"],
                 vae_training_config=config_config["vae_training_config"],
                 dnn_training_config=config_config["dnn_training_config"],
-                delete_catalogs=True,  # Clean up intermediate files
+                delete_catalogs=delete_catalogs,  # Use value from config
                 data_sizes=data_sizes,
                 fixed_epochs=fixed_epochs,
             )

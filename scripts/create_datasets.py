@@ -103,6 +103,7 @@ class DatasetCreationProcessor:
             config_data = {
                 "dataset_config": config["dataset_config"],
                 "task_config": config["task_config"],
+                "pipeline_settings": config.get("pipeline_settings", {}),
                 "source_config_file": config.get("_source_config_file"),
             }
 
@@ -187,7 +188,12 @@ class DatasetCreationProcessor:
         return atlas_exists, atlas_dataset_id, signal_exists, signal_dataset_id
 
     def create_datasets_for_config(
-        self, dataset_config, task_config, config_name: str, dry_run: bool = False
+        self,
+        dataset_config,
+        task_config,
+        pipeline_settings: dict,
+        config_name: str,
+        dry_run: bool = False,
     ) -> dict:
         """
         Create datasets for a single configuration.
@@ -195,6 +201,7 @@ class DatasetCreationProcessor:
         Args:
             dataset_config: Dataset configuration
             task_config: Task configuration
+            pipeline_settings: Pipeline settings from config
             config_name: Name of the config for logging
             dry_run: If True, don't actually create datasets
 
@@ -220,9 +227,13 @@ class DatasetCreationProcessor:
             results["atlas_dataset_id"] = atlas_dataset_id
             results["signal_dataset_id"] = signal_dataset_id
 
+            # Get delete_catalogs setting from pipeline config (default to True for backward compatibility)
+            delete_catalogs = pipeline_settings.get("delete_catalogs", True)
+
             self.logger.info(f"Dataset status for {config_name}:")
             self.logger.info(f"  ATLAS dataset ID: {atlas_dataset_id}")
             self.logger.info(f"  ATLAS exists: {atlas_exists}")
+            self.logger.info(f"  Delete catalogs: {delete_catalogs}")
             if dataset_config.signal_keys:
                 self.logger.info(f"  Signal dataset ID: {signal_dataset_id}")
                 self.logger.info(f"  Signal exists: {signal_exists}")
@@ -262,7 +273,7 @@ class DatasetCreationProcessor:
                     created_atlas_id, created_atlas_path = (
                         self.data_manager._create_atlas_dataset(
                             dataset_config=dataset_config,
-                            delete_catalogs=True,  # Clean up catalogs after processing
+                            delete_catalogs=delete_catalogs,  # Use value from config
                             plot_output=plot_output,
                         )
                     )
@@ -351,6 +362,7 @@ class DatasetCreationProcessor:
             config_data = self.load_config_data(config_path)
             dataset_config = config_data["dataset_config"]
             task_config = config_data["task_config"]
+            pipeline_settings = config_data["pipeline_settings"]
 
             # Validate configs
             dataset_config.validate()
@@ -366,7 +378,11 @@ class DatasetCreationProcessor:
 
             # Create datasets
             results = self.create_datasets_for_config(
-                dataset_config, task_config, config_name, dry_run=dry_run
+                dataset_config,
+                task_config,
+                pipeline_settings,
+                config_name,
+                dry_run=dry_run,
             )
 
             # Track results
