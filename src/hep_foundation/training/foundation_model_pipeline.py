@@ -1049,7 +1049,10 @@ class FoundationModelPipeline:
                 """Create a subset of the dataset with exactly num_events events"""
                 # Convert to unbatched dataset to count events precisely
                 unbatched = dataset.unbatch()
-                subset = unbatched.take(num_events)
+                # Shuffle the data before taking subset to ensure random sampling
+                # Use a fixed seed for reproducibility across different model comparisons
+                shuffled = unbatched.shuffle(buffer_size=50000, seed=42)
+                subset = shuffled.take(num_events)
                 # Rebatch with original batch size
                 return subset.batch(dnn_training_config.batch_size)
 
@@ -1636,7 +1639,10 @@ class FoundationModelPipeline:
                 """Create a subset of the dataset with exactly num_events events"""
                 # Convert to unbatched dataset to count events precisely
                 unbatched = dataset.unbatch()
-                subset = unbatched.take(num_events)
+                # Shuffle the data before taking subset to ensure random sampling
+                # Use a fixed seed for reproducibility across different model comparisons
+                shuffled = unbatched.shuffle(buffer_size=50000, seed=42)
+                subset = shuffled.take(num_events)
                 # Rebatch with original batch size
                 return subset.batch(dnn_training_config.batch_size)
 
