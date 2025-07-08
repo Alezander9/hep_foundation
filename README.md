@@ -1,6 +1,22 @@
-# HEP Foundation
+<!-- Replace this comment with your SVG title -->
+<div align="center">
+  <img src="title.svg" alt="HEP Foundation" width="100%">
+</div>
 
-> Foundation models for High Energy Physics data analysis
+<div align="center">
+
+[![Python](https://img.shields.io/badge/Python-3.9+-blue?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square&logo=opensourceinitiative&logoColor=white)](LICENSE)
+[![Framework](https://img.shields.io/badge/Framework-TensorFlow_2.13-orange?style=flat-square&logo=tensorflow&logoColor=white)](https://tensorflow.org)
+[![Physics](https://img.shields.io/badge/Domain-High_Energy_Physics-purple?style=flat-square&logo=cern&logoColor=white)](https://atlas.cern)
+
+<br>
+
+**Foundation models for High Energy Physics data analysis**
+
+</div>
+
+<br>
 
 ## Quick Start
 
@@ -25,6 +41,8 @@ cp tests/_test_pipeline_config.yaml _experiment_config_stack/
 python scripts/run_pipelines.py
 # Results will appear in _foundation_experiments/
 ```
+
+---
 
 ## Usage
 
@@ -60,7 +78,10 @@ The pipeline automatically runs the full sequence: foundation model training →
 
 ### Recommended Workflow
 
-**For NERSC users:**
+<details>
+<summary><strong>For NERSC users</strong> - Recommended local → remote workflow</summary>
+
+<br>
 
 1. **Create datasets locally** - The pipeline is bottlenecked by downloading ROOT files from CERN OpenData, so run data creation on your local machine:
    ```bash
@@ -79,11 +100,16 @@ The pipeline automatically runs the full sequence: foundation model training →
    sbatch jobs/submit_pipeline_simple.sh
    ```
 
+</details>
+
 **For local development:** Just run the pipeline directly after the Quick Start setup.
 
 ## Project Structure
 
 ### Key Directories
+
+<details>
+<summary>Project Structure Overview</summary>
 
 ```
 src/hep_foundation/          # Main package source code
@@ -108,15 +134,26 @@ _processed_datasets/         # Cached datasets (HDF5 files)
 _test_results/              # Test outputs (cleaned each run)
 ```
 
+</details>
+
 ### Configuration Files
 
-**Creating configs:** Use `tests/_test_pipeline_config.yaml` as a template. Key sections:
+**Creating configs:** Use `tests/_test_pipeline_config.yaml` as a template for your experiments.
+
+<details>
+<summary>Configuration Details</summary>
+
+<br>
+
+**Key configuration sections:**
 - `dataset`: Data selection (ATLAS run numbers, signal types)
 - `models`: VAE and DNN architectures  
 - `training`: Training parameters (epochs, batch size, learning rate)
 - `evaluation`: Data sizes for efficiency studies
 
 **PhysLite features:** Specify any PhysLite branch names in the config. Derived features (eta, pt, etc.) are automatically calculated from base branches using `physlite_derived_features.py`.
+
+</details>
 
 ### Understanding Results
 
@@ -141,6 +178,11 @@ Each experiment folder contains:
 
 ### Development Utilities
 
+<details>
+<summary>Advanced Development Tools</summary>
+
+<br>
+
 **Code quality:**
 - `.pre-commit-config.yaml` - Automated code formatting (ruff) and quality checks
 - `uv` package management with `pyproject.toml` configuration
@@ -150,16 +192,26 @@ Each experiment folder contains:
 - `scripts/test_gpu.py` - Verify TensorFlow GPU access on your system
 - `src/hep_foundation/utils/plot_utils.py` - Standardized colors, fonts, and styling for all plots
 
+</details>
+
+---
+
 ## Citation
 
-If you use this software in your research, please cite:
+<div align="center">
+
+**If you use this software in your research, please cite:**
+
+</div>
 
 ```
 Yue, A. (2024). HEP Foundation: Foundation models for High Energy Physics data analysis. 
 https://github.com/Alezander9/hep-foundation
 ```
 
-**BibTeX:**
+<details>
+<summary>BibTeX Format</summary>
+
 ```bibtex
 @software{yue_hep_foundation_2024,
   author = {Yue, Alexander},
@@ -169,14 +221,29 @@ https://github.com/Alezander9/hep-foundation
 }
 ```
 
-*Note: A research paper is in preparation. This citation will be updated when published.*
+</details>
+
+<div align="center">
+<em>Note: A research paper is in preparation. This citation will be updated when published.</em>
+</div>
+
+---
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+<div align="center">
+
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+
+</div>
 
 ## Contact
 
+<div align="center">
+
 **Questions or issues?**  
-📧 Email: alexyue@stanford.edu  
-🔗 GitHub: [Alezander9/hep-foundation](https://github.com/Alezander9/hep-foundation)
+
+Email: [alexyue@stanford.edu](mailto:alexyue@stanford.edu)  
+GitHub: [Alezander9/hep-foundation](https://github.com/Alezander9/hep-foundation)
+
+</div>
