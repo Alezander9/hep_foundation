@@ -10,9 +10,6 @@
 [![Framework](https://img.shields.io/badge/Framework-TensorFlow_2.13-orange?style=flat-square&logo=tensorflow&logoColor=white)](https://tensorflow.org)
 [![Physics](https://img.shields.io/badge/Domain-High_Energy_Physics-purple?style=flat-square&logo=cern&logoColor=white)](https://atlas.cern)
 
-<br>
-
-**Foundation models for High Energy Physics data analysis**
 
 </div>
 
@@ -79,9 +76,7 @@ The pipeline automatically runs the full sequence: foundation model training →
 ### Recommended Workflow
 
 <details>
-<summary><strong>For NERSC users</strong> - Recommended local → remote workflow</summary>
-
-<br>
+<summary><strong>For NERSC users</strong></summary>
 
 1. **Create datasets locally** - The pipeline is bottlenecked by downloading ROOT files from CERN OpenData, so run data creation on your local machine:
    ```bash
@@ -102,14 +97,11 @@ The pipeline automatically runs the full sequence: foundation model training →
 
 </details>
 
-**For local development:** Just run the pipeline directly after the Quick Start setup.
+**For local development:** Just run the pipeline directly as seen in the Quick Start setup.
 
 ## Project Structure
 
 ### Key Directories
-
-<details>
-<summary>Project Structure Overview</summary>
 
 ```
 src/hep_foundation/          # Main package source code
@@ -134,16 +126,9 @@ _processed_datasets/         # Cached datasets (HDF5 files)
 _test_results/              # Test outputs (cleaned each run)
 ```
 
-</details>
-
 ### Configuration Files
 
 **Creating configs:** Use `tests/_test_pipeline_config.yaml` as a template for your experiments.
-
-<details>
-<summary>Configuration Details</summary>
-
-<br>
 
 **Key configuration sections:**
 - `dataset`: Data selection (ATLAS run numbers, signal types)
@@ -152,8 +137,6 @@ _test_results/              # Test outputs (cleaned each run)
 - `evaluation`: Data sizes for efficiency studies
 
 **PhysLite features:** Specify any PhysLite branch names in the config. Derived features (eta, pt, etc.) are automatically calculated from base branches using `physlite_derived_features.py`.
-
-</details>
 
 ### Understanding Results
 
@@ -178,11 +161,6 @@ Each experiment folder contains:
 
 ### Development Utilities
 
-<details>
-<summary>Advanced Development Tools</summary>
-
-<br>
-
 **Code quality:**
 - `.pre-commit-config.yaml` - Automated code formatting (ruff) and quality checks
 - `uv` package management with `pyproject.toml` configuration
@@ -191,8 +169,6 @@ Each experiment folder contains:
 - `.devcontainer/` - Docker container for consistent development environment
 - `scripts/test_gpu.py` - Verify TensorFlow GPU access on your system
 - `src/hep_foundation/utils/plot_utils.py` - Standardized colors, fonts, and styling for all plots
-
-</details>
 
 ---
 
