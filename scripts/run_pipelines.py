@@ -20,6 +20,7 @@ import sys
 import traceback
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 from hep_foundation.config.config_loader import load_pipeline_config
 from hep_foundation.config.logging_config import get_logger
@@ -243,7 +244,7 @@ class PipelineconfigProcessor:
             self.cleanup_config_logging(file_handler)
             self.logger.info(f"Log file for config '{config_name}': {log_file}")
 
-    def run(self, dry_run: bool = False, max_configs: int = None) -> bool:
+    def run(self, dry_run: bool = False, max_configs: Optional[int] = None) -> bool:
         """
         Run the config processor.
 

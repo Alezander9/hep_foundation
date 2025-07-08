@@ -1,0 +1,108 @@
+2025-07-07 12:34:17,431 - INFO - Successfully loaded PhysLite branch index from /pscratch/sd/a/alexyyue/hep_foundation/src/hep_foundation/data/physlite_branch_index.json
+2025-07-07 12:34:20.599491: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+2025-07-07 12:34:23.395508: W tensorflow/compiler/tf2tensorrt/utils/py_utils.cc:38] TF-TRT Warning: Could not find TensorRT
+2025-07-07 12:34:33,878 - INFO - config processor initialized
+2025-07-07 12:34:33,879 - INFO -   config stack: /pscratch/sd/a/alexyyue/hep_foundation/_experiment_config_stack
+2025-07-07 12:34:33,879 - INFO -   Logs directory: /pscratch/sd/a/alexyyue/hep_foundation/logs
+2025-07-07 12:34:33,879 - INFO - ====================================================================================================
+2025-07-07 12:34:33,879 - INFO - STARTING PIPELINE config PROCESSOR
+2025-07-07 12:34:33,879 - INFO - ====================================================================================================
+2025-07-07 12:34:33,879 - INFO - Found 1 config files to process
+2025-07-07 12:34:33,879 - INFO -   1. config1.yaml
+2025-07-07 12:34:33,879 - INFO - 
+==================================================
+2025-07-07 12:34:33,879 - INFO - config 1/1: config1.yaml
+2025-07-07 12:34:33,879 - INFO - ==================================================
+2025-07-07 12:34:33,879 - INFO - ====================================================================================================
+2025-07-07 12:34:33,879 - INFO - PROCESSING config: config1
+2025-07-07 12:34:33,879 - INFO - ====================================================================================================
+2025-07-07 12:34:33,882 - INFO - Logging for config 'config1' to: logs/pipeline_config1_20250707_123433.log
+2025-07-07 12:34:33,884 - INFO - Loading configuration from: _experiment_config_stack/config1.yaml
+2025-07-07 12:34:33,884 - INFO - Loading configuration from: _experiment_config_stack/config1.yaml
+2025-07-07 12:34:33,900 - INFO - Creating configuration objects...
+2025-07-07 12:34:33,900 - INFO - [debug] Branch 'derived.InDetTrackParticlesAuxDyn.eta' identified as derived: type=BranchType.FEATURE_ARRAY, info={'shape': [2], 'dtype': 'float32', 'status': 'derived'}
+2025-07-07 12:34:33,900 - INFO - [debug] Branch 'derived.InDetTrackParticlesAuxDyn.pt' identified as derived: type=BranchType.FEATURE_ARRAY, info={'shape': [2], 'dtype': 'float32', 'status': 'derived'}
+2025-07-07 12:34:33,900 - INFO - [debug] Branch 'derived.InDetTrackParticlesAuxDyn.reducedChiSquared' identified as derived: type=BranchType.FEATURE_ARRAY, info={'shape': [2], 'dtype': 'float32', 'status': 'derived'}
+2025-07-07 12:34:33,901 - INFO - Configuration loaded successfully
+2025-07-07 12:34:33,901 - INFO - Foundation Model Pipeline initialized.
+2025-07-07 12:34:33,901 - INFO -   Experiment outputs will be in: /pscratch/sd/a/alexyyue/hep_foundation/_foundation_experiments
+2025-07-07 12:34:33,901 - INFO -   Processed datasets will be in: /pscratch/sd/a/alexyyue/hep_foundation/_processed_datasets
+2025-07-07 12:34:33,901 - INFO - TensorFlow: 2.13.1 (Eager: True)
+2025-07-07 12:34:33,901 - INFO - Source config file set to: /pscratch/sd/a/alexyyue/hep_foundation/_experiment_config_stack/config1.yaml
+2025-07-07 12:34:33,901 - INFO - Starting full pipeline execution...
+2025-07-07 12:34:33,901 - INFO - ====================================================================================================
+2025-07-07 12:34:33,902 - INFO - RUNNING FULL FOUNDATION MODEL PIPELINE
+2025-07-07 12:34:33,902 - INFO - Process: Train → Regression → Signal Classification → Anomaly Detection
+2025-07-07 12:34:33,902 - INFO - ====================================================================================================
+2025-07-07 12:34:33,902 - INFO - 
+==================================================
+2025-07-07 12:34:33,902 - INFO - STEP 1/4: TRAINING FOUNDATION MODEL
+2025-07-07 12:34:33,902 - INFO - ==================================================
+2025-07-07 12:34:33,902 - INFO - ====================================================================================================
+2025-07-07 12:34:33,902 - INFO - Training Foundation Model
+2025-07-07 12:34:33,902 - INFO - ====================================================================================================
+2025-07-07 12:34:33,902 - INFO - Signal keys to process: ['zprime_tt', 'wprime_qq', 'zprime_bb']
+2025-07-07 12:34:33,902 - INFO - ModelRegistry paths:
+2025-07-07 12:34:33,902 - INFO - Base path: /pscratch/sd/a/alexyyue/hep_foundation/_foundation_experiments
+2025-07-07 12:34:33,903 - INFO - DB path: /pscratch/sd/a/alexyyue/hep_foundation/_foundation_experiments/registry.db
+2025-07-07 12:34:33,906 - INFO - Registry initialized at: _foundation_experiments/registry.db
+2025-07-07 12:34:33,906 - INFO - Initializing managers...
+2025-07-07 12:34:33,911 - INFO - Loaded custom plot label map from src/hep_foundation/data/plot_labels.json
+2025-07-07 12:34:33,911 - INFO - Validated dataset config
+2025-07-07 12:34:33,911 - INFO - Validated training config
+2025-07-07 12:34:33,911 - INFO - Loading datasets...
+2025-07-07 12:34:33,911 - INFO - Loading ATLAS datasets...
+2025-07-07 12:34:33,911 - INFO - Loading datasets
+2025-07-07 12:34:33,912 - INFO - Generated dataset ID: dataset_runs_00311402-3-00311481_5270fd6a
+2025-07-07 12:35:09.525395: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1639] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 62499 MB memory:  -> device: 0, name: NVIDIA A100 80GB PCIe, pci bus id: 0000:c3:00.0, compute capability: 8.0
+2025-07-07 12:35:18,307 - INFO - Created/loaded dataset with ID: dataset_runs_00311402-3-00311481_5270fd6a
+2025-07-07 12:35:18,308 - INFO - Dataset file exists at: _processed_datasets/dataset_runs_00311402-3-00311481_5270fd6a/dataset.h5
+2025-07-07 12:35:18,309 - INFO - Dataset file size: 1164.47 MB
+2025-07-07 12:35:18,311 - INFO - Dataset HDF5 structure:
+2025-07-07 12:35:18,314 - INFO -   Group: features
+2025-07-07 12:35:18,314 - INFO -   Group: features/aggregated
+2025-07-07 12:35:18,339 - INFO -   Dataset: features/aggregated/aggregator_0, Shape: (2727612, 30, 6), Type: float32
+2025-07-07 12:35:18,339 - INFO -   Group: labels
+2025-07-07 12:35:18,339 - INFO -   Group: labels/config_0
+2025-07-07 12:35:18,340 - INFO -   Group: labels/config_0/aggregated
+2025-07-07 12:35:18,341 - INFO -   Dataset: labels/config_0/aggregated/aggregator_0, Shape: (2727612, 1, 2), Type: float32
+2025-07-07 12:35:18,342 - INFO - Registering experiment...
+2025-07-07 12:35:18,351 - INFO - Experiment info saved to: _foundation_experiments/012_Foundation_VAE_Model/_experiment_info.json
+2025-07-07 12:35:18,356 - INFO - Source config file saved as: _foundation_experiments/012_Foundation_VAE_Model/_experiment_config.yaml
+2025-07-07 12:35:18,356 - INFO - Created experiment: 012_Foundation_VAE_Model
+2025-07-07 12:35:18,356 - INFO - Creating model...
+2025-07-07 12:35:18,357 - INFO - Model created (will be built during training)
+2025-07-07 12:35:18,357 - INFO - Setting up model and callbacks...
+2025-07-07 12:35:18,357 - INFO - Mixed precision disabled: Model uses quantization (QKeras), which conflicts with mixed_float16
+2025-07-07 12:35:18,364 - INFO - Added BetaSchedule callback: start=0.01, end=0.1, warmup_epochs=10, cycle_epochs=10
+2025-07-07 12:35:18,364 - INFO - Starting training...
+2025-07-07 12:35:18,364 - INFO - Starting training with metrics tracking:
+2025-07-07 12:35:18,364 - INFO - Will save training plots to: _foundation_experiments/012_Foundation_VAE_Model/training
+2025-07-07 12:35:18,364 - INFO - Preparing datasets for training...
+2025-07-07 12:35:21,101 - INFO - Training dataset batch shapes:
+2025-07-07 12:35:21,101 - INFO -   Features: (1024, 180)
+2025-07-07 12:35:21,101 - INFO -   Targets: (1024, 180)
+2025-07-07 12:35:21,101 - INFO -   Inferred input shape: (180,)
+2025-07-07 12:35:21.105763: W tensorflow/core/kernels/data/cache_dataset_ops.cc:854] The calling iterator did not fully read the dataset being cached. In order to avoid unexpected truncation of the dataset, the partially cached contents of the dataset  will be discarded. This can happen if you have an input pipeline similar to `dataset.cache().take(k).repeat()`. You should use `dataset.take(k).cache().repeat()` instead.
+2025-07-07 12:35:21,157 - INFO - Training dataset batches: 1865
+2025-07-07 12:35:21,157 - INFO - Building model with input shape: (180,)
+2025-07-07 12:35:22,799 - INFO - Built encoder layers
+2025-07-07 12:35:22,948 - INFO - Built encoder model
+2025-07-07 12:35:22,951 - INFO - Built deterministic encoder model
+2025-07-07 12:35:23,252 - INFO - Built decoder layers
+2025-07-07 12:35:23,306 - INFO - Built decoder model
+2025-07-07 12:35:24,202 - INFO - Completed VAE architecture build
+2025-07-07 12:35:24,211 - INFO - Model built and compiled successfully
+2025-07-07 12:35:24,240 - INFO - Starting training for 200 epochs
+2025-07-07 12:35:28,130 - INFO - Epoch 1: beta = 0.0100
+2025-07-07 12:35:28,131 - INFO - Starting epoch 1/200
+2025-07-07 12:35:32.981451: I tensorflow/compiler/xla/stream_executor/cuda/cuda_blas.cc:606] TensorFloat-32 will be used for the matrix multiplication. This will only be logged once.
+2025-07-07 12:35:33.123099: I tensorflow/compiler/xla/service/service.cc:168] XLA service 0x559578834be0 initialized for platform CUDA (this does not guarantee that XLA will be used). Devices:
+2025-07-07 12:35:33.123137: I tensorflow/compiler/xla/service/service.cc:176]   StreamExecutor device (0): NVIDIA A100 80GB PCIe, Compute Capability 8.0
+2025-07-07 12:35:33.165634: I tensorflow/compiler/mlir/tensorflow/utils/dump_mlir_util.cc:255] disabling MLIR crash reproducer, set env var `MLIR_CRASH_REPRODUCER_DIRECTORY` to enable.
+2025-07-07 12:35:33.407930: I tensorflow/compiler/xla/stream_executor/cuda/cuda_dnn.cc:432] Loaded cuDNN version 8901
+2025-07-07 12:35:33.948095: I ./tensorflow/compiler/jit/device_compiler.h:186] Compiled cluster using XLA!  This line is logged at most once for the lifetime of the process.
+2025-07-07 12:36:08,895 - INFO - Epoch 1/200 completed in 40.8s - loss: 1.099679 - mse: 0.542254 - total_loss: 0.557399 - reconstruction_loss: 0.542230 - kl_loss: 1.516954 - val_loss: 0.942968 - val_mse: 0.465948 - val_total_loss: 0.477054 - val_reconstruction_loss: 0.465982 - val_kl_loss: 1.107241
+2025-07-07 12:36:08,964 - INFO - Epoch 2: beta = 0.0100
+2025-07-07 12:36:08,965 - INFO - Starting epoch 2/200
