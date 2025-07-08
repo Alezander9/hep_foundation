@@ -27,3 +27,6 @@ build/
 # Tool caches
 .ruff_cache/
 .pytest_cache/
+
+# Output txt files in root directory
+*.txt
