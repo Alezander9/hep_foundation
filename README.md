@@ -1,113 +1,182 @@
 # HEP Foundation
 
-ML tools for High Energy Physics analysis, focusing on ATLAS PHYSLITE data processing and autoencoder training.
+> Foundation models for High Energy Physics data analysis
 
 ## Quick Start
 
 ```bash
-# Clone repository
-git clone https://github.com/Alezander9/hep_foundation
-cd hep_foundation
+# 1. Clone and setup environment
+git clone https://github.com/Alezander9/hep-foundation
+cd hep-foundation
+uv venv --python 3.9
+source .venv/bin/activate
 
-# Create and activate virtual environment using uv
-# Requires uv to be installed (e.g., pip install uv or via package manager)
-uv venv --python 3.9  # Specify your desired Python version
-source .venv/bin/activate # On Windows: .venv\\Scripts\\activate
-
-# Install package in editable mode
+# 2. Install package and dependencies
 uv pip install -e .
+uv sync --group dev
+pre-commit install
+
+# 3. Run test to verify installation
+pytest tests/test_pipeline.py
+# Check that test passes and results look good in _test_results/
+
+# 4. Run real experiment
+cp tests/_test_pipeline_config.yaml _experiment_config_stack/
+python scripts/run_pipelines.py
+# Results will appear in _foundation_experiments/
 ```
 
 ## Usage
 
-### Basic Pipeline
-```python
-from hep_foundation.model_factory import ModelFactory
-from hep_foundation.dataset_manager import DatasetManager
+### Pipeline Overview
 
-# Setup data pipeline
-data_manager = DatasetManager()
-train_dataset, val_dataset, test_dataset = data_manager.load_atlas_datasets(
-config={
-'run_numbers': ["00296939", "00296942", "00297447"],
-'track_selections': {
-'eta': (-2.5, 2.5),
-'chi2_per_ndof': (0.0, 10.0),
-},
-'max_tracks_per_event': 20,
-'min_tracks_per_event': 3,
-'catalog_limit': 5
-}
-)
-# Create and train model
-model = ModelFactory.create_model(
-model_type="autoencoder",
-config={
-'input_shape': (20, 6),
-'latent_dim': 32,
-'encoder_layers': [128, 64, 32],
-'decoder_layers': [32, 64, 128],
-'activation': 'relu'
-}
-)
-```
-For full training pipeline example, see scripts/model_pipeline.py
-```bash
-Run full pipeline
-python scripts/model_pipeline.py
-```
+The HEP Foundation pipeline is designed as a simple workflow:
+
+1. **Create configs** → Put YAML configuration files in `_experiment_config_stack/`
+2. **Run pipeline** → Execute `python scripts/run_pipelines.py` 
+3. **Get results** → Find experiment results in `_foundation_experiments/`
+
+Use `tests/_test_pipeline_config.yaml` as a template - just modify the values for your experiments. The pipeline processes all configs in the stack and removes them as it completes each one.
+
+### Results
+
+Each experiment produces a complete folder in `_foundation_experiments/` containing:
+
+- **Training results** - Model weights, training history, and plots
+- **Regression evaluation** - Data efficiency comparison across model types  
+- **Signal classification** - Binary classification performance analysis
+- **Anomaly detection** - Background vs signal discrimination metrics
+- **Reproducibility** - Copy of original config and experiment metadata
+
+The pipeline automatically runs the full sequence: foundation model training → regression → signal classification → anomaly detection.
+
+## System Requirements
+
+### Performance Expectations
+
+- **Dataset size**: Typically O(1M) events per dataset
+- **Training speed**: ~15 seconds per epoch on NERSC A100 GPU  
+- **GPU requirement**: Strongly recommended for training (CPU training is very slow)
+
+### Recommended Workflow
+
+**For NERSC users:**
+
+1. **Create datasets locally** - The pipeline is bottlenecked by downloading ROOT files from CERN OpenData, so run data creation on your local machine:
+   ```bash
+   python scripts/create_datasets.py  # Creates datasets without deleting configs
+   ```
+
+2. **Transfer to NERSC** - Use provided transfer utilities:
+   ```bash
+   python scripts/transfer_configs.py    # Transfer config files
+   python scripts/transfer_datasets.py  # Transfer dataset files  
+   ```
+   (Requires environment variables and SSH key setup)
+
+3. **Run training on cluster**:
+   ```bash
+   sbatch jobs/submit_pipeline_simple.sh
+   ```
+
+**For local development:** Just run the pipeline directly after the Quick Start setup.
 
 ## Project Structure
-- `src/hep_foundation/`: Core package code
-- `scripts/`: Example scripts
-- `experiments/`: Output directory for model registry and results
-- `_processed_datasets/`: Storage for processed datasets
 
-## Dependencies
-Core requirements are automatically handled by `uv pip install -e .` using `pyproject.toml`.
+### Key Directories
 
-For development dependencies (like linters, testing tools), ensure they are listed under `[project.optional-dependencies]` in `pyproject.toml` (e.g., in a group named `dev`) and install them using:
+```
+src/hep_foundation/          # Main package source code
+├── config/                  # Configuration loading and validation
+├── data/                    # Dataset management, PhysLite data system
+├── models/                  # Model architectures (VAE, DNN, etc.)
+├── training/                # ModelTrainer and training utilities
+└── utils/                   # Plotting, logging, and utility functions
 
-```bash
-uv pip install -e ".[dev]"
+scripts/                     # Execution and utility scripts
+├── run_pipelines.py         # Main pipeline runner
+├── create_datasets.py       # Local dataset creation
+└── transfer_*.py            # Remote transfer utilities
+
+tests/                       # Test suite and test configurations
+jobs/                        # SLURM job submission scripts
+logs/                        # Pipeline execution logs
+
+_experiment_config_stack/    # Input: YAML configs to process
+_foundation_experiments/     # Output: Experiment results
+_processed_datasets/         # Cached datasets (HDF5 files)
+_test_results/              # Test outputs (cleaned each run)
 ```
 
-To add a new runtime dependency:
-```bash
-uv add <package_name>  # e.g., uv add numpy==1.24.3
+### Configuration Files
+
+**Creating configs:** Use `tests/_test_pipeline_config.yaml` as a template. Key sections:
+- `dataset`: Data selection (ATLAS run numbers, signal types)
+- `models`: VAE and DNN architectures  
+- `training`: Training parameters (epochs, batch size, learning rate)
+- `evaluation`: Data sizes for efficiency studies
+
+**PhysLite features:** Specify any PhysLite branch names in the config. Derived features (eta, pt, etc.) are automatically calculated from base branches using `physlite_derived_features.py`.
+
+### Understanding Results
+
+Each experiment folder contains:
+
+```
+001_Foundation_VAE_Model/
+├── _experiment_config.yaml     # Reproducible config copy
+├── _experiment_info.json       # Experiment metadata
+├── models/foundation_model/    # Saved model weights
+├── training/                   # Training metrics and plots
+└── testing/
+    ├── regression_evaluation/      # Data efficiency: regression tasks
+    ├── signal_classification/      # Data efficiency: classification  
+    └── anomaly_detection/          # Background vs signal scoring
 ```
 
-To add a new development dependency:
-```bash
-uv add --dev <package_name> # e.g., uv add --dev pytest
+**Key output files:**
+- Training plots and metrics in `training/`
+- Data efficiency plots comparing foundation model benefits in `testing/*/`
+- Model weights for reuse in `models/foundation_model/`
+
+### Development Utilities
+
+**Code quality:**
+- `.pre-commit-config.yaml` - Automated code formatting (ruff) and quality checks
+- `uv` package management with `pyproject.toml` configuration
+
+**Development tools:**
+- `.devcontainer/` - Docker container for consistent development environment
+- `scripts/test_gpu.py` - Verify TensorFlow GPU access on your system
+- `src/hep_foundation/utils/plot_utils.py` - Standardized colors, fonts, and styling for all plots
+
+## Citation
+
+If you use this software in your research, please cite:
+
+```
+Yue, A. (2024). HEP Foundation: Foundation models for High Energy Physics data analysis. 
+https://github.com/Alezander9/hep-foundation
 ```
 
-## Code Quality
-
-This project uses [Ruff](https://docs.astral.sh/ruff/) for linting and formatting.
-
-- **Check Code**: To check for linting errors and style issues, run:
-  ```bash
-  uv run ruff check .
-  ```
-- **Format Code**: To automatically format the code according to the project's style guide, run:
-  ```bash
-  uv run ruff format .
-  ```
-
-## Testing
-
-Run the foundation model pipeline tests with:
-```bash
-pytest tests/test_pipeline.py -v
+**BibTeX:**
+```bibtex
+@software{yue_hep_foundation_2024,
+  author = {Yue, Alexander},
+  title = {HEP Foundation: Foundation models for High Energy Physics data analysis},
+  url = {https://github.com/Alezander9/hep-foundation},
+  year = {2024}
+}
 ```
 
-This will execute the test suite with verbose output, showing real-time logging of the training and evaluation processes. Test logs are stored in `./test_results/test_foundation_experiments_<timestamp>/test_logs/`.
+*Note: A research paper is in preparation. This citation will be updated when published.*
 
-It's recommended to run both code quality checks and tests after making significant changes and before committing code.
+## License
 
-## Data Access
-The package automatically handles ATLAS PHYSLITE data download from CERN OpenData.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Questions?
-Contact: alexyue@stanford.edu
+## Contact
+
+**Questions or issues?**  
+📧 Email: alexyue@stanford.edu  
+🔗 GitHub: [Alezander9/hep-foundation](https://github.com/Alezander9/hep-foundation)
