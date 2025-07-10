@@ -94,7 +94,6 @@ class DatasetCreationProcessor:
         Returns:
             Dictionary containing all configuration objects
         """
-        self.logger.info(f"Loading configuration from: {config_path}")
 
         try:
             config = load_pipeline_config(config_path)
@@ -521,7 +520,7 @@ class DatasetCreationProcessor:
         dry_run: bool,
     ):
         """Print a comprehensive summary of the dataset creation process."""
-        self.logger.info("\n" + "=" * 100)
+        self.logger.info("=" * 100)
         self.logger.info("DATASET CREATION SUMMARY")
         self.logger.info("=" * 100)
 

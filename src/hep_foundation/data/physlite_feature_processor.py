@@ -1400,13 +1400,11 @@ class PhysliteFeatureProcessor:
                         "inf"
                     )  # Avoid division by zero if processing was instant
 
-                self.logger.info(f"Catalog {catalog_idx} summary:")
-                self.logger.info(f"  Total events read: {catalog_stats['events']}")
                 self.logger.info(
-                    f"  Events passing selection (incl. derived calc): {catalog_stats['processed']}"
+                    f"Catalog {catalog_idx}: {catalog_stats['events']} events read, "
+                    f"{catalog_stats['processed']} passed selection, "
+                    f"{catalog_duration:.2f}s ({rate:.1f} events/s)"
                 )
-                self.logger.info(f"  Processing time: {catalog_duration:.2f}s")
-                self.logger.info(f"  Rate: {rate:.1f} events/s")
 
                 if catalog_limit and catalog_idx >= catalog_limit - 1:
                     break
