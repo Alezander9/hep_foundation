@@ -57,8 +57,6 @@ class PipelineConfigLoader:
         if not config_path.exists():
             raise FileNotFoundError(f"Configuration file not found: {config_path}")
 
-        self.logger.info(f"Loading configuration from: {config_path}")
-
         # Read raw YAML content
         with open(config_path) as f:
             content = f.read()

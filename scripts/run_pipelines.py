@@ -292,7 +292,7 @@ class PipelineconfigProcessor:
                 self.logger.error(f"config {i} failed")
 
         # Final summary
-        self.logger.info("\n" + "=" * 100)
+        self.logger.info("=" * 100)
         self.logger.info("config PROCESSING SUMMARY")
         self.logger.info("=" * 100)
         self.logger.info(f"Total configs processed: {len(config_files)}")

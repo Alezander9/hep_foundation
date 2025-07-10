@@ -17,27 +17,59 @@ from hep_foundation.models.dnn_predictor import DNNPredictor
 class TrainingProgressCallback(tf.keras.callbacks.Callback):
     """Custom callback for clean self.logger output"""
 
-    def __init__(self, epochs: int):
+    def __init__(self, epochs: int, verbosity: str = "full"):
+        """
+        Initialize the callback.
+        
+        Args:
+            epochs: Total number of epochs
+            verbosity: Logging verbosity level
+                - "full": Log every epoch (default)
+                - "summary": Log only start, every 10th epoch, and final epoch
+                - "minimal": Log only start and final epoch
+                - "silent": Log only start and end of training
+        """
         super().__init__()
         self.epochs = epochs
+        self.verbosity = verbosity
         self.epoch_start_time = None
 
         # Setup self.logger
         self.logger = get_logger(__name__)
 
     def on_train_begin(self, logs=None):
-        self.logger.info(f"Starting training for {self.epochs} epochs")
+        if self.verbosity != "silent":
+            self.logger.info(f"Starting training for {self.epochs} epochs")
 
     def on_epoch_begin(self, epoch, logs=None):
         self.epoch_start_time = time.time()
-        self.logger.info(f"Starting epoch {epoch + 1}/{self.epochs}")
+        # Only log epoch start for full verbosity
+        if self.verbosity == "full":
+            self.logger.info(f"Starting epoch {epoch + 1}/{self.epochs}")
 
     def on_epoch_end(self, epoch, logs=None):
-        time_taken = time.time() - self.epoch_start_time
-        metrics = " - ".join(f"{k}: {v:.6f}" for k, v in logs.items())
-        self.logger.info(
-            f"Epoch {epoch + 1}/{self.epochs} completed in {time_taken:.1f}s - {metrics}"
-        )
+        time_taken = time.time() - (self.epoch_start_time or time.time())
+        
+        should_log = False
+        if self.verbosity == "full":
+            should_log = True
+        elif self.verbosity == "summary":
+            # Log every 10th epoch and the final epoch
+            should_log = (epoch + 1) % 10 == 0 or (epoch + 1) == self.epochs
+        elif self.verbosity == "minimal":
+            # Log only the final epoch
+            should_log = (epoch + 1) == self.epochs
+        # For "silent", never log individual epochs
+        
+        if should_log and logs is not None:
+            metrics = " - ".join(f"{k}: {v:.6f}" for k, v in logs.items())
+            self.logger.info(
+                f"Epoch {epoch + 1}/{self.epochs} completed in {time_taken:.1f}s - {metrics}"
+            )
+
+    def on_train_end(self, logs=None):
+        if self.verbosity != "silent":
+            self.logger.info(f"Training completed after {self.epochs} epochs")
 
 
 class ModelTrainer:
@@ -353,8 +385,30 @@ class ModelTrainer:
         plot_training_title: Optional[str] = None,
         plot_result_title: Optional[str] = None,
         test_dataset: Optional[tf.data.Dataset] = None,
+        verbose_training: str = "full",
     ) -> dict[str, Any]:
-        """Train with enhanced metrics tracking and optional plotting"""
+        """
+        Train with enhanced metrics tracking and optional plotting
+        
+        Args:
+            dataset: Training dataset
+            validation_data: Validation dataset (optional)
+            callbacks: List of Keras callbacks (optional)
+            plot_training: Whether to create training plots
+            plot_result: Whether to create result plots
+            plots_dir: Directory to save plots
+            plot_training_title: Custom title for training plots
+            plot_result_title: Custom title for result plots
+            test_dataset: Test dataset for result plots
+            verbose_training: Training verbosity level
+                - "full": Log every epoch (default)
+                - "summary": Log every 10th epoch and final epoch
+                - "minimal": Log only final epoch
+                - "silent": Log only start and end of training
+        
+        Returns:
+            Training summary dictionary
+        """
         self.logger.info("Starting training with metrics tracking:")
 
         # Record start time
@@ -413,7 +467,7 @@ class ModelTrainer:
             callbacks = []
 
         # Add our custom progress callback
-        callbacks.append(TrainingProgressCallback(epochs=self.epochs))
+        callbacks.append(TrainingProgressCallback(epochs=self.epochs, verbosity=verbose_training))
 
         # Train the model
         history = self.model.model.fit(
@@ -441,11 +495,11 @@ class ModelTrainer:
             self.logger.info(f"  {metric}: {values[-1]:.6f}")
 
         # After training completes, create plots if requested
-        if plot_training:
+        if plot_training and plots_dir is not None:
             self.logger.info("Generating training plots...")
             self._create_training_plots(plots_dir, plot_training_title)
 
-        if plot_result and test_dataset is not None:
+        if plot_result and test_dataset is not None and plots_dir is not None:
             self.logger.info("Generating result plots...")
             self._create_result_plots(plots_dir, plot_result_title, test_dataset)
 

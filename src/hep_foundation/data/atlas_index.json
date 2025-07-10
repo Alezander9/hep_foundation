@@ -190,6 +190,17 @@
   "signal_catalogs": {
     "zprime_tt": "mc20_13TeV_MC_Pythia8EvtGen_A14NNPDF23LO_zprime3000_tt",
     "wprime_qq": "mc20_13TeV_MC_Pythia8EvtGen_A14NNPDF23LO_Wprime_qq_3000",
-    "zprime_bb": "mc20_13TeV_MC_Pythia8EvtGen_A14NNPDF23LO_Zprimebb3000"
+    "zprime_bb": "mc20_13TeV_MC_Pythia8EvtGen_A14NNPDF23LO_Zprimebb3000",
+    "zprime_tautau": "mc20_13TeV_MC_Py8EG_A14NNPDF23LO_Zprime_NoInt_tautau_SSM3000",
+    "wprime_taunu": "mc20_13TeV_MC_Py8EG_A14NNPDF23LO_Wprime_taunu_SSM3000",
+    "zprime_ee": "mc20_13TeV_MC_Pythia8EvtGen_A14MSTW2008LO_Zprime_NoInt_ee_SSM3000",
+    "zprime_mumu": "mc20_13TeV_MC_Pythia8EvtGen_A14MSTW2008LO_Zprime_NoInt_mumu_SSM3000",
+    "wprime_enu": "mc20_13TeV_MC_Pythia8EvtGen_A14NNPDF23LO_Wprime_enu_SSM3000",
+    "wprime_munu": "mc20_13TeV_MC_Pythia8EvtGen_A14NNPDF23LO_Wprime_munu_SSM3000",
+    "wprime_tb_lep": "mc20_13TeV_MC_MadGraphPythia8EvtGen_A14NNPDF23LO_WpL_tblep_M3000",
+    "wprime_tb_had": "mc20_13TeV_MC_MadGraphPythia8EvtGen_A14NNPDF23LO_WpL_tbhad_M3000",
+    "dm_associated": "mc20_13TeV_MC_PowhegPy8EG_A14N23LO_DMA_500_700_gq0p25",
+    "leptoquark": "mc20_13TeV_MC_aMcAtNloPy8EG_A14N30NLO_LQd_gstML_0p3_nonallhad_M1000",
+    "dm_4top_scalar": "mc20_13TeV_MC_MGPy8EG_A14N23LO_DM_4topscalar_p1000_c1_nonallhad"
   }
 }

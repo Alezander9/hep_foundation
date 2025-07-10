@@ -127,36 +127,39 @@ def theta_to_eta(theta: np.ndarray) -> np.ndarray:
 
 def calculate_pt(qOverP: np.ndarray, theta: np.ndarray) -> np.ndarray:
     """Calculate pT (in GeV) from qOverP (in MeV⁻¹) and theta (radians)."""
-    qOverP_GeV = qOverP / 1000.0  # MeV^-1 to GeV^-1
-
-    # Handle potential division by zero safely with finite values
-    # Use a very large but finite value instead of inf
-    max_pt = 10000.0  # 10 TeV - extremely high but finite pT
-    epsilon = 1e-12  # Small value to avoid exact zero division
+    
+    # Handle potential division by zero safely
+    max_pt = 100.0  # 100 GeV - reasonable upper limit for most particles
+    min_abs_qOverP = 1e-9  # Corresponds to ~1 TeV momentum in MeV units
+    epsilon_theta = 1e-6  # Small value for theta calculations
 
     # Check for problematic input values
-    n_zero_qOverP = np.sum(np.abs(qOverP_GeV) < epsilon)
-    n_extreme_theta = np.sum((theta < epsilon) | (theta > np.pi - epsilon))
+    n_zero_qOverP = np.sum(np.abs(qOverP) < min_abs_qOverP)
+    n_extreme_theta = np.sum((theta < epsilon_theta) | (theta > np.pi - epsilon_theta))
 
-    # Avoid exact zero by adding small epsilon
+    # Handle very small qOverP by capping momentum rather than replacing with tiny epsilon
+    # If |qOverP| is too small, it means momentum would be too large - cap it
     qOverP_safe = np.where(
-        np.abs(qOverP_GeV) < epsilon, np.sign(qOverP_GeV) * epsilon, qOverP_GeV
+        np.abs(qOverP) < min_abs_qOverP, 
+        np.sign(qOverP) * min_abs_qOverP,  # Set to minimum threshold
+        qOverP
     )
 
-    # Calculate momentum magnitude
-    p_GeV = np.abs(1.0 / qOverP_safe)
+    # Calculate momentum magnitude in MeV, then convert to GeV
+    p_MeV = np.abs(1.0 / qOverP_safe)
+    p_GeV = p_MeV / 1000.0  # Convert MeV to GeV
 
     # Ensure theta is also safe for sin calculation
-    theta_safe = np.clip(theta, epsilon, np.pi - epsilon)
+    theta_safe = np.clip(theta, epsilon_theta, np.pi - epsilon_theta)
     sin_theta = np.sin(theta_safe)
 
     # Calculate pT
     pt_GeV = p_GeV * sin_theta
 
-    # Count values that need clipping
+    # Count values that need clipping (should be minimal now)
     n_clipped = np.sum(pt_GeV > max_pt)
 
-    # Clip to reasonable physics range to prevent extreme values
+    # Final clipping to ensure we stay within reasonable physics range
     pt_GeV = np.clip(pt_GeV, 0.0, max_pt)
 
     # Optional debug logging (only log if there are issues)
@@ -165,7 +168,7 @@ def calculate_pt(qOverP: np.ndarray, theta: np.ndarray) -> np.ndarray:
 
         logger = logging.getLogger(__name__)
         if n_zero_qOverP > 0:
-            logger.debug(f"pt calculation: {n_zero_qOverP} tracks with qOverP ≈ 0")
+            logger.debug(f"pt calculation: {n_zero_qOverP} tracks with qOverP ≈ 0 (momentum capped)")
         if n_extreme_theta > 0:
             logger.debug(
                 f"pt calculation: {n_extreme_theta} tracks with extreme theta values"

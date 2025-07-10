@@ -1,13 +1,13 @@
 #!/bin/bash
 #SBATCH --job-name=hep_foundation_simple
 #SBATCH --account=m2616
-#SBATCH --qos=regular
 #SBATCH --constraint=gpu
+#SBATCH --qos=shared
 #SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=32
-#SBATCH --gpus-per-node=1
-#SBATCH --time=06:00:00
+#SBATCH -n 1
+#SBATCH -c 32
+#SBATCH --gpus-per-task=1
+#SBATCH --time=02:00:00
 #SBATCH --output=logs/slurm-simple-%j.out
 #SBATCH --error=logs/slurm-simple-%j.err
 #SBATCH --mail-type=BEGIN,END,FAIL
@@ -37,6 +37,7 @@ module load craype
 module load tensorflow/2.12.0
 
 # Set environment variables
+export SLURM_CPU_BIND="cores"
 export NUMEXPR_MAX_THREADS=128
 export CUDA_VISIBLE_DEVICES=0
 

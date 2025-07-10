@@ -219,13 +219,13 @@ class FoundationModelPipeline:
         self.logger.info("=" * 100)
         self.logger.info("RUNNING FULL FOUNDATION MODEL PIPELINE")
         self.logger.info(
-            "Process: Train → Regression → Signal Classification → Anomaly Detection"
+            "Process: Train → Anomaly Detection → Regression → Signal Classification"
         )
         self.logger.info("=" * 100)
 
         try:
             # Step 1: Train the foundation model
-            self.logger.info("\n" + "=" * 50)
+            self.logger.info("=" * 50)
             self.logger.info("STEP 1/4: TRAINING FOUNDATION MODEL")
             self.logger.info("=" * 50)
 
@@ -248,9 +248,29 @@ class FoundationModelPipeline:
                 f"Training completed successfully. Model saved at: {foundation_model_path}"
             )
 
-            # Step 2: Run regression evaluation
-            self.logger.info("\n" + "=" * 50)
-            self.logger.info("STEP 2/4: REGRESSION EVALUATION")
+            # Step 2: Run anomaly detection evaluation
+            self.logger.info("=" * 50)
+            self.logger.info("STEP 2/4: ANOMALY DETECTION EVALUATION")
+            self.logger.info("=" * 50)
+
+            anomaly_success = self.run_process(
+                process_name="anomaly",
+                dataset_config=dataset_config,
+                task_config=task_config,
+                foundation_model_path=foundation_model_path,
+                vae_training_config=vae_training_config,
+                delete_catalogs=delete_catalogs,
+            )
+
+            if not anomaly_success:
+                self.logger.error("Anomaly detection evaluation failed")
+                return False
+
+            self.logger.info("Anomaly detection evaluation completed successfully")
+
+            # Step 3: Run regression evaluation
+            self.logger.info("=" * 50)
+            self.logger.info("STEP 3/4: REGRESSION EVALUATION")
             self.logger.info("=" * 50)
 
             regression_success = self.run_process(
@@ -271,9 +291,9 @@ class FoundationModelPipeline:
 
             self.logger.info("Regression evaluation completed successfully")
 
-            # Step 3: Run signal classification evaluation
-            self.logger.info("\n" + "=" * 50)
-            self.logger.info("STEP 3/4: SIGNAL CLASSIFICATION EVALUATION")
+            # Step 4: Run signal classification evaluation
+            self.logger.info("=" * 50)
+            self.logger.info("STEP 4/4: SIGNAL CLASSIFICATION EVALUATION")
             self.logger.info("=" * 50)
 
             signal_classification_success = self.run_process(
@@ -294,33 +314,15 @@ class FoundationModelPipeline:
 
             self.logger.info("Signal classification evaluation completed successfully")
 
-            # Step 4: Run anomaly detection evaluation
-            self.logger.info("\n" + "=" * 50)
-            self.logger.info("STEP 4/4: ANOMALY DETECTION EVALUATION")
-            self.logger.info("=" * 50)
 
-            anomaly_success = self.run_process(
-                process_name="anomaly",
-                dataset_config=dataset_config,
-                task_config=task_config,
-                foundation_model_path=foundation_model_path,
-                vae_training_config=vae_training_config,
-                delete_catalogs=delete_catalogs,
-            )
-
-            if not anomaly_success:
-                self.logger.error("Anomaly detection evaluation failed")
-                return False
-
-            self.logger.info("Anomaly detection evaluation completed successfully")
 
             # Final summary
-            self.logger.info("\n" + "=" * 100)
+            self.logger.info("=" * 100)
             self.logger.info("FULL PIPELINE COMPLETED SUCCESSFULLY")
             self.logger.info("=" * 100)
             self.logger.info(f"Foundation model: {foundation_model_path}")
             self.logger.info(
-                "All four processes (train → regression → signal classification → anomaly) completed successfully"
+                "All four processes (train → anomaly → regression → signal classification) completed successfully"
             )
             self.logger.info("=" * 100)
 
@@ -344,10 +346,7 @@ class FoundationModelPipeline:
 
         Returns:
             str: Path to the trained foundation model directory, or None if training failed
-        """
-        self.logger.info("=" * 100)
-        self.logger.info("Training Foundation Model")
-        self.logger.info("=" * 100)
+        """ 
 
         try:
             # Add logging for signal keys
@@ -522,6 +521,7 @@ class FoundationModelPipeline:
                     plot_training_title="Foundation Model Training History",
                     plot_result_title="Foundation Model Reconstruction Results",
                     test_dataset=test_dataset,
+                    verbose_training="full",  # Full verbosity for main foundation model training
                 )
 
                 # Evaluate Model
@@ -652,9 +652,6 @@ class FoundationModelPipeline:
         Loads a pre-trained VAE, test/signal datasets, performs evaluation,
         and saves results directly in the foundation model's experiment directory.
         """
-        self.logger.info("=" * 100)
-        self.logger.info("Evaluating Foundation Model for Anomaly Detection")
-        self.logger.info("=" * 100)
 
         if not foundation_model_path:
             self.logger.error(
@@ -911,11 +908,6 @@ class FoundationModelPipeline:
             data_sizes: List of training data sizes to test (e.g., [1000, 2000, 5000, 10000])
             fixed_epochs: Number of epochs to train each model for each data size
         """
-        self.logger.info("=" * 100)
-        self.logger.info(
-            "Evaluating Foundation Model for Regression (Data Efficiency Study)"
-        )
-        self.logger.info("=" * 100)
 
         if not foundation_model_path:
             self.logger.error(
@@ -1091,7 +1083,7 @@ class FoundationModelPipeline:
                     model=wrapped_model_for_trainer, training_config=trainer_config_dict
                 )
 
-                # Train with optional plotting
+                # Train with optional plotting and reduced verbosity for evaluation
                 _ = trainer.train(  # Unused return value
                     dataset=train_subset,
                     validation_data=val_dataset,
@@ -1102,6 +1094,7 @@ class FoundationModelPipeline:
                     plot_training_title=plot_training_title,
                     plot_result_title=plot_result_title,
                     test_dataset=test_dataset,
+                    verbose_training="minimal",  # Reduce verbosity for evaluation models
                 )
 
                 # Evaluate on test set
@@ -1425,11 +1418,6 @@ class FoundationModelPipeline:
             data_sizes: List of training data sizes to test (e.g., [1000, 2000, 5000, 10000])
             fixed_epochs: Number of epochs to train each model for each data size
         """
-        self.logger.info("=" * 100)
-        self.logger.info(
-            "Evaluating Foundation Model for Signal Classification (Data Efficiency Study)"
-        )
-        self.logger.info("=" * 100)
 
         if not foundation_model_path:
             self.logger.error(
@@ -1676,12 +1664,13 @@ class FoundationModelPipeline:
                     model=wrapped_model_for_trainer, training_config=trainer_config_dict
                 )
 
-                # Train without plots to speed up
+                # Train without plots to speed up and reduced verbosity for evaluation
                 _ = trainer.train(  # Unused return value
                     dataset=train_subset,
                     validation_data=labeled_val_dataset,
                     callbacks=[],  # No callbacks for speed
                     plot_training=False,
+                    verbose_training="minimal",  # Reduce verbosity for evaluation models
                 )
 
                 # Evaluate on test set
