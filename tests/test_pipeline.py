@@ -245,6 +245,30 @@ def test_run_full_pipeline(pipeline, test_configs, experiment_dir):
             f"Signal classification accuracy plot {classification_accuracy_plot} not found"
         )
 
+        # Check signal classification training history outputs
+        classification_training_histories_dir = (
+            classification_dir / "training_histories"
+        )
+        assert classification_training_histories_dir.exists(), (
+            f"Signal classification training histories dir {classification_training_histories_dir} not found"
+        )
+
+        # Check for individual training history JSON files
+        classification_training_history_files = list(
+            classification_training_histories_dir.glob("training_history_*.json")
+        )
+        assert len(classification_training_history_files) >= 3, (
+            f"Expected at least 3 signal classification training history JSON files, found {len(classification_training_history_files)} in {classification_training_histories_dir}"
+        )
+
+        # Check for combined training history plot
+        combined_classification_training_plot = (
+            classification_dir / "signal_classification_training_comparison.png"
+        )
+        assert combined_classification_training_plot.exists(), (
+            f"Combined signal classification training comparison plot {combined_classification_training_plot} not found"
+        )
+
         logger.info(
             f"Full pipeline test completed successfully. Model saved at: {latest_model_dir}"
         )

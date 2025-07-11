@@ -1701,6 +1701,7 @@ class FoundationModelPipeline:
                 combined_keras_model: tf.keras.Model,
                 train_subset,
                 data_size: int,
+                save_training_history: bool = False,
             ):
                 self.logger.info(
                     f"Training {model_name} model with {data_size} events..."
@@ -1730,7 +1731,9 @@ class FoundationModelPipeline:
                     dataset=train_subset,
                     validation_data=labeled_val_dataset,
                     callbacks=[],  # No callbacks for speed
-                    training_history_dir=None,  # No training history saving for signal classification
+                    training_history_dir=classification_dir / "training_histories"
+                    if save_training_history
+                    else None,
                     model_name=model_name,
                     dataset_id=f"signal_classification_eval_{data_size}",
                     experiment_id="signal_classification_evaluation",
@@ -1767,6 +1770,17 @@ class FoundationModelPipeline:
                 # Create subset of training data
                 train_subset = create_subset_dataset(labeled_train_dataset, data_size)
 
+                # Enable training history saving for all data sizes
+                should_save_history = True
+                self.logger.info(
+                    f"Enabling training history saving for all models with {data_size} events"
+                )
+
+                # Format data size for better labeling
+                data_size_label = (
+                    f"{data_size // 1000}k" if data_size >= 1000 else str(data_size)
+                )
+
                 # --- Model 1: From Scratch ---
                 self.logger.info("Building From Scratch model...")
                 scratch_encoder_layers = []
@@ -1795,7 +1809,11 @@ class FoundationModelPipeline:
                 )
 
                 scratch_loss, scratch_accuracy = train_and_evaluate_for_size(
-                    "From_Scratch", model_from_scratch, train_subset, data_size
+                    f"From_Scratch_{data_size_label}",
+                    model_from_scratch,
+                    train_subset,
+                    data_size,
+                    save_training_history=should_save_history,
                 )
                 results["From_Scratch_loss"].append(scratch_loss)
                 results["From_Scratch_accuracy"].append(scratch_accuracy)
@@ -1835,7 +1853,11 @@ class FoundationModelPipeline:
                 )
 
                 finetuned_loss, finetuned_accuracy = train_and_evaluate_for_size(
-                    "Fine_Tuned", model_fine_tuned, train_subset, data_size
+                    f"Fine_Tuned_{data_size_label}",
+                    model_fine_tuned,
+                    train_subset,
+                    data_size,
+                    save_training_history=should_save_history,
                 )
                 results["Fine_Tuned_loss"].append(finetuned_loss)
                 results["Fine_Tuned_accuracy"].append(finetuned_accuracy)
@@ -1874,7 +1896,11 @@ class FoundationModelPipeline:
                 )
 
                 fixed_loss, fixed_accuracy = train_and_evaluate_for_size(
-                    "Fixed_Encoder", model_fixed, train_subset, data_size
+                    f"Fixed_Encoder_{data_size_label}",
+                    model_fixed,
+                    train_subset,
+                    data_size,
+                    save_training_history=should_save_history,
                 )
                 results["Fixed_Encoder_loss"].append(fixed_loss)
                 results["Fixed_Encoder_accuracy"].append(fixed_accuracy)
@@ -1890,6 +1916,83 @@ class FoundationModelPipeline:
             with open(results_file, "w") as f:
                 json.dump(results, f, indent=2)
             self.logger.info(f"Results saved to: {results_file}")
+
+            # Create combined training history plot if we saved training histories
+            training_histories_dir = classification_dir / "training_histories"
+            if training_histories_dir.exists():
+                training_history_files = list(
+                    training_histories_dir.glob("training_history_*.json")
+                )
+                if training_history_files:
+                    self.logger.info("Creating combined training history plot...")
+
+                    # Sort files to ensure consistent ordering and group by model type and data size
+                    sorted_files = []
+                    sorted_labels = []
+
+                    # Group by model type and data size
+                    for model_name in ["From_Scratch", "Fine_Tuned", "Fixed_Encoder"]:
+                        matching_files = [
+                            f for f in training_history_files if model_name in f.name
+                        ]
+
+                        # Sort by data size (extract from filename)
+                        def extract_data_size(filename):
+                            # Extract data size from filename like "From_Scratch_10k"
+                            for part in filename.stem.split("_"):
+                                if part.endswith("k"):
+                                    return int(part[:-1]) * 1000
+                                elif part.isdigit():
+                                    return int(part)
+                            return 0
+
+                        matching_files.sort(key=extract_data_size)
+
+                        for file in matching_files:
+                            sorted_files.append(file)
+                            # Extract model name and data size for label
+                            model_display_name = model_name.replace("_", " ")
+                            # Extract data size from filename
+                            data_size_str = None
+                            for part in file.stem.split("_"):
+                                if part.endswith("k") or part.isdigit():
+                                    data_size_str = part
+                                    break
+
+                            if data_size_str:
+                                sorted_labels.append(
+                                    f"{model_display_name} ({data_size_str})"
+                                )
+                            else:
+                                sorted_labels.append(model_display_name)
+
+                    if sorted_files:
+                        from hep_foundation.data.dataset_visualizer import (
+                            create_training_history_plot_from_json,
+                        )
+
+                        combined_plot_path = (
+                            classification_dir
+                            / "signal_classification_training_comparison.png"
+                        )
+                        create_training_history_plot_from_json(
+                            training_history_json_paths=sorted_files,
+                            output_plot_path=combined_plot_path,
+                            legend_labels=sorted_labels,
+                            title_prefix="Signal Classification Model Training Comparison",
+                            validation_only=True,  # Only show validation loss
+                        )
+                        self.logger.info(
+                            f"Combined training history plot saved to: {combined_plot_path}"
+                        )
+                    else:
+                        self.logger.warning(
+                            "Could not find expected training history files for combined plot"
+                        )
+                else:
+                    self.logger.info(
+                        "No training history files found for combined plot"
+                    )
 
             # Create the plots
             try:
