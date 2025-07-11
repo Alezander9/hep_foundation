@@ -127,7 +127,7 @@ def theta_to_eta(theta: np.ndarray) -> np.ndarray:
 
 def calculate_pt(qOverP: np.ndarray, theta: np.ndarray) -> np.ndarray:
     """Calculate pT (in GeV) from qOverP (in MeV⁻¹) and theta (radians)."""
-    
+
     # Handle potential division by zero safely
     max_pt = 100.0  # 100 GeV - reasonable upper limit for most particles
     min_abs_qOverP = 1e-9  # Corresponds to ~1 TeV momentum in MeV units
@@ -139,10 +139,15 @@ def calculate_pt(qOverP: np.ndarray, theta: np.ndarray) -> np.ndarray:
 
     # Handle very small qOverP by capping momentum rather than replacing with tiny epsilon
     # If |qOverP| is too small, it means momentum would be too large - cap it
+    # Special handling for exactly zero qOverP to avoid np.sign(0) = 0 issue
     qOverP_safe = np.where(
-        np.abs(qOverP) < min_abs_qOverP, 
-        np.sign(qOverP) * min_abs_qOverP,  # Set to minimum threshold
-        qOverP
+        np.abs(qOverP) < min_abs_qOverP,
+        np.where(
+            qOverP == 0.0,
+            min_abs_qOverP,  # Use positive value for exactly zero
+            np.sign(qOverP) * min_abs_qOverP,  # Use sign for non-zero but small values
+        ),
+        qOverP,
     )
 
     # Calculate momentum magnitude in MeV, then convert to GeV
@@ -168,7 +173,9 @@ def calculate_pt(qOverP: np.ndarray, theta: np.ndarray) -> np.ndarray:
 
         logger = logging.getLogger(__name__)
         if n_zero_qOverP > 0:
-            logger.debug(f"pt calculation: {n_zero_qOverP} tracks with qOverP ≈ 0 (momentum capped)")
+            logger.debug(
+                f"pt calculation: {n_zero_qOverP} tracks with qOverP ≈ 0 (momentum capped)"
+            )
         if n_extreme_theta > 0:
             logger.debug(
                 f"pt calculation: {n_extreme_theta} tracks with extreme theta values"

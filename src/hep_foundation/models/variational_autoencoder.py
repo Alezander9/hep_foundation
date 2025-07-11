@@ -125,7 +125,9 @@ class Sampling(keras.layers.Layer):
         dim = tf.shape(z_mean)[1]
         # Ensure epsilon has the same dtype as inputs (for mixed precision compatibility)
         epsilon = tf.keras.backend.random_normal(shape=(batch, dim), dtype=z_mean.dtype)
-        return z_mean + tf.exp(0.5 * z_log_var) * epsilon
+        # Clip z_log_var to prevent overflow in exp operation
+        z_log_var_clipped = tf.clip_by_value(z_log_var, -20.0, 20.0)
+        return z_mean + tf.exp(0.5 * z_log_var_clipped) * epsilon
 
 
 class VAELayer(keras.layers.Layer):
@@ -165,8 +167,10 @@ class VAELayer(keras.layers.Layer):
             keras.losses.mse(flat_inputs, flat_reconstruction)
         )
 
+        # Clip z_log_var to prevent overflow in exp operation during training
+        z_log_var_clipped = tf.clip_by_value(z_log_var, -20.0, 20.0)
         kl_loss = -0.5 * tf.reduce_mean(
-            1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var)
+            1 + z_log_var_clipped - tf.square(z_mean) - tf.exp(z_log_var_clipped)
         )
 
         # Ensure beta has the same dtype as losses for mixed precision compatibility
@@ -638,7 +642,7 @@ class AnomalyDetectionEvaluator:
                 # Ensure input batch is float32
                 features = tf.cast(features, tf.float32)
 
-                        # Get encoder outputs
+                # Get encoder outputs
             z_mean, z_log_var, z = self.model.encoder(features)
 
             # Get reconstructions
@@ -657,7 +661,7 @@ class AnomalyDetectionEvaluator:
             recon_losses_batch = tf.reduce_sum(
                 tf.square(flat_inputs - flat_reconstructions), axis=1
             ).numpy()
-            
+
             # Clip reconstruction losses to prevent extreme values from out-of-distribution signal data
             recon_losses_batch = np.clip(recon_losses_batch, 0.0, 1e8)
 
@@ -670,32 +674,50 @@ class AnomalyDetectionEvaluator:
             kl_losses_batch = (
                 -0.5
                 * tf.reduce_sum(
-                    1 + z_log_var_clipped - tf.square(z_mean_clipped) - tf.exp(z_log_var_clipped), axis=1
+                    1
+                    + z_log_var_clipped
+                    - tf.square(z_mean_clipped)
+                    - tf.exp(z_log_var_clipped),
+                    axis=1,
                 ).numpy()
             )
-            
+
             # Clip final KL losses to prevent extreme values from signal data
             kl_losses_batch = np.clip(kl_losses_batch, 0.0, 1e6)
-            
+
             # Check for NaN/Inf in final loss calculations
             invalid_recon = np.sum(~np.isfinite(recon_losses_batch))
             invalid_kl = np.sum(~np.isfinite(kl_losses_batch))
-            
+
             if invalid_recon > 0 or invalid_kl > 0:
-                self.logger.warning(f"Batch {total_batches}: Found extreme loss values (likely out-of-distribution signal data)")
-                self.logger.warning(f"  Reconstruction loss - NaN: {np.sum(np.isnan(recon_losses_batch))}, Inf: {np.sum(np.isinf(recon_losses_batch))}")
-                self.logger.warning(f"  KL loss - NaN: {np.sum(np.isnan(kl_losses_batch))}, Inf: {np.sum(np.isinf(kl_losses_batch))}")
-                
+                self.logger.warning(
+                    f"Batch {total_batches}: Found extreme loss values (likely out-of-distribution signal data)"
+                )
+                self.logger.warning(
+                    f"  Reconstruction loss - NaN: {np.sum(np.isnan(recon_losses_batch))}, Inf: {np.sum(np.isinf(recon_losses_batch))}"
+                )
+                self.logger.warning(
+                    f"  KL loss - NaN: {np.sum(np.isnan(kl_losses_batch))}, Inf: {np.sum(np.isinf(kl_losses_batch))}"
+                )
+
                 # Log valid data ranges for context
                 valid_recon = recon_losses_batch[np.isfinite(recon_losses_batch)]
                 valid_kl = kl_losses_batch[np.isfinite(kl_losses_batch)]
                 if len(valid_recon) > 0:
-                    self.logger.warning(f"  Valid reconstruction loss range: [{np.min(valid_recon):.3e}, {np.max(valid_recon):.3e}]")
+                    self.logger.warning(
+                        f"  Valid reconstruction loss range: [{np.min(valid_recon):.3e}, {np.max(valid_recon):.3e}]"
+                    )
                 if len(valid_kl) > 0:
-                    self.logger.warning(f"  Valid KL loss range: [{np.min(valid_kl):.3e}, {np.max(valid_kl):.3e}]")
-                    
-                self.logger.warning("  → This is expected for signal data that differs significantly from background training data")
-                self.logger.warning("  → Invalid values have been clipped and will be filtered in metrics calculation")
+                    self.logger.warning(
+                        f"  Valid KL loss range: [{np.min(valid_kl):.3e}, {np.max(valid_kl):.3e}]"
+                    )
+
+                self.logger.warning(
+                    "  → This is expected for signal data that differs significantly from background training data"
+                )
+                self.logger.warning(
+                    "  → Invalid values have been clipped and will be filtered in metrics calculation"
+                )
 
             # Append individual event losses
             reconstruction_losses.extend(recon_losses_batch.tolist())
@@ -729,23 +751,33 @@ class AnomalyDetectionEvaluator:
         bg_inf_count = np.sum(np.isinf(background_losses))
         sig_nan_count = np.sum(np.isnan(signal_losses))
         sig_inf_count = np.sum(np.isinf(signal_losses))
-        
+
         total_invalid = bg_nan_count + bg_inf_count + sig_nan_count + sig_inf_count
-        
+
         if total_invalid > 0:
-            self.logger.warning(f"Found {total_invalid} invalid values in {loss_type} losses!")
-            self.logger.warning(f"  Background: {bg_nan_count} NaN + {bg_inf_count} Inf = {bg_nan_count + bg_inf_count}")
-            self.logger.warning(f"  Signal: {sig_nan_count} NaN + {sig_inf_count} Inf = {sig_nan_count + sig_inf_count}")
-            
+            self.logger.warning(
+                f"Found {total_invalid} invalid values in {loss_type} losses!"
+            )
+            self.logger.warning(
+                f"  Background: {bg_nan_count} NaN + {bg_inf_count} Inf = {bg_nan_count + bg_inf_count}"
+            )
+            self.logger.warning(
+                f"  Signal: {sig_nan_count} NaN + {sig_inf_count} Inf = {sig_nan_count + sig_inf_count}"
+            )
+
             # Filter out invalid values
             background_losses_clean = background_losses[np.isfinite(background_losses)]
             signal_losses_clean = signal_losses[np.isfinite(signal_losses)]
-            
-            self.logger.warning(f"After filtering: Background {len(background_losses_clean)}/{len(background_losses)}, Signal {len(signal_losses_clean)}/{len(signal_losses)}")
-            
+
+            self.logger.warning(
+                f"After filtering: Background {len(background_losses_clean)}/{len(background_losses)}, Signal {len(signal_losses_clean)}/{len(signal_losses)}"
+            )
+
             # Check if we have enough valid data left
             if len(background_losses_clean) == 0 or len(signal_losses_clean) == 0:
-                self.logger.error(f"No valid {loss_type} losses remaining after filtering NaN/Inf!")
+                self.logger.error(
+                    f"No valid {loss_type} losses remaining after filtering NaN/Inf!"
+                )
                 # Return metrics with default values
                 return {
                     "background_mean": 0.0,
@@ -755,7 +787,7 @@ class AnomalyDetectionEvaluator:
                     "separation": 0.0,
                     "roc_auc": 0.5,  # Random performance
                     "roc_curve": {"fpr": [0, 1], "tpr": [0, 1], "thresholds": [1, 0]},
-                    "data_quality_warning": f"All {loss_type} losses were NaN/Inf - using default values"
+                    "data_quality_warning": f"All {loss_type} losses were NaN/Inf - using default values",
                 }
         else:
             # No invalid values, use original arrays
@@ -763,17 +795,35 @@ class AnomalyDetectionEvaluator:
             signal_losses_clean = signal_losses
 
         # Calculate basic statistics using cleaned data
+        bg_std = float(np.std(background_losses_clean))
+        sig_std = float(np.std(signal_losses_clean))
+
+        # Calculate separation with protection against zero variance
+        mean_diff = abs(np.mean(signal_losses_clean) - np.mean(background_losses_clean))
+        std_sum_squared = sig_std**2 + bg_std**2
+
+        if std_sum_squared == 0.0:
+            # Both distributions have zero variance (all values identical)
+            if mean_diff == 0.0:
+                separation = 0.0  # Identical distributions
+            else:
+                separation = float("inf")  # Perfect separation with no overlap
+            self.logger.warning(
+                f"Zero variance detected in {loss_type} separation calculation: "
+                f"bg_std={bg_std}, sig_std={sig_std}, mean_diff={mean_diff}. "
+                f"Setting separation to {'0.0' if separation == 0.0 else 'inf'}."
+            )
+        else:
+            separation = float(mean_diff / np.sqrt(std_sum_squared))
+
         metrics = {
             "background_mean": float(np.mean(background_losses_clean)),
-            "background_std": float(np.std(background_losses_clean)),
+            "background_std": bg_std,
             "signal_mean": float(np.mean(signal_losses_clean)),
-            "signal_std": float(np.std(signal_losses_clean)),
-            "separation": float(
-                abs(np.mean(signal_losses_clean) - np.mean(background_losses_clean))
-                / np.sqrt(np.std(signal_losses_clean) ** 2 + np.std(background_losses_clean) ** 2)
-            ),
+            "signal_std": sig_std,
+            "separation": separation,
         }
-        
+
         # Add data quality info if filtering was needed
         if total_invalid > 0:
             metrics["data_quality_info"] = {
@@ -794,14 +844,14 @@ class AnomalyDetectionEvaluator:
             [np.zeros(len(background_losses_clean)), np.ones(len(signal_losses_clean))]
         )
         scores = np.concatenate([background_losses_clean, signal_losses_clean])
-        
+
         # Final safety check - this should not happen but just in case
         if not np.all(np.isfinite(scores)):
-            self.logger.error(f"BUG: Still have NaN/Inf in scores after filtering!")
+            self.logger.error("BUG: Still have NaN/Inf in scores after filtering!")
             valid_indices = np.isfinite(scores)
             scores = scores[valid_indices]
             labels = labels[valid_indices]
-            
+
         fpr, tpr, thresholds = roc_curve(labels, scores)
         roc_auc = auc(fpr, tpr)
 
@@ -949,7 +999,7 @@ class AnomalyDetectionEvaluator:
             # Use only valid data points
             valid_labels = labels[valid_mask]
             valid_scores = scores[valid_mask]
-            
+
             # Log if we filtered out any values
             n_invalid = np.sum(~valid_mask)
             if n_invalid > 0:
@@ -957,7 +1007,7 @@ class AnomalyDetectionEvaluator:
                     f"Filtered out {n_invalid} invalid values from {loss_type} scores for {signal_name} "
                     f"before ROC calculation (kept {np.sum(valid_mask)} valid values)"
                 )
-            
+
             # Calculate ROC curve with valid data
             fpr, tpr, thresholds = roc_curve(valid_labels, valid_scores)
             roc_auc = auc(fpr, tpr)
@@ -1382,7 +1432,7 @@ class AnomalyDetectionEvaluator:
             [np.zeros(len(bg_recon_losses)), np.ones(len(sig_recon_losses))]
         )
         scores = np.concatenate([bg_recon_losses, sig_recon_losses])
-        
+
         # Filter NaN/Inf values for reconstruction ROC
         valid_mask_recon = np.isfinite(scores)
         if np.any(valid_mask_recon):
@@ -1397,7 +1447,7 @@ class AnomalyDetectionEvaluator:
 
         # ROC for KL loss
         scores_kl = np.concatenate([bg_kl_losses, sig_kl_losses])
-        
+
         # Filter NaN/Inf values for KL ROC
         valid_mask_kl = np.isfinite(scores_kl)
         if np.any(valid_mask_kl):

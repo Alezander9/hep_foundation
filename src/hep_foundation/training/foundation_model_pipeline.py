@@ -314,8 +314,6 @@ class FoundationModelPipeline:
 
             self.logger.info("Signal classification evaluation completed successfully")
 
-
-
             # Final summary
             self.logger.info("=" * 100)
             self.logger.info("FULL PIPELINE COMPLETED SUCCESSFULLY")
@@ -346,7 +344,7 @@ class FoundationModelPipeline:
 
         Returns:
             str: Path to the trained foundation model directory, or None if training failed
-        """ 
+        """
 
         try:
             # Add logging for signal keys

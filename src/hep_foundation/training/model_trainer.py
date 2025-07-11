@@ -20,14 +20,14 @@ class TrainingProgressCallback(tf.keras.callbacks.Callback):
     def __init__(self, epochs: int, verbosity: str = "full"):
         """
         Initialize the callback.
-        
+
         Args:
             epochs: Total number of epochs
             verbosity: Logging verbosity level
                 - "full": Log every epoch (default)
                 - "summary": Log only start, every 10th epoch, and final epoch
                 - "minimal": Log only start and final epoch
-                - "silent": Log only start and end of training
+                - "silent": No logging output during training
         """
         super().__init__()
         self.epochs = epochs
@@ -49,7 +49,7 @@ class TrainingProgressCallback(tf.keras.callbacks.Callback):
 
     def on_epoch_end(self, epoch, logs=None):
         time_taken = time.time() - (self.epoch_start_time or time.time())
-        
+
         should_log = False
         if self.verbosity == "full":
             should_log = True
@@ -60,7 +60,7 @@ class TrainingProgressCallback(tf.keras.callbacks.Callback):
             # Log only the final epoch
             should_log = (epoch + 1) == self.epochs
         # For "silent", never log individual epochs
-        
+
         if should_log and logs is not None:
             metrics = " - ".join(f"{k}: {v:.6f}" for k, v in logs.items())
             self.logger.info(
@@ -389,7 +389,7 @@ class ModelTrainer:
     ) -> dict[str, Any]:
         """
         Train with enhanced metrics tracking and optional plotting
-        
+
         Args:
             dataset: Training dataset
             validation_data: Validation dataset (optional)
@@ -405,7 +405,7 @@ class ModelTrainer:
                 - "summary": Log every 10th epoch and final epoch
                 - "minimal": Log only final epoch
                 - "silent": Log only start and end of training
-        
+
         Returns:
             Training summary dictionary
         """
@@ -467,7 +467,9 @@ class ModelTrainer:
             callbacks = []
 
         # Add our custom progress callback
-        callbacks.append(TrainingProgressCallback(epochs=self.epochs, verbosity=verbose_training))
+        callbacks.append(
+            TrainingProgressCallback(epochs=self.epochs, verbosity=verbose_training)
+        )
 
         # Train the model
         history = self.model.model.fit(
