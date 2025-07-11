@@ -4,7 +4,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import mixed_precision
@@ -374,32 +373,100 @@ class ModelTrainer:
             "history": epoch_history,
         }
 
+    def _save_training_history(
+        self,
+        training_history_dir: Path,
+        model_name: str,
+        dataset_id: Optional[str] = None,
+        experiment_id: Optional[str] = None,
+    ) -> Path:
+        """
+        Save training history to JSON file with metadata.
+
+        Args:
+            training_history_dir: Directory to save training history files
+            model_name: Name of the model being trained
+            dataset_id: Optional dataset identifier
+            experiment_id: Optional experiment identifier
+
+        Returns:
+            Path to the saved JSON file
+        """
+        training_history_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create filename with timestamp and model name
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"training_history_{model_name}_{timestamp}.json"
+        json_path = training_history_dir / filename
+
+        # Prepare training history data
+        training_summary = self.get_training_summary()
+
+        # Add metadata
+        training_data = {
+            "model_name": model_name,
+            "model_type": getattr(self.model, "model_type", "unknown"),
+            "training_config": training_summary["training_config"],
+            "epochs_completed": training_summary["epochs_completed"],
+            "training_duration": training_summary["training_duration"],
+            "history": self.metrics_history,  # Use raw metrics history instead of epoch-based
+            "final_metrics": training_summary["final_metrics"],
+            "metadata": {
+                "creation_date": str(datetime.now()),
+                "dataset_id": dataset_id,
+                "experiment_id": experiment_id,
+                "tensorflow_version": tf.__version__,
+                "total_parameters": self.model.model.count_params()
+                if self.model.model
+                else None,
+            },
+        }
+
+        # Convert numpy types for JSON serialization
+        def convert_numpy_types(obj):
+            if isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, dict):
+                return {key: convert_numpy_types(value) for key, value in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_numpy_types(item) for item in obj]
+            return obj
+
+        training_data = convert_numpy_types(training_data)
+
+        # Save to JSON
+        with open(json_path, "w") as f:
+            json.dump(training_data, f, indent=2)
+
+        self.logger.info(f"Training history saved to: {json_path}")
+        return json_path
+
     def train(
         self,
         dataset: tf.data.Dataset,
         validation_data: Optional[tf.data.Dataset] = None,
         callbacks: list[tf.keras.callbacks.Callback] = None,
-        plot_training: bool = False,
-        plot_result: bool = False,
-        plots_dir: Optional[Path] = None,
-        plot_training_title: Optional[str] = None,
-        plot_result_title: Optional[str] = None,
-        test_dataset: Optional[tf.data.Dataset] = None,
+        training_history_dir: Optional[Path] = None,
+        model_name: str = "model",
+        dataset_id: Optional[str] = None,
+        experiment_id: Optional[str] = None,
         verbose_training: str = "full",
     ) -> dict[str, Any]:
         """
-        Train with enhanced metrics tracking and optional plotting
+        Train with enhanced metrics tracking and automatic history saving
 
         Args:
             dataset: Training dataset
             validation_data: Validation dataset (optional)
             callbacks: List of Keras callbacks (optional)
-            plot_training: Whether to create training plots
-            plot_result: Whether to create result plots
-            plots_dir: Directory to save plots
-            plot_training_title: Custom title for training plots
-            plot_result_title: Custom title for result plots
-            test_dataset: Test dataset for result plots
+            training_history_dir: Directory to save training history JSON files (optional)
+            model_name: Name of the model for metadata and filename
+            dataset_id: Optional dataset identifier for metadata
+            experiment_id: Optional experiment identifier for metadata
             verbose_training: Training verbosity level
                 - "full": Log every epoch (default)
                 - "summary": Log every 10th epoch and final epoch
@@ -413,16 +480,6 @@ class ModelTrainer:
 
         # Record start time
         self.training_start_time = datetime.now()
-
-        # Set up plots directory with defaults if needed
-        if plot_training and plots_dir is None:
-            plots_dir = Path("experiments/plots")
-        elif plot_result and plots_dir is None:
-            plots_dir = Path("experiments/plots")
-
-        if plot_training:
-            plots_dir.mkdir(parents=True, exist_ok=True)
-            self.logger.info(f"Will save training plots to: {plots_dir}")
 
         self.logger.info("Preparing datasets for training...")
 
@@ -496,325 +553,16 @@ class ModelTrainer:
         for metric, values in self.metrics_history.items():
             self.logger.info(f"  {metric}: {values[-1]:.6f}")
 
-        # After training completes, create plots if requested
-        if plot_training and plots_dir is not None:
-            self.logger.info("Generating training plots...")
-            self._create_training_plots(plots_dir, plot_training_title)
-
-        if plot_result and test_dataset is not None and plots_dir is not None:
-            self.logger.info("Generating result plots...")
-            self._create_result_plots(plots_dir, plot_result_title, test_dataset)
+        # Save training history to JSON if directory provided
+        if training_history_dir is not None:
+            self._save_training_history(
+                training_history_dir=training_history_dir,
+                model_name=model_name,
+                dataset_id=dataset_id,
+                experiment_id=experiment_id,
+            )
 
         return self.get_training_summary()
-
-    def _create_training_plots(
-        self, plots_dir: Path, plot_training_title: Optional[str] = None
-    ):
-        """Create standard training plots with simple formatting"""
-        self.logger.info(f"Creating training plots in: {plots_dir.absolute()}")
-        plots_dir.mkdir(parents=True, exist_ok=True)
-
-        try:
-            from hep_foundation.utils.plot_utils import (
-                FONT_SIZES,
-                LINE_WIDTHS,
-                get_color_cycle,
-                get_figure_size,
-                set_science_style,
-            )
-
-            set_science_style(use_tex=False)
-
-            plt.figure(figsize=get_figure_size("single", ratio=1.2))
-            history = self.metrics_history
-            colors = get_color_cycle("high_contrast")
-            color_idx = 0
-
-            # Plot metrics with simple labels
-            for metric in history.keys():
-                if "loss" in metric.lower() and not metric.lower().startswith(
-                    ("val_", "test_")
-                ):
-                    label = metric.replace("_", " ").title()
-                    plt.plot(
-                        history[metric],
-                        label=label,
-                        color=colors[color_idx % len(colors)],
-                        linewidth=LINE_WIDTHS["thick"],
-                    )
-                    color_idx += 1
-
-            plt.yscale("log")  # Set y-axis to logarithmic scale
-            plt.xlabel("Epoch", fontsize=FONT_SIZES["large"])
-            plt.ylabel("Loss (log)", fontsize=FONT_SIZES["large"])
-
-            # Use custom title if provided, otherwise use default
-            title = plot_training_title if plot_training_title else "Training History"
-            plt.title(title, fontsize=FONT_SIZES["xlarge"])
-
-            plt.legend(fontsize=FONT_SIZES["normal"], loc="upper right")
-            plt.grid(
-                True, alpha=0.3, which="both"
-            )  # Grid lines for both major and minor ticks
-
-            plt.savefig(
-                plots_dir / "training_history.png", dpi=300, bbox_inches="tight"
-            )
-            plt.close()
-
-            # Let the model create any model-specific plots
-            if hasattr(self.model, "create_plots"):
-                self.model.create_plots(plots_dir)
-
-            self.logger.info(f"Plots saved to: {plots_dir}")
-
-        except Exception as e:
-            self.logger.error(f"Error creating plots: {str(e)}")
-            import traceback
-
-            traceback.print_exc()
-
-    def _create_result_plots(
-        self,
-        plots_dir: Path,
-        plot_result_title: Optional[str] = None,
-        test_dataset: tf.data.Dataset = None,
-    ):
-        """Create histogram plots of model results on test data with sampling"""
-        self.logger.info(f"Creating result plots in: {plots_dir.absolute()}")
-        plots_dir.mkdir(parents=True, exist_ok=True)
-
-        try:
-            from hep_foundation.utils.plot_utils import (
-                FONT_SIZES,
-                get_color_cycle,
-                get_figure_size,
-                set_science_style,
-            )
-
-            set_science_style(use_tex=False)
-
-            # Sample up to 5000 events from test dataset for plotting
-            sample_size = 5000
-            self.logger.info(f"Sampling up to {sample_size} events for result plotting")
-
-            # Prepare test dataset
-            prepared_test_dataset = self.prepare_dataset(test_dataset)
-
-            # Collect error metrics per event (not all raw values)
-            error_values = []
-            sample_count = 0
-
-            for batch in prepared_test_dataset:
-                if sample_count >= sample_size:
-                    break
-
-                features, labels = batch
-
-                # Get predictions from model
-                batch_predictions = self.model.model.predict(features, verbose=0)
-
-                # Calculate how many events to take from this batch
-                batch_size = len(batch_predictions)
-                remaining_samples = sample_size - sample_count
-                events_to_sample = min(batch_size, remaining_samples)
-
-                # Take subset of batch (events, not flattened values)
-                pred_subset = batch_predictions[:events_to_sample]
-                target_subset = labels[:events_to_sample]
-
-                # Convert to numpy if needed
-                if hasattr(pred_subset, "numpy"):
-                    pred_subset = pred_subset.numpy()
-                if hasattr(target_subset, "numpy"):
-                    target_subset = target_subset.numpy()
-
-                # Compute error per event (single value per event, not per feature)
-                if (
-                    pred_subset.shape == target_subset.shape
-                    and len(pred_subset.shape) > 1
-                ):
-                    # Autoencoder case: compute reconstruction error per event (mean across features)
-                    event_errors = np.mean(np.abs(pred_subset - target_subset), axis=1)
-                else:
-                    # Regression/classification case: compute error per event
-                    if len(pred_subset.shape) > 1 and pred_subset.shape[1] > 1:
-                        # Multi-output case: compute mean error per event
-                        event_errors = np.mean(
-                            np.abs(pred_subset - target_subset), axis=1
-                        )
-                    else:
-                        # Single output case
-                        event_errors = np.abs(
-                            pred_subset.flatten() - target_subset.flatten()
-                        )
-
-                error_values.extend(event_errors)
-                sample_count += events_to_sample
-
-            error_values = np.array(error_values)
-
-            # For compatibility with existing code, also store some sample predictions/targets
-            # But limit these to a smaller subset to avoid huge files
-            max_raw_samples = 1000
-            predictions = []
-            targets = []
-            raw_sample_count = 0
-
-            for batch in prepared_test_dataset:
-                if raw_sample_count >= max_raw_samples:
-                    break
-
-                features, labels = batch
-                batch_predictions = self.model.model.predict(features, verbose=0)
-
-                events_to_sample = min(
-                    len(batch_predictions), max_raw_samples - raw_sample_count
-                )
-
-                # Convert to numpy if needed before flattening
-                pred_sample = batch_predictions[:events_to_sample]
-                target_sample = labels[:events_to_sample]
-
-                if hasattr(pred_sample, "numpy"):
-                    pred_sample = pred_sample.numpy()
-                if hasattr(target_sample, "numpy"):
-                    target_sample = target_sample.numpy()
-
-                predictions.extend(pred_sample.flatten())
-                targets.extend(target_sample.flatten())
-                raw_sample_count += events_to_sample
-
-            predictions = np.array(predictions)
-            targets = np.array(targets)
-
-            self.logger.info(
-                f"Collected {len(error_values)} events for result plotting"
-            )
-
-            # Use pre-computed error values for plotting
-            metric_values = error_values
-
-            # Determine metric name and plot details based on model type
-            model_name = getattr(self.model, "name", "").lower()
-            is_classifier = "classifier" in model_name
-            is_autoencoder = any(
-                keyword in model_name for keyword in ["vae", "autoencoder", "encoder"]
-            )
-
-            if is_autoencoder:
-                metric_name = "Reconstruction Error (Mean Absolute Error)"
-                plot_title = (
-                    plot_result_title
-                    if plot_result_title
-                    else "Model Results: Reconstruction Error"
-                )
-                filename = "result_reconstruction_error"
-            elif is_classifier:
-                metric_name = "Classification Error"
-                plot_title = (
-                    plot_result_title
-                    if plot_result_title
-                    else "Model Results: Classification Error"
-                )
-                filename = "result_classification_error"
-            else:
-                metric_name = "Absolute Error"
-                plot_title = (
-                    plot_result_title
-                    if plot_result_title
-                    else "Model Results: Absolute Error"
-                )
-                filename = "result_absolute_error"
-
-            # Create histogram
-            plt.figure(figsize=get_figure_size("single", ratio=1.2))
-            colors = get_color_cycle("high_contrast")
-
-            # Create histogram with appropriate number of bins
-            n_bins = min(50, max(10, len(metric_values) // 20))  # Adaptive bin count
-            counts, bin_edges, patches = plt.hist(
-                metric_values,
-                bins=n_bins,
-                color=colors[0],
-                alpha=0.7,
-                edgecolor="black",
-                linewidth=0.5,
-            )
-
-            plt.xlabel(metric_name, fontsize=FONT_SIZES["large"])
-            plt.ylabel("Count", fontsize=FONT_SIZES["large"])
-            plt.title(plot_title, fontsize=FONT_SIZES["xlarge"])
-            plt.grid(True, alpha=0.3)
-
-            # Add statistics text
-            mean_val = np.mean(metric_values)
-            std_val = np.std(metric_values)
-            median_val = np.median(metric_values)
-
-            stats_text = f"Mean: {mean_val:.3f}\nStd: {std_val:.3f}\nMedian: {median_val:.3f}\nSamples: {len(metric_values)}"
-            plt.text(
-                0.98,
-                0.98,
-                stats_text,
-                transform=plt.gca().transAxes,
-                verticalalignment="top",
-                horizontalalignment="right",
-                bbox=dict(boxstyle="round", facecolor="white", alpha=0.9),
-                fontsize=FONT_SIZES["small"],
-            )
-
-            # Save plot
-            plot_path = plots_dir / f"{filename}.png"
-            plt.savefig(plot_path, dpi=300, bbox_inches="tight")
-            plt.close()
-
-            # Save raw data like in dataset distribution plots
-            raw_data = {
-                "metric_values": metric_values.tolist(),
-                "sample_predictions": predictions[
-                    :1000
-                ].tolist(),  # Only save limited sample for reference
-                "sample_targets": targets[
-                    :1000
-                ].tolist(),  # Only save limited sample for reference
-                "bin_edges": bin_edges.tolist(),
-                "counts": counts.tolist(),
-                "statistics": {
-                    "mean": float(mean_val),
-                    "std": float(std_val),
-                    "median": float(median_val),
-                    "min": float(np.min(metric_values)),
-                    "max": float(np.max(metric_values)),
-                    "sample_size": len(metric_values),
-                    "metric_name": metric_name,
-                },
-                "metadata": {
-                    "model_name": getattr(self.model, "name", "unknown"),
-                    "is_classifier": is_classifier,
-                    "is_autoencoder": is_autoencoder,
-                    "plot_title": plot_title,
-                    "creation_date": str(datetime.now()),
-                    "note": "sample_predictions and sample_targets are limited to 1000 samples for file size",
-                },
-            }
-
-            # Save raw data to JSON
-            raw_data_path = plots_dir / f"{filename}_data.json"
-            with open(raw_data_path, "w") as f:
-                json.dump(raw_data, f, indent=2)
-
-            self.logger.info(f"Result plot saved to: {plot_path}")
-            self.logger.info(f"Raw result data saved to: {raw_data_path}")
-            self.logger.info(
-                f"Result statistics - Mean: {mean_val:.3f}, Std: {std_val:.3f}, Median: {median_val:.3f}"
-            )
-
-        except Exception as e:
-            self.logger.error(f"Error creating result plots: {str(e)}")
-            import traceback
-
-            traceback.print_exc()
 
     def evaluate(self, dataset: tf.data.Dataset) -> dict[str, float]:
         """Evaluate with enhanced metrics tracking"""

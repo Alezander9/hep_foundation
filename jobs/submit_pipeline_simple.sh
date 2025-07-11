@@ -7,7 +7,7 @@
 #SBATCH -n 1
 #SBATCH -c 32
 #SBATCH --gpus-per-task=1
-#SBATCH --time=02:00:00
+#SBATCH --time=05:00:00
 #SBATCH --output=logs/slurm-simple-%j.out
 #SBATCH --error=logs/slurm-simple-%j.err
 #SBATCH --mail-type=BEGIN,END,FAIL
@@ -91,4 +91,4 @@ echo "End time: $(date)"
 echo "=========================================="
 
 # Exit with the pipeline's exit code
-exit $EXIT_CODE 
+exit $EXIT_CODE

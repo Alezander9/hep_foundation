@@ -21,6 +21,223 @@ def format_event_count(event_count: int) -> str:
         return str(event_count)
 
 
+def create_training_history_plot_from_json(
+    training_history_json_paths: Union[list[Union[str, Path]], Union[str, Path]],
+    output_plot_path: Union[str, Path],
+    legend_labels: Optional[list[str]] = None,
+    title_prefix: str = "Training History",
+    metrics_to_plot: Optional[list[str]] = None,
+    validation_only: bool = False,
+):
+    """
+    Creates a training history plot from saved training history JSON data.
+    Can overlay data from multiple training runs.
+
+    Args:
+        training_history_json_paths: Path or list of paths to JSON files containing training history data.
+        output_plot_path: Path to save the PNG plot.
+        legend_labels: Optional list of labels for the legend. If provided, must match the number of paths.
+        title_prefix: Prefix for the main plot title.
+        metrics_to_plot: Optional list of specific metrics to plot. If None, plots all loss metrics.
+        validation_only: If True, only plots validation metrics (no training metrics).
+    """
+    logger = get_logger(__name__)
+
+    if not isinstance(training_history_json_paths, list):
+        training_history_json_paths = [training_history_json_paths]
+
+    training_history_json_paths = [Path(p) for p in training_history_json_paths]
+    output_plot_path = Path(output_plot_path)
+
+    loaded_training_data_list = []
+    effective_legend_labels = []
+
+    if legend_labels and len(legend_labels) != len(training_history_json_paths):
+        logger.warning(
+            "Number of legend_labels does not match number of training_history_json_paths. Using model names as labels."
+        )
+        legend_labels = None
+
+    for idx, json_path in enumerate(training_history_json_paths):
+        if not json_path.exists():
+            logger.error(
+                f"Training history JSON file not found: {json_path}. Skipping this file."
+            )
+            continue
+        try:
+            with open(json_path) as f:
+                data = json.load(f)
+                if not data or "history" not in data:
+                    logger.warning(
+                        f"No training history data found in {json_path}. Skipping this file."
+                    )
+                    continue
+                loaded_training_data_list.append(data)
+
+                if legend_labels:
+                    # Use provided legend labels without adding epoch counts
+                    base_label = legend_labels[idx]
+                    effective_legend_labels.append(base_label)
+                else:
+                    # Auto-generate labels from model names without epoch counts
+                    model_name = data.get("model_name", json_path.stem)
+                    effective_legend_labels.append(model_name)
+        except Exception as e:
+            logger.error(
+                f"Failed to load training history data from {json_path}: {e}. Skipping this file."
+            )
+            continue
+
+    if not loaded_training_data_list:
+        logger.error("No valid training history data loaded. Cannot create plot.")
+        return
+
+    logger.info(
+        f"Creating training history plot from {len(loaded_training_data_list)} training run(s) to {output_plot_path}"
+    )
+
+    # Set up plotting style
+    plot_utils.set_science_style(use_tex=False)
+
+    # Determine metrics to plot
+    first_history = loaded_training_data_list[0]["history"]
+
+    if metrics_to_plot is None:
+        # Auto-select metrics based on validation_only flag
+        all_metrics = list(first_history.keys())
+        metrics_to_plot = []
+
+        if validation_only:
+            # Only add validation losses
+            for metric in all_metrics:
+                if metric.startswith("val_") and "loss" in metric.lower():
+                    metrics_to_plot.append(metric)
+        else:
+            # Add training losses
+            for metric in all_metrics:
+                if "loss" in metric.lower() and not metric.startswith(
+                    ("val_", "test_")
+                ):
+                    metrics_to_plot.append(metric)
+
+            # Add validation losses if they exist
+            for metric in all_metrics:
+                if metric.startswith("val_") and "loss" in metric.lower():
+                    metrics_to_plot.append(metric)
+
+    # Filter out metrics that don't exist in all datasets
+    available_metrics = []
+    for metric in metrics_to_plot:
+        if all(metric in data["history"] for data in loaded_training_data_list):
+            available_metrics.append(metric)
+        else:
+            logger.warning(
+                f"Metric '{metric}' not available in all training histories, skipping."
+            )
+
+    metrics_to_plot = available_metrics
+
+    if not metrics_to_plot:
+        logger.error("No common metrics found across all training histories.")
+        return
+
+    # Create figure
+    fig, ax = plt.subplots(figsize=plot_utils.get_figure_size("single", ratio=1.2))
+
+    # Get colors for different training runs
+    colors = plot_utils.get_color_cycle(
+        "high_contrast", n=len(loaded_training_data_list)
+    )
+
+    # Plot each training run
+    for train_idx, training_data in enumerate(loaded_training_data_list):
+        history = training_data["history"]
+        base_color = colors[train_idx % len(colors)]
+        label = effective_legend_labels[train_idx]
+
+        if validation_only:
+            # Plot only validation metrics with clean labels (no "- validation" suffix)
+            val_metrics = [m for m in metrics_to_plot if m.startswith("val_")]
+            for metric_idx, metric in enumerate(val_metrics):
+                if metric in history:
+                    values = history[metric]
+                    epochs = list(range(1, len(values) + 1))
+
+                    # Use clean label without "- validation" suffix
+                    line_label = f"{label}"
+                    ax.plot(
+                        epochs,
+                        values,
+                        color=base_color,
+                        linewidth=plot_utils.LINE_WIDTHS["thick"],
+                        linestyle="-",
+                        label=line_label,
+                    )
+        else:
+            # Plot training metrics (solid lines)
+            train_metrics = [
+                m for m in metrics_to_plot if not m.startswith(("val_", "test_"))
+            ]
+            for metric_idx, metric in enumerate(train_metrics):
+                if metric in history:
+                    values = history[metric]
+                    epochs = list(range(1, len(values) + 1))
+
+                    line_label = (
+                        f"{label}" if len(train_metrics) == 1 else f"{label} - {metric}"
+                    )
+                    ax.plot(
+                        epochs,
+                        values,
+                        color=base_color,
+                        linewidth=plot_utils.LINE_WIDTHS["thick"],
+                        linestyle="-",
+                        label=line_label,
+                    )
+
+            # Plot validation metrics (dashed lines)
+            val_metrics = [m for m in metrics_to_plot if m.startswith("val_")]
+            for metric_idx, metric in enumerate(val_metrics):
+                if metric in history:
+                    values = history[metric]
+                    epochs = list(range(1, len(values) + 1))
+
+                    # Use same color but dashed line for validation
+                    line_label = (
+                        f"{label} - {metric}"
+                        if len(val_metrics) > 1
+                        else f"{label} - validation"
+                    )
+                    ax.plot(
+                        epochs,
+                        values,
+                        color=base_color,
+                        linewidth=plot_utils.LINE_WIDTHS["thick"],
+                        linestyle="--",
+                        label=line_label,
+                    )
+
+    # Format the plot
+    ax.set_xlabel("Epoch", fontsize=plot_utils.FONT_SIZES["large"])
+    ax.set_ylabel("Loss (log scale)", fontsize=plot_utils.FONT_SIZES["large"])
+    ax.set_title(title_prefix, fontsize=plot_utils.FONT_SIZES["xlarge"])
+    ax.set_yscale("log")
+    ax.grid(True, alpha=0.3, which="both")
+    ax.legend(fontsize=plot_utils.FONT_SIZES["normal"], loc="upper right")
+
+    # Save the plot
+    try:
+        output_plot_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(output_plot_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+        logger.info(
+            f"Successfully created training history plot and saved to {output_plot_path}"
+        )
+    except Exception as e:
+        logger.error(f"Failed to save training history plot to {output_plot_path}: {e}")
+        plt.close(fig)
+
+
 def create_plot_from_hist_data(
     hist_data_paths: Union[list[Union[str, Path]], Union[str, Path]],
     output_plot_path: Union[str, Path],

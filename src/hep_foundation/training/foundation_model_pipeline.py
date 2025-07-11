@@ -513,12 +513,12 @@ class FoundationModelPipeline:
                     dataset=train_dataset,
                     validation_data=val_dataset,
                     callbacks=callbacks,
-                    plot_training=True,
-                    plot_result=True,
-                    plots_dir=self.experiments_output_dir / experiment_id / "training",
-                    plot_training_title="Foundation Model Training History",
-                    plot_result_title="Foundation Model Reconstruction Results",
-                    test_dataset=test_dataset,
+                    training_history_dir=self.experiments_output_dir
+                    / experiment_id
+                    / "training",
+                    model_name="Foundation_VAE_Model",
+                    dataset_id=dataset_id,
+                    experiment_id=experiment_id,
                     verbose_training="full",  # Full verbosity for main foundation model training
                 )
 
@@ -1052,11 +1052,7 @@ class FoundationModelPipeline:
                 combined_keras_model: tf.keras.Model,
                 train_subset,
                 data_size: int,
-                plot_training: bool = False,
-                plot_result: bool = False,
-                plots_dir: Optional[Path] = None,
-                plot_training_title: Optional[str] = None,
-                plot_result_title: Optional[str] = None,
+                save_training_history: bool = False,
             ):
                 self.logger.info(
                     f"Training {model_name} model with {data_size} events..."
@@ -1081,17 +1077,17 @@ class FoundationModelPipeline:
                     model=wrapped_model_for_trainer, training_config=trainer_config_dict
                 )
 
-                # Train with optional plotting and reduced verbosity for evaluation
+                # Train with reduced verbosity for evaluation
                 _ = trainer.train(  # Unused return value
                     dataset=train_subset,
                     validation_data=val_dataset,
                     callbacks=[],  # No callbacks for speed
-                    plot_training=plot_training,
-                    plot_result=plot_result,
-                    plots_dir=plots_dir,
-                    plot_training_title=plot_training_title,
-                    plot_result_title=plot_result_title,
-                    test_dataset=test_dataset,
+                    training_history_dir=regression_dir / "training_histories"
+                    if save_training_history
+                    else None,
+                    model_name=model_name,
+                    dataset_id=f"regression_eval_{data_size}",
+                    experiment_id="regression_evaluation",
                     verbose_training="minimal",  # Reduce verbosity for evaluation models
                 )
 
@@ -1114,18 +1110,12 @@ class FoundationModelPipeline:
                 "Fixed_Encoder": [],
             }
 
-            # Identify the largest data size for plotting
+            # Save training histories for all data sizes (not just the largest)
             if not data_sizes:
                 self.logger.warning(
                     "No valid data sizes remain after filtering. Using total training events as fallback."
                 )
-                largest_data_size = total_train_events
-            else:
-                largest_data_size = max(data_sizes)
-
-            # Create training plots directory for the reference model
-            training_plots_dir = regression_dir / "training_plots"
-            training_plots_dir.mkdir(parents=True, exist_ok=True)
+                # Will save histories for all data sizes processed
 
             # 3. Run experiments for each data size
             for data_size in data_sizes:
@@ -1163,35 +1153,24 @@ class FoundationModelPipeline:
                     name="Regressor_From_Scratch",
                 )
 
-                # Enable plotting for the largest "From Scratch" model as reference
-                should_plot = data_size == largest_data_size
-                plots_dir = training_plots_dir if should_plot else None
-                plot_training_title = (
-                    f"Training History (From Scratch model with {data_size:,} events)"
-                    if should_plot
-                    else None
-                )
-                plot_result_title = (
-                    f"Result Distribution (From Scratch model with {data_size:,} events)"
-                    if should_plot
-                    else None
+                # Save training history for all data sizes
+                should_save_history = True
+
+                self.logger.info(
+                    f"Enabling training history saving for all models with {data_size} events"
                 )
 
-                if should_plot:
-                    self.logger.info(
-                        f"Enabling training and result plots for From Scratch model with {data_size} events (largest size)"
-                    )
+                # Format data size for better labeling
+                data_size_label = (
+                    f"{data_size // 1000}k" if data_size >= 1000 else str(data_size)
+                )
 
                 scratch_loss = train_and_evaluate_for_size(
-                    "From_Scratch",
+                    f"From_Scratch_{data_size_label}",
                     model_from_scratch,
                     train_subset,
                     data_size,
-                    plot_training=should_plot,
-                    plot_result=should_plot,
-                    plots_dir=plots_dir,
-                    plot_training_title=plot_training_title,
-                    plot_result_title=plot_result_title,
+                    save_training_history=should_save_history,
                 )
                 results["From_Scratch"].append(scratch_loss)
 
@@ -1232,7 +1211,11 @@ class FoundationModelPipeline:
                 )
 
                 finetuned_loss = train_and_evaluate_for_size(
-                    "Fine_Tuned", model_fine_tuned, train_subset, data_size
+                    f"Fine_Tuned_{data_size_label}",
+                    model_fine_tuned,
+                    train_subset,
+                    data_size,
+                    save_training_history=should_save_history,
                 )
                 results["Fine_Tuned"].append(finetuned_loss)
 
@@ -1273,11 +1256,15 @@ class FoundationModelPipeline:
                 )
 
                 fixed_loss = train_and_evaluate_for_size(
-                    "Fixed_Encoder", model_fixed, train_subset, data_size
+                    f"Fixed_Encoder_{data_size_label}",
+                    model_fixed,
+                    train_subset,
+                    data_size,
+                    save_training_history=should_save_history,
                 )
                 results["Fixed_Encoder"].append(fixed_loss)
 
-            # 4. Save results and create plot
+            # 4. Save results and create plots
             self.logger.info("Creating data efficiency plot...")
 
             # Save results to JSON
@@ -1285,6 +1272,82 @@ class FoundationModelPipeline:
             with open(results_file, "w") as f:
                 json.dump(results, f, indent=2)
             self.logger.info(f"Results saved to: {results_file}")
+
+            # Create combined training history plot if we saved training histories
+            training_histories_dir = regression_dir / "training_histories"
+            if training_histories_dir.exists():
+                training_history_files = list(
+                    training_histories_dir.glob("training_history_*.json")
+                )
+                if training_history_files:
+                    self.logger.info("Creating combined training history plot...")
+
+                    # Sort files to ensure consistent ordering and group by model type and data size
+                    sorted_files = []
+                    sorted_labels = []
+
+                    # Group by model type and data size
+                    for model_name in ["From_Scratch", "Fine_Tuned", "Fixed_Encoder"]:
+                        matching_files = [
+                            f for f in training_history_files if model_name in f.name
+                        ]
+
+                        # Sort by data size (extract from filename)
+                        def extract_data_size(filename):
+                            # Extract data size from filename like "From_Scratch_10k"
+                            for part in filename.stem.split("_"):
+                                if part.endswith("k"):
+                                    return int(part[:-1]) * 1000
+                                elif part.isdigit():
+                                    return int(part)
+                            return 0
+
+                        matching_files.sort(key=extract_data_size)
+
+                        for file in matching_files:
+                            sorted_files.append(file)
+                            # Extract model name and data size for label
+                            model_display_name = model_name.replace("_", " ")
+                            # Extract data size from filename
+                            data_size_str = None
+                            for part in file.stem.split("_"):
+                                if part.endswith("k") or part.isdigit():
+                                    data_size_str = part
+                                    break
+
+                            if data_size_str:
+                                sorted_labels.append(
+                                    f"{model_display_name} ({data_size_str})"
+                                )
+                            else:
+                                sorted_labels.append(model_display_name)
+
+                    if sorted_files:
+                        from hep_foundation.data.dataset_visualizer import (
+                            create_training_history_plot_from_json,
+                        )
+
+                        combined_plot_path = (
+                            regression_dir / "regression_training_comparison.png"
+                        )
+                        create_training_history_plot_from_json(
+                            training_history_json_paths=sorted_files,
+                            output_plot_path=combined_plot_path,
+                            legend_labels=sorted_labels,
+                            title_prefix="Regression Model Training Comparison",
+                            validation_only=True,  # Only show validation loss
+                        )
+                        self.logger.info(
+                            f"Combined training history plot saved to: {combined_plot_path}"
+                        )
+                    else:
+                        self.logger.warning(
+                            "Could not find expected training history files for combined plot"
+                        )
+                else:
+                    self.logger.info(
+                        "No training history files found for combined plot"
+                    )
 
             # Create the plot
             try:
@@ -1662,12 +1725,15 @@ class FoundationModelPipeline:
                     model=wrapped_model_for_trainer, training_config=trainer_config_dict
                 )
 
-                # Train without plots to speed up and reduced verbosity for evaluation
+                # Train with reduced verbosity for evaluation
                 _ = trainer.train(  # Unused return value
                     dataset=train_subset,
                     validation_data=labeled_val_dataset,
                     callbacks=[],  # No callbacks for speed
-                    plot_training=False,
+                    training_history_dir=None,  # No training history saving for signal classification
+                    model_name=model_name,
+                    dataset_id=f"signal_classification_eval_{data_size}",
+                    experiment_id="signal_classification_evaluation",
                     verbose_training="minimal",  # Reduce verbosity for evaluation models
                 )
 

@@ -164,20 +164,18 @@ def test_run_full_pipeline(pipeline, test_configs, experiment_dir):
             f"Experiment info file not found at {experiment_info_path}"
         )
 
-        # Check foundation model training plots
+        # Check foundation model training outputs
         training_dir = latest_model_dir / "training"
         assert training_dir.exists(), (
             f"Foundation model training dir {training_dir} not found"
         )
 
-        foundation_training_history_plot = training_dir / "training_history.png"
-        assert foundation_training_history_plot.exists(), (
-            f"Foundation model training history plot {foundation_training_history_plot} not found"
+        # Check for foundation model training history JSON file
+        foundation_training_history_files = list(
+            training_dir.glob("training_history_*.json")
         )
-
-        foundation_result_plot = training_dir / "result_reconstruction_error.png"
-        assert foundation_result_plot.exists(), (
-            f"Foundation model result plot {foundation_result_plot} not found"
+        assert len(foundation_training_history_files) > 0, (
+            f"Foundation model training history JSON file not found in {training_dir}"
         )
 
         # Check anomaly detection outputs
@@ -200,20 +198,24 @@ def test_run_full_pipeline(pipeline, test_configs, experiment_dir):
             f"Regression data efficiency plot {plot_file} not found"
         )
 
-        # Check regression training plots (reference case)
-        training_plots_dir = regression_dir / "training_plots"
-        assert training_plots_dir.exists(), (
-            f"Regression training plots dir {training_plots_dir} not found"
+        # Check regression training history outputs
+        training_histories_dir = regression_dir / "training_histories"
+        assert training_histories_dir.exists(), (
+            f"Regression training histories dir {training_histories_dir} not found"
         )
 
-        training_history_plot = training_plots_dir / "training_history.png"
-        assert training_history_plot.exists(), (
-            f"Regression training history plot {training_history_plot} not found"
+        # Check for individual training history JSON files
+        regression_training_history_files = list(
+            training_histories_dir.glob("training_history_*.json")
+        )
+        assert len(regression_training_history_files) >= 3, (
+            f"Expected at least 3 regression training history JSON files, found {len(regression_training_history_files)} in {training_histories_dir}"
         )
 
-        training_result_plot = training_plots_dir / "result_absolute_error.png"
-        assert training_result_plot.exists(), (
-            f"Regression training result plot {training_result_plot} not found"
+        # Check for combined training history plot
+        combined_training_plot = regression_dir / "regression_training_comparison.png"
+        assert combined_training_plot.exists(), (
+            f"Combined regression training comparison plot {combined_training_plot} not found"
         )
 
         # Check signal classification evaluation outputs

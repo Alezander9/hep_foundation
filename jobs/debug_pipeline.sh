@@ -70,4 +70,4 @@ python scripts/run_pipelines.py --dry-run --max-configs 2
 
 echo "=========================================="
 echo "Debug job completed: $(date)"
-echo "==========================================" 
+echo "=========================================="
