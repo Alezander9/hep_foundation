@@ -132,14 +132,7 @@ class DatasetManager:
                             f"Failed to handle bin edge mismatch for feature {feature_name}: {e}"
                         )
 
-        # Normalize accumulated counts by number of samples
-        for feature_name in accumulated_data:
-            if feature_name.startswith("_"):
-                continue
-            if accumulated_data[feature_name]["total_samples"] > 1:
-                accumulated_data[feature_name]["counts"] /= accumulated_data[
-                    feature_name
-                ]["total_samples"]
+        # Note: Do not normalize here to avoid bias - normalization happens once at the end
 
     def _save_accumulated_histogram_data(
         self,
@@ -180,8 +173,15 @@ class DatasetManager:
                 if feature_name.startswith("_"):
                     continue
 
+                # Normalize counts by total number of samples (runs) - do this only once at the end
+                normalized_counts = feature_data["counts"]
+                if feature_data["total_samples"] > 1:
+                    normalized_counts = (
+                        normalized_counts / feature_data["total_samples"]
+                    )
+
                 final_histogram_data[feature_name] = {
-                    "counts": feature_data["counts"].tolist(),
+                    "counts": normalized_counts.tolist(),
                     "bin_edges": feature_data["bin_edges"].tolist(),
                 }
                 bin_edges_metadata[feature_name] = feature_data["bin_edges"].tolist()
