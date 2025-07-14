@@ -598,9 +598,7 @@ class FoundationModelPipeline:
                 except Exception as plot_e:
                     self.logger.error(f"Failed to create VAE plots: {str(plot_e)}")
                     # Don't fail the entire pipeline if plot creation fails
-                    import traceback
-
-                    traceback.print_exc()
+                    self.logger.exception("Failed to create VAE plots")
 
             except Exception as e:
                 self.logger.error(f"\nTraining failed with error: {str(e)}")
