@@ -976,7 +976,10 @@ class PhysliteFeatureProcessor:
         plot_output: Optional[Path] = None,
         first_event_logged: bool = True,
         bin_edges_metadata_path: Optional[Path] = None,
-    ) -> tuple[list[dict[str, np.ndarray]], list[dict[str, np.ndarray]], dict]:
+        return_histogram_data: bool = False,
+    ) -> tuple[
+        list[dict[str, np.ndarray]], list[dict[str, np.ndarray]], dict, Optional[dict]
+    ]:
         """
         Process either ATLAS or signal data using task configuration.
 
@@ -990,12 +993,14 @@ class PhysliteFeatureProcessor:
             plot_output: Optional complete path (including filename) for saving plots
             first_event_logged: Whether the first event has been logged
             bin_edges_metadata_path: Optional path to save/load bin edges metadata for coordinated histogram binning
+            return_histogram_data: If True, return histogram data instead of saving it to file
 
         Returns:
             Tuple containing:
             - List of processed input features (each a dict with scalar and aggregated features)
             - List of processed label features (each a list of dicts for multiple label configs)
             - Processing statistics
+            - Optional histogram data dictionary (if return_histogram_data=True)
         """
         if signal_key:
             self.logger.info(f"Processing signal data for {signal_key}")
@@ -1073,7 +1078,7 @@ class PhysliteFeatureProcessor:
             self.logger.warning(
                 "No actual branches identified to read from the file after processing dependencies. Check TaskConfig and derived feature definitions."
             )
-            return [], [], stats  # Return empty results
+            return [], [], stats, None  # Return empty results
 
         # Get catalog paths
         self.logger.info(
@@ -1459,7 +1464,9 @@ class PhysliteFeatureProcessor:
                 "processing_time": float(stats["processing_time"]),
                 "total_sampled_events": int(overall_plot_samples_count),
                 "signal_key": signal_key if signal_key else "background",
-                "run_number": run_number if run_number else None,
+                "run_number": run_number
+                if run_number and not return_histogram_data
+                else None,
             }
 
             # Details for N_Tracks_per_Event
@@ -1656,8 +1663,12 @@ class PhysliteFeatureProcessor:
                                 "bin_edges": [],
                             }
 
-            # Save the raw histogram data to plot_data folder (no individual plots)
-            if raw_histogram_data_for_file and plot_output:
+            # Save the raw histogram data to plot_data folder (no individual plots) or return it
+            if (
+                raw_histogram_data_for_file
+                and plot_output
+                and not return_histogram_data
+            ):
                 data_file_path = None
                 try:
                     # Create plot_data folder alongside the plots folder
@@ -1697,7 +1708,12 @@ class PhysliteFeatureProcessor:
             "processing_time": float(stats["processing_time"]),
         }
 
-        return processed_inputs, processed_labels, stats
+        return (
+            processed_inputs,
+            processed_labels,
+            stats,
+            raw_histogram_data_for_file if return_histogram_data else None,
+        )
 
     def _compute_dataset_normalization(
         self,

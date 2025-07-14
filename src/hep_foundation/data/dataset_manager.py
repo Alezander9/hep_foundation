@@ -66,6 +66,151 @@ class DatasetManager:
         else:
             return obj
 
+    def _accumulate_histogram_data(self, accumulated_data: dict, new_data: dict):
+        """
+        Accumulate histogram data from multiple runs.
+
+        Args:
+            accumulated_data: Dictionary to accumulate data into
+            new_data: New histogram data to add
+        """
+        if not new_data:
+            return
+
+        # Skip metadata for now - we'll handle it separately
+        for feature_name, feature_data in new_data.items():
+            if feature_name.startswith("_"):
+                continue
+
+            if not feature_data or not isinstance(feature_data, dict):
+                continue
+
+            counts = feature_data.get("counts", [])
+            bin_edges = feature_data.get("bin_edges", [])
+
+            if not counts or not bin_edges:
+                continue
+
+            if feature_name not in accumulated_data:
+                # First time seeing this feature - use as reference
+                accumulated_data[feature_name] = {
+                    "counts": np.array(counts),
+                    "bin_edges": np.array(bin_edges),
+                    "total_samples": 1,
+                }
+            else:
+                # Accumulate counts - handle potential bin edge mismatches
+                accumulated_data[feature_name]["counts"]
+                new_counts = np.array(counts)
+                existing_edges = accumulated_data[feature_name]["bin_edges"]
+                new_edges = np.array(bin_edges)
+
+                # Check if bin edges are compatible (same length and reasonably similar)
+                if len(existing_edges) == len(new_edges) and np.allclose(
+                    existing_edges, new_edges, rtol=1e-3
+                ):
+                    # Add the counts (they are already density-normalized per run)
+                    accumulated_data[feature_name]["counts"] += new_counts
+                    accumulated_data[feature_name]["total_samples"] += 1
+                else:
+                    # Bin edges don't match - this can happen when different runs have different data ranges
+                    self.logger.info(
+                        f"Bin edges mismatch for feature {feature_name} (shapes: {len(existing_edges)} vs {len(new_edges)}) - using first run's binning"
+                    )
+
+                    # Try to rebin the new data to match the existing bin edges
+                    try:
+                        # This is a simplified approach - in practice, we'd want to re-histogram the raw data
+                        # For now, we'll just use the first run's binning and skip subsequent runs with different binning
+                        # This preserves the first run's data and logs the issue
+                        accumulated_data[feature_name]["total_samples"] += 1
+                        self.logger.info(
+                            f"Keeping first run's histogram data for feature {feature_name}"
+                        )
+                    except Exception as e:
+                        self.logger.warning(
+                            f"Failed to handle bin edge mismatch for feature {feature_name}: {e}"
+                        )
+
+        # Normalize accumulated counts by number of samples
+        for feature_name in accumulated_data:
+            if feature_name.startswith("_"):
+                continue
+            if accumulated_data[feature_name]["total_samples"] > 1:
+                accumulated_data[feature_name]["counts"] /= accumulated_data[
+                    feature_name
+                ]["total_samples"]
+
+    def _save_accumulated_histogram_data(
+        self,
+        accumulated_data: dict,
+        total_stats: dict,
+        total_sampled_events: int,
+        plot_output: Path,
+        bin_edges_metadata_path: Optional[Path],
+    ):
+        """
+        Save accumulated histogram data from all runs to a JSON file.
+
+        Args:
+            accumulated_data: Accumulated histogram data across all runs
+            total_stats: Total statistics across all runs
+            total_sampled_events: Total number of sampled events across all runs
+            plot_output: Path for the plot output (used to determine JSON filename)
+            bin_edges_metadata_path: Optional path to save bin edges metadata
+        """
+        try:
+            # Create the final histogram data structure
+            final_histogram_data = {}
+
+            # Add metadata reflecting the full dataset
+            final_histogram_data["_metadata"] = {
+                "total_events": int(total_stats["total_events"]),
+                "total_processed_events": int(total_stats["processed_events"]),
+                "total_features": int(total_stats["total_features"]),
+                "processing_time": float(total_stats["processing_time"]),
+                "total_sampled_events": int(total_sampled_events),
+                "signal_key": "background",
+                "run_number": None,  # Multiple runs, so no single run number
+            }
+
+            # Add the accumulated feature data
+            bin_edges_metadata = {}
+            for feature_name, feature_data in accumulated_data.items():
+                if feature_name.startswith("_"):
+                    continue
+
+                final_histogram_data[feature_name] = {
+                    "counts": feature_data["counts"].tolist(),
+                    "bin_edges": feature_data["bin_edges"].tolist(),
+                }
+                bin_edges_metadata[feature_name] = feature_data["bin_edges"].tolist()
+
+            # Save the JSON file
+            plot_data_dir = plot_output.parent.parent / "plot_data"
+            plot_data_dir.mkdir(parents=True, exist_ok=True)
+
+            data_file_path = plot_data_dir / (plot_output.stem + "_hist_data.json")
+            with open(data_file_path, "w") as f:
+                json.dump(final_histogram_data, f, indent=4)
+            self.logger.info(
+                f"Saved accumulated histogram data from all runs to {data_file_path}"
+            )
+
+            # Save bin edges metadata if path provided
+            if bin_edges_metadata_path and bin_edges_metadata:
+                try:
+                    with open(bin_edges_metadata_path, "w") as f:
+                        json.dump(bin_edges_metadata, f, indent=2)
+                    self.logger.info(
+                        f"Saved bin edges metadata to {bin_edges_metadata_path}"
+                    )
+                except Exception as e:
+                    self.logger.error(f"Failed to save bin edges metadata: {e}")
+
+        except Exception as e:
+            self.logger.error(f"Failed to save accumulated histogram data: {e}")
+
     def get_dataset_dir(self, dataset_id: str) -> Path:
         """Get the directory path for a specific dataset.
 
@@ -278,6 +423,10 @@ class DatasetManager:
                     plot_data_dir / "background_bin_edges_metadata.json"
                 )
 
+            # Accumulate histogram data across all runs
+            accumulated_histogram_data = {}
+            accumulated_sampled_events = 0
+
             first_event_logged = False
             for run_number in dataset_config.run_numbers:
                 self.logger.info(f"Processing run {run_number}")
@@ -291,21 +440,47 @@ class DatasetManager:
                         plot_output=plot_output,
                         first_event_logged=first_event_logged,
                         bin_edges_metadata_path=bin_edges_metadata_path,
+                        return_histogram_data=dataset_config.plot_distributions,
                     )
                     first_event_logged = True
-                    inputs, labels, stats = result
+                    inputs, labels, stats, histogram_data = result
                     all_inputs.extend(inputs)
                     all_labels.extend(labels)
                     total_stats["total_events"] += stats["total_events"]
                     total_stats["processed_events"] += stats["processed_events"]
                     total_stats["total_features"] += stats["total_features"]
                     total_stats["processing_time"] += stats["processing_time"]
+
+                    # Accumulate histogram data if available
+                    if histogram_data and dataset_config.plot_distributions:
+                        self._accumulate_histogram_data(
+                            accumulated_histogram_data, histogram_data
+                        )
+                        if "_metadata" in histogram_data:
+                            accumulated_sampled_events += histogram_data[
+                                "_metadata"
+                            ].get("total_sampled_events", 0)
+
                 except Exception as e:
                     self.logger.error(f"Error unpacking process_data result: {str(e)}")
                     raise
 
             if not all_inputs:
                 raise ValueError("No events passed selection criteria")
+
+            # Save accumulated histogram data if plotting was enabled
+            if (
+                dataset_config.plot_distributions
+                and plot_output
+                and accumulated_histogram_data
+            ):
+                self._save_accumulated_histogram_data(
+                    accumulated_histogram_data,
+                    total_stats,
+                    accumulated_sampled_events,
+                    plot_output,
+                    bin_edges_metadata_path,
+                )
 
             # Create HDF5 dataset
             with h5py.File(dataset_path, "w") as f:
@@ -531,7 +706,7 @@ class DatasetManager:
                     # Process data for this signal type
                     # IMPORTANT: Ensure plot_distributions=dataset_config.plot_distributions
                     # so that _process_data generates the _hist_data.json files.
-                    inputs, labels, stats = self.feature_processor._process_data(
+                    inputs, labels, stats, _ = self.feature_processor._process_data(
                         task_config=dataset_config.task_config,
                         signal_key=signal_key,
                         delete_catalogs=False,  # Always keep signal catalogs
