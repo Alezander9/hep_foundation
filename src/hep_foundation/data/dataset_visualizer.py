@@ -144,16 +144,84 @@ def create_training_history_plot_from_json(
     # Create figure
     fig, ax = plt.subplots(figsize=plot_utils.get_figure_size("single", ratio=1.2))
 
-    # Get colors for different training runs
-    colors = plot_utils.get_color_cycle(
-        "high_contrast", n=len(loaded_training_data_list)
-    )
+    # Parse legend labels to extract dataset sizes and model types for systematic styling
+    def parse_label(label):
+        """Parse label to extract dataset size and model type"""
+        # Handle labels like "From Scratch (10k)", "Fine Tuned (5k)", "Fixed Encoder (2k)"
+        import re
 
-    # Plot each training run
+        # Extract dataset size from parentheses
+        dataset_size_match = re.search(r"\(([^)]+)\)", label)
+        dataset_size = dataset_size_match.group(1) if dataset_size_match else "unknown"
+
+        # Extract model type from the beginning of the label
+        label_lower = label.lower()
+        if "from scratch" in label_lower:
+            model_type = "from_scratch"
+        elif "fine tuned" in label_lower or "fine-tuned" in label_lower:
+            model_type = "fine_tuned"
+        elif "fixed encoder" in label_lower or "fixed_encoder" in label_lower:
+            model_type = "fixed_encoder"
+        else:
+            model_type = "unknown"
+
+        return dataset_size, model_type
+
+    # Parse all labels to get unique dataset sizes and model types
+    dataset_sizes = []
+    model_types = []
+    label_info = []
+
+    for label in effective_legend_labels:
+        dataset_size, model_type = parse_label(label)
+        label_info.append((dataset_size, model_type))
+        if dataset_size not in dataset_sizes:
+            dataset_sizes.append(dataset_size)
+        if model_type not in model_types:
+            model_types.append(model_type)
+
+    # Sort dataset sizes for consistent color assignment
+    # Handle both numeric and string sizes (e.g., "10k", "5k", "2k")
+    def sort_key(size):
+        if size == "unknown":
+            return float("inf")
+        # Convert sizes like "10k" to 10000 for sorting
+        if size.endswith("k"):
+            return int(size[:-1]) * 1000
+        elif size.isdigit():
+            return int(size)
+        else:
+            return float("inf")
+
+    dataset_sizes.sort(key=sort_key)
+
+    # Create color mapping: one color per dataset size
+    colors = plot_utils.get_color_cycle("high_contrast", n=len(dataset_sizes))
+    size_to_color = {size: colors[i] for i, size in enumerate(dataset_sizes)}
+
+    # Create line style mapping: one line style per model type
+    model_to_linestyle = plot_utils.MODEL_LINE_STYLES
+
+    logger.info(f"Found {len(dataset_sizes)} unique dataset sizes: {dataset_sizes}")
+    logger.info(f"Found {len(model_types)} unique model types: {model_types}")
+    logger.info(f"Color mapping: {size_to_color}")
+    logger.info(f"Line style mapping: {model_to_linestyle}")
+
+    # Plot each training run with systematic styling
     for train_idx, training_data in enumerate(loaded_training_data_list):
         history = training_data["history"]
-        base_color = colors[train_idx % len(colors)]
         label = effective_legend_labels[train_idx]
+
+        # Get dataset size and model type for this training run
+        dataset_size, model_type = label_info[train_idx]
+
+        # Get color based on dataset size and line style based on model type
+        base_color = size_to_color.get(
+            dataset_size, colors[0]
+        )  # fallback to first color
+        base_linestyle = model_to_linestyle.get(
+            model_type, "-"
+        )  # fallback to solid line
 
         if validation_only:
             # Plot only validation metrics with clean labels (no "- validation" suffix)
@@ -170,11 +238,11 @@ def create_training_history_plot_from_json(
                         values,
                         color=base_color,
                         linewidth=plot_utils.LINE_WIDTHS["thick"],
-                        linestyle="-",
+                        linestyle=base_linestyle,
                         label=line_label,
                     )
         else:
-            # Plot training metrics (solid lines)
+            # Plot training metrics (using base line style)
             train_metrics = [
                 m for m in metrics_to_plot if not m.startswith(("val_", "test_"))
             ]
@@ -191,18 +259,18 @@ def create_training_history_plot_from_json(
                         values,
                         color=base_color,
                         linewidth=plot_utils.LINE_WIDTHS["thick"],
-                        linestyle="-",
+                        linestyle=base_linestyle,
                         label=line_label,
                     )
 
-            # Plot validation metrics (dashed lines)
+            # Plot validation metrics (using base line style - systematic approach)
             val_metrics = [m for m in metrics_to_plot if m.startswith("val_")]
             for metric_idx, metric in enumerate(val_metrics):
                 if metric in history:
                     values = history[metric]
                     epochs = list(range(1, len(values) + 1))
 
-                    # Use same color but dashed line for validation
+                    # Use same color and line style for validation (systematic approach)
                     line_label = (
                         f"{label} - {metric}"
                         if len(val_metrics) > 1
@@ -213,7 +281,7 @@ def create_training_history_plot_from_json(
                         values,
                         color=base_color,
                         linewidth=plot_utils.LINE_WIDTHS["thick"],
-                        linestyle="--",
+                        linestyle=base_linestyle,
                         label=line_label,
                     )
 
@@ -223,7 +291,85 @@ def create_training_history_plot_from_json(
     ax.set_title(title_prefix, fontsize=plot_utils.FONT_SIZES["xlarge"])
     ax.set_yscale("log")
     ax.grid(True, alpha=0.3, which="both")
-    ax.legend(fontsize=plot_utils.FONT_SIZES["normal"], loc="upper right")
+
+    # Create custom legend with dataset sizes (colors) and model types (line styles)
+    from matplotlib.lines import Line2D
+
+    # Create legend elements for dataset sizes (colors)
+    size_legend_elements = []
+    for size in dataset_sizes:
+        if size != "unknown":
+            color = size_to_color[size]
+            size_legend_elements.append(
+                Line2D(
+                    [0],
+                    [0],
+                    color=color,
+                    linewidth=plot_utils.LINE_WIDTHS["thick"],
+                    linestyle="-",
+                    label=f"{size} events",
+                )
+            )
+
+    # Create legend elements for model types (line styles)
+    model_legend_elements = []
+    for model_type in model_types:
+        if model_type != "unknown":
+            linestyle = model_to_linestyle.get(model_type, "-")
+            # Use a neutral color (gray) for line style legend
+            display_name = model_type.replace("_", " ").title()
+            model_legend_elements.append(
+                Line2D(
+                    [0],
+                    [0],
+                    color="gray",
+                    linewidth=plot_utils.LINE_WIDTHS["thick"],
+                    linestyle=linestyle,
+                    label=display_name,
+                )
+            )
+
+    # Combine legend elements with section headers
+    legend_elements = []
+
+    # Add dataset size section
+    if size_legend_elements:
+        # Add a separator line for dataset sizes
+        legend_elements.append(Line2D([0], [0], color="none", label="Dataset Sizes:"))
+        legend_elements.extend(size_legend_elements)
+
+    # Add model type section
+    if model_legend_elements:
+        # Add some spacing and then model types
+        legend_elements.append(
+            Line2D([0], [0], color="none", label="")  # Empty line for spacing
+        )
+        legend_elements.append(Line2D([0], [0], color="none", label="Model Types:"))
+        legend_elements.extend(model_legend_elements)
+
+    # Create the legend
+    legend = ax.legend(
+        handles=legend_elements,
+        fontsize=plot_utils.FONT_SIZES["normal"],
+        loc="upper right",
+        frameon=True,
+        fancybox=True,
+        shadow=True,
+    )
+
+    # Style the section headers differently
+    for i, text in enumerate(legend.get_texts()):
+        if text.get_text() in ["Dataset Sizes:", "Model Types:"]:
+            text.set_weight("bold")
+            text.set_color("black")
+        elif text.get_text() == "":  # Empty spacing line
+            text.set_visible(False)
+
+    # Hide the lines for section headers and spacing
+    for i, line in enumerate(legend.get_lines()):
+        if i < len(legend_elements):
+            if legend_elements[i].get_label() in ["Dataset Sizes:", "Model Types:", ""]:
+                line.set_visible(False)
 
     # Save the plot
     try:

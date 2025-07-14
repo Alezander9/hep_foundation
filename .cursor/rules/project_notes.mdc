@@ -10,7 +10,7 @@ We are building a foundation model for particle physics. This project analyzes H
 ## Coding Agent Rules
 - IMPORTANT: avoid `uv pip install <package>` in favor of `uv add [--dev] <package>`
 - IMPORTANT: try to use `uv` commands instead of directly editing `pyproject.toml` to ensure the .venv does not desync
-- IMPORTANT: Do not ever write custom tests for functionality
+- IMPORTANT: Do not ever write one-off custom tests for functionality, always default to running pytest instead
 - **Linting & Formatting**: Uses` for linting and formatting. Run `uv run ruff check .` to check for issues and `uv run ruff format .` to format code after making significant changes.
 - **Testing**: Our project is tested with pytest. We have a comprehensive test for the foundation model pipeline, run it with: `uv run pytest tests/test_pipeline.py`
 - **Logging**: logger.debug should be used for temporary logging to understand an issue
@@ -40,7 +40,7 @@ We are building a foundation model for particle physics. This project analyzes H
 
 ## High-Level Structure
 - `src/` - Package source code
-- `scripts/` - Usage/utility scripts  
+- `scripts/` - Usage/utility scripts
 - `tests/` - Test suite
 - `jobs/` - Job submission files
 - `logs/` - Log outputs
@@ -56,11 +56,11 @@ We are building a foundation model for particle physics. This project analyzes H
 - Pipeline tries to reuse datasets from `_processed_datasets/` (matches `_dataset_config.yaml` settings)
 - Creates new datasets if none match config settings
 - Each config produces experiment folder in `_foundation_experiments/` (main results)
-- Config copy saved in experiment folder for reproducibility  
+- Config copy saved in experiment folder for reproducibility
 - Pipeline logs saved to `logs/`
 - `atlas_data/` holds temp downloaded ROOT files (auto-cleaned, can ignore)
 
-## Experiment Results Structure 
+## Experiment Results Structure
 Each experiment folder in `_foundation_experiments/` contains:
 - `_experiment_config.yaml` - Copy of original config for reproducibility
 - `_experiment_info.json` - Experiment metadata
@@ -84,7 +84,7 @@ Each experiment folder in `_foundation_experiments/` contains:
 - `scripts/test_gpu.py` - Test if TensorFlow can see GPU
 - `src/hep_foundation/utils/plot_utils.py` - Standardized plotting colors/labels
 - `.pre-commit-config.yaml` - Pre-commit hooks for code quality
-- `src/hep_foundation/config/logging_config.py`- Centralized logging configuration 
+- `src/hep_foundation/config/logging_config.py`- Centralized logging configuration
 - `src/hep_foundation/__init__.py` - Auto-initializes logging on package import
 
 ## Model Registry
@@ -94,7 +94,7 @@ Each experiment folder in `_foundation_experiments/` contains:
 
 ## Main Pipeline - Data Loading/Creation
 - Pipeline first tries to load existing datasets, creates new if none match config
-- Downloads ROOT files from CERN OpenData, unpacks and extracts quantities  
+- Downloads ROOT files from CERN OpenData, unpacks and extracts quantities
 - Uses feature/aggregator system for PhysLite data - can specify any PhysLite branch names in config
 - Derived features calculated from real branches (defined in `physlite_derived_features.py`)
   - Examples: eta from theta, pt from qOverP+theta, reduced chi-squared
@@ -120,7 +120,7 @@ Each event goes through `physlite_feature_processor.py` which:
   - Stacks multiple track features horizontally into final arrays
 - **Example**: Config takes top 30 highest-pt tracks, requires ≥10 tracks, zero-pads to exactly 30×N_features array
 
-## Main Pipeline - Model Creation  
+## Main Pipeline - Model Creation
 - Uses dynamic ModelFactory class to create different model types/architectures
 - Foundation models: autoencoder and VAE (variational autoencoder)
 - Prediction tasks: DNN predictor
@@ -180,7 +180,7 @@ Pipeline order: Training → Regression → Signal Classification → Anomaly De
 
 ## High-Level Structure
 - `src/` - Package source code
-- `scripts/` - Usage/utility scripts  
+- `scripts/` - Usage/utility scripts
 - `tests/` - Test suite
 - `jobs/` - Job submission files
 - `logs/` - Log outputs
@@ -196,11 +196,11 @@ Pipeline order: Training → Regression → Signal Classification → Anomaly De
 - Pipeline tries to reuse datasets from `_processed_datasets/` (matches `_dataset_config.yaml` settings)
 - Creates new datasets if none match config settings
 - Each config produces experiment folder in `_foundation_experiments/` (main results)
-- Config copy saved in experiment folder for reproducibility  
+- Config copy saved in experiment folder for reproducibility
 - Pipeline logs saved to `logs/`
 - `atlas_data/` holds temp downloaded ROOT files (auto-cleaned, can ignore)
 
-## Experiment Results Structure 
+## Experiment Results Structure
 Each experiment folder in `_foundation_experiments/` contains:
 - `_experiment_config.yaml` - Copy of original config for reproducibility
 - `_experiment_info.json` - Experiment metadata
@@ -232,7 +232,7 @@ Each experiment folder in `_foundation_experiments/` contains:
 
 ## Main Pipeline - Data Loading/Creation
 - Pipeline first tries to load existing datasets, creates new if none match config
-- Downloads ROOT files from CERN OpenData, unpacks and extracts quantities  
+- Downloads ROOT files from CERN OpenData, unpacks and extracts quantities
 - Uses feature/aggregator system for PhysLite data - can specify any PhysLite branch names in config
 - Derived features calculated from real branches (defined in `physlite_derived_features.py`)
   - Examples: eta from theta, pt from qOverP+theta, reduced chi-squared
@@ -258,7 +258,7 @@ Each event goes through `physlite_feature_processor.py` which:
   - Stacks multiple track features horizontally into final arrays
 - **Example**: Config takes top 30 highest-pt tracks, requires ≥10 tracks, zero-pads to exactly 30×N_features array
 
-## Main Pipeline - Model Creation  
+## Main Pipeline - Model Creation
 - Uses dynamic ModelFactory class to create different model types/architectures
 - Foundation models: autoencoder and VAE (variational autoencoder)
 - Prediction tasks: DNN predictor
