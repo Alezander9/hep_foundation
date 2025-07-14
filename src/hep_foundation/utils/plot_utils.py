@@ -59,6 +59,91 @@ FONT_SIZES = {
 # Line widths and marker sizes
 LINE_WIDTHS = {"thin": 0.5, "normal": 1.0, "thick": 2.0, "heavy": 3.0}
 
+# Line styles for systematic model type differentiation
+LINE_STYLES = {
+    "solid": "-",
+    "dashed": "--",
+    "dotted": ":",
+    "dashdot": "-.",
+    "densely_dashed": (0, (5, 2)),
+    "densely_dotted": (0, (1, 1)),
+    "loosely_dashed": (0, (5, 10)),
+    "loosely_dotted": (0, (1, 10)),
+}
+
+# Model type to line style mapping for systematic plotting
+MODEL_LINE_STYLES = {
+    "from_scratch": "-",  # Solid line
+    "fine_tuned": "--",  # Dashed line
+    "fixed_encoder": ":",  # Dotted line
+    "fixed": ":",  # Alternative name for fixed encoder
+}
+
+# Additional distinguishable line styles for reference
+# These provide more options if you need to distinguish more model types
+EXTENDED_LINE_STYLES = {
+    "solid": "-",
+    "dashed": "--",
+    "dotted": ":",
+    "dashdot": "-.",  # Dash-dot line (alternating dash and dot)
+    "densely_dashed": (0, (5, 2)),  # Tightly spaced dashes
+    "densely_dotted": (0, (1, 1)),  # Tightly spaced dots
+    "loosely_dashed": (0, (5, 10)),  # Widely spaced dashes
+    "loosely_dotted": (0, (1, 10)),  # Widely spaced dots
+}
+
+
+def get_model_line_style(model_type: str) -> str:
+    """
+    Get the line style for a given model type.
+
+    Args:
+        model_type: Model type string (e.g., 'from_scratch', 'fine_tuned', 'fixed_encoder')
+
+    Returns:
+        Matplotlib line style string
+    """
+    return MODEL_LINE_STYLES.get(model_type.lower(), "-")  # Default to solid line
+
+
+def get_available_line_styles() -> dict:
+    """
+    Get all available line styles for plotting.
+
+    Returns:
+        Dictionary of line style names and their matplotlib codes
+    """
+    return EXTENDED_LINE_STYLES.copy()
+
+
+def print_line_style_reference():
+    """
+    Print a reference of all available line styles.
+    Useful for choosing additional line styles for new model types.
+    """
+    print("Available Line Styles:")
+    print("=" * 40)
+    print("Currently used in MODEL_LINE_STYLES:")
+    for model, style in MODEL_LINE_STYLES.items():
+        style_name = next(
+            (name for name, code in EXTENDED_LINE_STYLES.items() if code == style),
+            "unknown",
+        )
+        print(f"  {model:<15} : {style:<10} ({style_name})")
+
+    print("\nAll available line styles:")
+    for name, code in EXTENDED_LINE_STYLES.items():
+        print(f"  {name:<15} : {code}")
+
+    print("\nNote: The most distinguishable line styles are:")
+    print("  - Solid line (-)")
+    print("  - Dashed line (--)")
+    print("  - Dotted line (:)")
+    print("  - Dash-dot line (-.) - alternating dash and dot")
+    print("  - Densely dashed - tightly spaced dashes")
+    print("  - Loosely dashed - widely spaced dashes")
+
+
 MARKER_SIZES = {"tiny": 2, "small": 4, "normal": 6, "large": 8, "xlarge": 10}
 
 # ============================================================================
