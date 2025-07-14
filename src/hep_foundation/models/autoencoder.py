@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import tensorflow as tf
@@ -158,7 +159,9 @@ class AutoEncoder(BaseModel):
             "name": self.name,
         }
 
-    def create_plots(self, plots_dir: Path) -> None:
+    def create_plots(
+        self, plots_dir: Path, training_history_json_path: Optional[Path] = None
+    ) -> None:
         """Create autoencoder-specific plots"""
         # For autoencoder, we might want to show:
         # 1. Latent space distributions

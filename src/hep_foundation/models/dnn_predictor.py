@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import tensorflow as tf
@@ -206,19 +207,25 @@ class DNNPredictor(BaseModel):
             "name": self.name,
         }
 
-    def create_plots(self, plots_dir: Path) -> None:
-        """Create predictor-specific visualization plots"""
+    def create_plots(
+        self, plots_dir: Path, training_history_json_path: Optional[Path] = None
+    ) -> None:
+        """Create DNN predictor-specific plots"""
+        self.logger.info("Creating DNN predictor plots...")
         plots_dir.mkdir(parents=True, exist_ok=True)
 
-        # Plot model architecture
+        # Example: Plot model architecture
         tf.keras.utils.plot_model(
             self.model,
-            to_file=str(plots_dir / "model_architecture.png"),
+            to_file=str(plots_dir / "dnn_predictor_architecture.png"),
             show_shapes=True,
             show_layer_names=True,
+            expand_nested=True,
         )
 
-        # Add prediction vs. truth scatter plots if we have validation data
-        if hasattr(self, "_validation_data"):
-            # Implementation for prediction vs. truth plots
-            pass
+        self.logger.info("Created DNN predictor architecture plot")
+
+        # Could add more DNN-specific visualizations:
+        # - Feature importance
+        # - Prediction distributions
+        # - Learning curves
