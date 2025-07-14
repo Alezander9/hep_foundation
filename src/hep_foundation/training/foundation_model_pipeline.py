@@ -567,6 +567,41 @@ class FoundationModelPipeline:
                     metadata=ensure_serializable(model_metadata),
                 )
 
+                # Create VAE-specific plots including training history
+                self.logger.info("Creating VAE training plots...")
+                training_plots_dir = (
+                    self.experiments_output_dir / experiment_id / "training"
+                )
+                training_plots_dir.mkdir(parents=True, exist_ok=True)
+
+                # Find the training history JSON file that was saved by ModelTrainer
+                training_history_files = list(
+                    training_plots_dir.glob("training_history_*.json")
+                )
+                training_history_json_path = None
+                if training_history_files:
+                    # Use the most recent training history file
+                    training_history_json_path = max(
+                        training_history_files, key=lambda x: x.stat().st_mtime
+                    )
+                    self.logger.info(
+                        f"Using training history from: {training_history_json_path}"
+                    )
+                else:
+                    self.logger.warning(
+                        "No training history JSON file found for plot generation"
+                    )
+
+                try:
+                    model.create_plots(training_plots_dir, training_history_json_path)
+                    self.logger.info("VAE training plots created successfully")
+                except Exception as plot_e:
+                    self.logger.error(f"Failed to create VAE plots: {str(plot_e)}")
+                    # Don't fail the entire pipeline if plot creation fails
+                    import traceback
+
+                    traceback.print_exc()
+
             except Exception as e:
                 self.logger.error(f"\nTraining failed with error: {str(e)}")
                 self.logger.info("Dataset inspection:")

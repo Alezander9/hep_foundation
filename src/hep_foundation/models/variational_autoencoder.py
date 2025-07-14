@@ -343,16 +343,63 @@ class VariationalAutoEncoder(BaseModel):
             "name": self.name,
         }
 
-    def create_plots(self, plots_dir: Path) -> None:
+    def create_plots(
+        self, plots_dir: Path, training_history_json_path: Optional[Path] = None
+    ) -> None:
         """Create VAE-specific visualization plots"""
         self.logger.info("Creating VAE-specific plots...")
         plots_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            if hasattr(self.model, "history") and self.model.history is not None:
+            # First try to load history from provided JSON file path
+            if training_history_json_path and training_history_json_path.exists():
+                self.logger.info(
+                    f"Loading training history from: {training_history_json_path}"
+                )
+                with open(training_history_json_path) as f:
+                    training_data = json.load(f)
+                    self._history = training_data.get("history", {})
+            # Fallback to searching for training history JSON files in the plots_dir parent
+            elif training_history_json_path is None:
+                # Look for training history JSON files in the training directory
+                training_dir = plots_dir.parent
+                if training_dir.name != "training":
+                    training_dir = plots_dir.parent / "training"
+
+                if training_dir.exists():
+                    json_files = list(training_dir.glob("training_history_*.json"))
+                    if json_files:
+                        # Use the most recent training history file
+                        latest_json = max(json_files, key=lambda x: x.stat().st_mtime)
+                        self.logger.info(
+                            f"Found training history JSON file: {latest_json}"
+                        )
+                        with open(latest_json) as f:
+                            training_data = json.load(f)
+                            self._history = training_data.get("history", {})
+                    else:
+                        self.logger.warning(
+                            f"No training history JSON files found in {training_dir}"
+                        )
+                        self._history = {}
+                else:
+                    self.logger.warning(f"Training directory not found: {training_dir}")
+                    self._history = {}
+            # Fallback to in-memory history (legacy support)
+            elif hasattr(self.model, "history") and self.model.history is not None:
+                self.logger.info("Using in-memory training history (legacy mode)")
                 self._history = self.model.history.history
+            elif hasattr(self, "_history") and self._history:
+                self.logger.info("Using existing _history attribute")
+                # _history is already set, use it as-is
             else:
-                self.logger.warning("No training history found in model")
+                self.logger.warning(
+                    "No training history found in JSON file, model, or _history attribute"
+                )
+                return
+
+            if not self._history:
+                self.logger.warning("Training history is empty")
                 return
 
             self.logger.info(f"Available metrics: {list(self._history.keys())}")

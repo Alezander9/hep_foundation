@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import tensorflow as tf
 
@@ -95,7 +95,9 @@ class BaseModel(ABC):
         self.model.load_weights(path)
 
     @abstractmethod
-    def create_plots(self, plots_dir: Path) -> None:
+    def create_plots(
+        self, plots_dir: Path, training_history_json_path: Optional[Path] = None
+    ) -> None:
         """Create model-specific plots"""
         pass
 
