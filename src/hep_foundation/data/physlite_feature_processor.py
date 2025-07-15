@@ -463,7 +463,11 @@ class PhysliteFeatureProcessor:
         return selected_features
 
     def _process_event(
-        self, event_data: dict[str, np.ndarray], task_config: TaskConfig
+        self,
+        event_data: dict[str, np.ndarray],
+        task_config: TaskConfig,
+        plotting_enabled: bool = False,
+        need_more_zero_bias_samples: bool = False,
     ) -> Optional[dict[str, np.ndarray]]:
         """
         Process a single event using the task configuration.
@@ -472,6 +476,8 @@ class PhysliteFeatureProcessor:
         Args:
             event_data: Dictionary mapping branch names (real and derived) to their raw values
             task_config: TaskConfig object containing event filters, input features, and labels
+            plotting_enabled: Whether plotting is enabled
+            need_more_zero_bias_samples: Whether we still need more zero-bias samples for plotting
 
         Returns:
             Dictionary of processed features or None if event rejected. Structure:
@@ -489,11 +495,19 @@ class PhysliteFeatureProcessor:
                           "scalar_features": {branch_name: value, ...},
                           "aggregated_features": {agg_key: {"array": ..., "plot_feature_names": [...]}}
                      }, ...
-                ]
+                ],
+                "passed_filters": bool  # Add this to track filter status
             }
         """
-        # Apply event filters first
-        if not self._apply_event_filters(event_data, task_config.event_filters):
+        # Apply event filters first and track the result
+        passed_filters = self._apply_event_filters(
+            event_data, task_config.event_filters
+        )
+
+        # If event doesn't pass filters, only continue if we need zero-bias samples for plotting
+        if not passed_filters and not (
+            plotting_enabled and need_more_zero_bias_samples
+        ):
             return None
 
         # Process input selection config
@@ -517,6 +531,7 @@ class PhysliteFeatureProcessor:
             "aggregated_features": {},
             "label_features": [],
             "num_tracks_for_plot": None,  # Initialize
+            "passed_filters": passed_filters,  # Track filter status
         }
 
         # Add input aggregators with branch names and n_valid_elements
@@ -616,7 +631,12 @@ class PhysliteFeatureProcessor:
                 }
             final_result["label_features"].append(processed_label)
 
-        return final_result
+        # Only return the result for dataset creation if the event passed filters
+        if passed_filters:
+            return final_result
+        else:
+            # Event failed filters but was processed for zero-bias plotting - don't include in dataset
+            return None
 
     def _convert_stl_vector_array(self, branch_name: str, data: Any) -> np.ndarray:
         """
@@ -1090,7 +1110,10 @@ class PhysliteFeatureProcessor:
         # --- Plotting Setup ---
         plotting_enabled = plot_distributions and plot_output is not None
         max_plot_samples_total = 5000  # Overall target for plotting samples
-        overall_plot_samples_count = 0  # Counter for total samples accumulated
+
+        # Separate counters for zero-bias vs post-selection samples
+        overall_plot_samples_count = 0  # Counter for post-selection samples
+        zero_bias_samples_count = 0  # Counter for zero-bias samples
         samples_per_catalog = 0  # Target samples from each catalog
         num_catalogs_to_process = len(catalog_paths)
 
@@ -1100,13 +1123,14 @@ class PhysliteFeatureProcessor:
                 1, max_plot_samples_total // num_catalogs_to_process
             )
             self.logger.info(
-                f"Plotting enabled. Aiming for ~{samples_per_catalog} samples per catalog (total target: {max_plot_samples_total})."
+                f"Plotting enabled. Aiming for ~{samples_per_catalog} samples per catalog for both zero-bias and post-selection (total target: {max_plot_samples_total} each)."
             )
         elif plotting_enabled:
             self.logger.warning("Plotting enabled, but no catalog paths found.")
             plotting_enabled = False  # Disable if no catalogs
 
-        # Data accumulators for plotting (only if enabled)
+        # Data accumulators for plotting (only if enabled) - DUAL SETS
+        # Post-selection data (existing)
         sampled_scalar_features = defaultdict(list) if plotting_enabled else None
         sampled_aggregated_features = defaultdict(list) if plotting_enabled else None
         sampled_event_n_tracks_list = (
@@ -1115,12 +1139,23 @@ class PhysliteFeatureProcessor:
         raw_histogram_data_for_file = (
             {} if plotting_enabled else None
         )  # To store hist data for saving
+
+        # Zero-bias data (new)
+        zero_bias_scalar_features = defaultdict(list) if plotting_enabled else None
+        zero_bias_aggregated_features = defaultdict(list) if plotting_enabled else None
+        zero_bias_event_n_tracks_list = (
+            [] if plotting_enabled else None
+        )  # For track multiplicity
+        zero_bias_histogram_data_for_file = (
+            {} if plotting_enabled else None
+        )  # To store hist data for saving
         # --- End Plotting Setup ---
 
         # --- Main Processing Loop ---
         for catalog_idx, catalog_path in enumerate(catalog_paths):
-            # Reset counter for this specific catalog
+            # Reset counters for this specific catalog
             current_catalog_samples_count = 0
+            current_catalog_zero_bias_count = 0
 
             self.logger.info(
                 f"Processing catalog {catalog_idx + 1}/{num_catalogs_to_process} with path: {catalog_path}"
@@ -1261,10 +1296,73 @@ class PhysliteFeatureProcessor:
                                 if calculation_failed:
                                     continue  # Skip this event entirely if any derived feature calculation failed
 
+                                # --- Determine if we need more zero-bias samples ---
+                                need_more_zero_bias_samples = (
+                                    plotting_enabled
+                                    and current_catalog_zero_bias_count
+                                    < samples_per_catalog
+                                )
+
                                 # --- Process Event (using data with derived features added) ---
                                 result = self._process_event(
-                                    processed_event_data, task_config
+                                    processed_event_data,
+                                    task_config,
+                                    plotting_enabled,
+                                    need_more_zero_bias_samples,
                                 )
+
+                                # --- Handle zero-bias data collection (before filter check) ---
+                                if (
+                                    plotting_enabled
+                                    and current_catalog_zero_bias_count
+                                    < samples_per_catalog
+                                ):
+                                    # Try to process for zero-bias plotting even if filters failed
+                                    zero_bias_result = None
+                                    if result is None:
+                                        # Event failed filters, but try to process for zero-bias plotting
+                                        zero_bias_result = self._process_event(
+                                            processed_event_data,
+                                            task_config,
+                                            plotting_enabled=True,
+                                            need_more_zero_bias_samples=True,
+                                        )
+                                    else:
+                                        # Event passed filters, use the same result for zero-bias
+                                        zero_bias_result = result
+
+                                    if zero_bias_result is not None:
+                                        # Accumulate zero-bias data
+                                        for name, value in zero_bias_result[
+                                            "scalar_features"
+                                        ].items():
+                                            zero_bias_scalar_features[name].append(
+                                                value
+                                            )
+
+                                        for (
+                                            agg_key,
+                                            agg_data_with_plot_names,
+                                        ) in zero_bias_result[
+                                            "aggregated_features"
+                                        ].items():
+                                            zero_bias_aggregated_features[
+                                                agg_key
+                                            ].append(agg_data_with_plot_names)
+
+                                        # Append num_tracks_for_plot for zero-bias
+                                        num_tracks = zero_bias_result.get(
+                                            "num_tracks_for_plot"
+                                        )
+                                        if num_tracks is not None:
+                                            zero_bias_event_n_tracks_list.append(
+                                                num_tracks
+                                            )
+
+                                        current_catalog_zero_bias_count += 1
+                                        zero_bias_samples_count += 1
+
+                                # --- Handle post-selection data collection (only if event passed filters) ---
                                 if result is not None:
                                     # Store the result for dataset creation
                                     # Correctly extract only the arrays for the dataset
@@ -1314,7 +1412,7 @@ class PhysliteFeatureProcessor:
 
                                     catalog_stats["processed"] += 1
 
-                                    # --- Accumulate data for plotting (conditional on per-catalog count) ---
+                                    # --- Accumulate post-selection data for plotting ---
                                     if (
                                         plotting_enabled
                                         and current_catalog_samples_count
@@ -1341,12 +1439,8 @@ class PhysliteFeatureProcessor:
                                                 num_tracks
                                             )
 
-                                        current_catalog_samples_count += (
-                                            1  # Increment count for THIS catalog
-                                        )
-                                        overall_plot_samples_count += (
-                                            1  # Increment overall count
-                                        )
+                                        current_catalog_samples_count += 1
+                                        overall_plot_samples_count += 1
 
                                     # Update feature statistics
                                     # Note: This might need adjustment if derived features impact how stats are counted
@@ -1436,15 +1530,19 @@ class PhysliteFeatureProcessor:
                             f"Error deleting catalog file {catalog_path}: {delete_e}"
                         )
 
-        # --- Generate and Save Histogram Data (No direct plotting here) ---
-        if (
-            plotting_enabled
-            and overall_plot_samples_count > 0
-            and raw_histogram_data_for_file is not None
+        # --- Generate and Save Dual Histogram Data (Zero-bias + Post-selection) ---
+        # Helper function to generate histogram data for a dataset
+        def generate_histogram_data(
+            scalar_features_dict,
+            aggregated_features_dict,
+            event_n_tracks_list,
+            overall_samples_count,
+            data_type_name,
         ):
-            self.logger.info(
-                f"Preparing histogram data from {overall_plot_samples_count} sampled events for {plot_output}"
-            )
+            if overall_samples_count == 0:
+                return None
+
+            histogram_data = {}
 
             # Load existing bin edges metadata if available (for coordinated binning)
             existing_bin_edges = None
@@ -1453,25 +1551,23 @@ class PhysliteFeatureProcessor:
                     bin_edges_metadata_path
                 )
 
-            # Collect new bin edges that will be saved
-            new_bin_edges_metadata = {}
-
             # Add metadata including event count for legend display
-            raw_histogram_data_for_file["_metadata"] = {
+            histogram_data["_metadata"] = {
                 "total_events": int(stats["total_events"]),
                 "total_processed_events": int(stats["processed_events"]),
                 "total_features": int(stats["total_features"]),
                 "processing_time": float(stats["processing_time"]),
-                "total_sampled_events": int(overall_plot_samples_count),
+                "total_sampled_events": int(overall_samples_count),
                 "signal_key": signal_key if signal_key else "background",
                 "run_number": run_number
                 if run_number and not return_histogram_data
                 else None,
+                "data_type": data_type_name,  # "zero_bias" or "post_selection"
             }
 
             # Details for N_Tracks_per_Event
-            if sampled_event_n_tracks_list:
-                counts_arr = np.array(sampled_event_n_tracks_list)
+            if event_n_tracks_list:
+                counts_arr = np.array(event_n_tracks_list)
                 if counts_arr.size > 0:
                     if (
                         existing_bin_edges
@@ -1500,19 +1596,18 @@ class PhysliteFeatureProcessor:
                         counts, _ = np.histogram(
                             counts_arr, bins=bin_edges, density=True
                         )
-                    raw_histogram_data_for_file["N_Tracks_per_Event"] = {
+                    histogram_data["N_Tracks_per_Event"] = {
                         "counts": counts.tolist(),
                         "bin_edges": bin_edges.tolist(),
                     }
-                    new_bin_edges_metadata["N_Tracks_per_Event"] = bin_edges.tolist()
                 else:
-                    raw_histogram_data_for_file["N_Tracks_per_Event"] = {
+                    histogram_data["N_Tracks_per_Event"] = {
                         "counts": [],
                         "bin_edges": [],
                     }
 
             # Details for Scalar Features
-            for name, values_list in sampled_scalar_features.items():
+            for name, values_list in scalar_features_dict.items():
                 values_arr = np.array(values_list)
                 if values_arr.size > 0:
                     if existing_bin_edges and name in existing_bin_edges:
@@ -1537,16 +1632,15 @@ class PhysliteFeatureProcessor:
                             values_arr, bins=100, range=plot_range, density=True
                         )
 
-                    raw_histogram_data_for_file[name] = {
+                    histogram_data[name] = {
                         "counts": counts.tolist(),
                         "bin_edges": bin_edges.tolist(),
                     }
-                    new_bin_edges_metadata[name] = bin_edges.tolist()
                 else:
-                    raw_histogram_data_for_file[name] = {"counts": [], "bin_edges": []}
+                    histogram_data[name] = {"counts": [], "bin_edges": []}
 
             # Details for Aggregated Features
-            for agg_key, arrays_data_list in sampled_aggregated_features.items():
+            for agg_key, arrays_data_list in aggregated_features_dict.items():
                 if arrays_data_list:
                     plot_feature_names = arrays_data_list[0].get(
                         "plot_feature_names", []
@@ -1560,7 +1654,7 @@ class PhysliteFeatureProcessor:
                     if not actual_arrays_to_stack:
                         # If no arrays, store empty for all expected features
                         for k_idx, feature_name_val in enumerate(plot_feature_names):
-                            raw_histogram_data_for_file[feature_name_val] = {
+                            histogram_data[feature_name_val] = {
                                 "counts": [],
                                 "bin_edges": [],
                             }
@@ -1577,7 +1671,7 @@ class PhysliteFeatureProcessor:
                             for k_idx, feature_name_val in enumerate(
                                 plot_feature_names
                             ):
-                                raw_histogram_data_for_file[feature_name_val] = {
+                                histogram_data[feature_name_val] = {
                                     "counts": [],
                                     "bin_edges": [],
                                 }
@@ -1640,15 +1734,12 @@ class PhysliteFeatureProcessor:
                                         density=True,
                                     )
 
-                                raw_histogram_data_for_file[feature_name] = {
+                                histogram_data[feature_name] = {
                                     "counts": counts.tolist(),
                                     "bin_edges": bin_edges.tolist(),
                                 }
-                                new_bin_edges_metadata[feature_name] = (
-                                    bin_edges.tolist()
-                                )
                             else:
-                                raw_histogram_data_for_file[feature_name] = {
+                                histogram_data[feature_name] = {
                                     "counts": [],
                                     "bin_edges": [],
                                 }
@@ -1658,12 +1749,35 @@ class PhysliteFeatureProcessor:
                         )
                         # Store empty for all features of this problematic aggregator
                         for k_idx, feature_name_val in enumerate(plot_feature_names):
-                            raw_histogram_data_for_file[feature_name_val] = {
+                            histogram_data[feature_name_val] = {
                                 "counts": [],
                                 "bin_edges": [],
                             }
 
-            # Save the raw histogram data to plot_data folder (no individual plots) or return it
+            return histogram_data
+
+        # Generate post-selection histogram data (existing behavior)
+        if (
+            plotting_enabled
+            and overall_plot_samples_count > 0
+            and raw_histogram_data_for_file is not None
+        ):
+            self.logger.info(
+                f"Preparing post-selection histogram data from {overall_plot_samples_count} sampled events for {plot_output}"
+            )
+
+            raw_histogram_data_for_file = generate_histogram_data(
+                sampled_scalar_features,
+                sampled_aggregated_features,
+                sampled_event_n_tracks_list,
+                overall_plot_samples_count,
+                "post_selection",
+            )
+
+            # Collect new bin edges that will be saved
+            new_bin_edges_metadata = {}
+
+            # Save the post-selection histogram data to plot_data folder or return it
             if (
                 raw_histogram_data_for_file
                 and plot_output
@@ -1681,24 +1795,87 @@ class PhysliteFeatureProcessor:
                     )
                     with open(data_file_path, "w") as f_json:
                         json.dump(raw_histogram_data_for_file, f_json, indent=4)
-                    self.logger.info(f"Saved raw histogram data to {data_file_path}")
-
-                    # No individual plot generation - only save the JSON data
+                    self.logger.info(
+                        f"Saved post-selection histogram data to {data_file_path}"
+                    )
 
                 except Exception as e_save:
-                    self.logger.error(f"Failed to save histogram data: {e_save}")
+                    self.logger.error(
+                        f"Failed to save post-selection histogram data: {e_save}"
+                    )
+
+        # Generate zero-bias histogram data (new behavior)
+        if (
+            plotting_enabled
+            and zero_bias_samples_count > 0
+            and zero_bias_histogram_data_for_file is not None
+        ):
+            self.logger.info(
+                f"Preparing zero-bias histogram data from {zero_bias_samples_count} sampled events for {plot_output}"
+            )
+
+            zero_bias_histogram_data_for_file = generate_histogram_data(
+                zero_bias_scalar_features,
+                zero_bias_aggregated_features,
+                zero_bias_event_n_tracks_list,
+                zero_bias_samples_count,
+                "zero_bias",
+            )
+
+            # Save the zero-bias histogram data to plot_data folder or return it
+            if (
+                zero_bias_histogram_data_for_file
+                and plot_output
+                and not return_histogram_data
+            ):
+                data_file_path = None
+                try:
+                    # Create plot_data folder alongside the plots folder
+                    plot_data_dir = plot_output.parent.parent / "plot_data"
+                    plot_data_dir.mkdir(parents=True, exist_ok=True)
+
+                    # Save JSON to plot_data folder with zero_bias prefix
+                    data_file_path = plot_data_dir / (
+                        plot_output.stem + "_zero_bias_hist_data.json"
+                    )
+                    with open(data_file_path, "w") as f_json:
+                        json.dump(zero_bias_histogram_data_for_file, f_json, indent=4)
+                    self.logger.info(
+                        f"Saved zero-bias histogram data to {data_file_path}"
+                    )
+
+                except Exception as e_save:
+                    self.logger.error(
+                        f"Failed to save zero-bias histogram data: {e_save}"
+                    )
 
             # Save bin edges metadata if we have new bin edges to save
-            if bin_edges_metadata_path and new_bin_edges_metadata:
+            if bin_edges_metadata_path:
                 try:
-                    self._save_bin_edges_metadata(
-                        new_bin_edges_metadata, bin_edges_metadata_path
-                    )
+                    # Extract bin edges from the zero-bias data for saving (since it's processed first)
+                    new_bin_edges_metadata = {}
+                    for (
+                        feature_name,
+                        feature_data,
+                    ) in zero_bias_histogram_data_for_file.items():
+                        if (
+                            not feature_name.startswith("_")
+                            and "bin_edges" in feature_data
+                        ):
+                            new_bin_edges_metadata[feature_name] = feature_data[
+                                "bin_edges"
+                            ]
+
+                    if new_bin_edges_metadata:
+                        self._save_bin_edges_metadata(
+                            new_bin_edges_metadata, bin_edges_metadata_path
+                        )
                 except Exception as e_save_bin_edges:
                     self.logger.error(
                         f"Failed to save bin edges metadata: {e_save_bin_edges}"
                     )
-        # --- End of Histogram Data Generation and Plotting from JSON ---
+
+        # --- End of Dual Histogram Data Generation ---
 
         # Convert stats to native Python types
         stats = {
@@ -1708,11 +1885,19 @@ class PhysliteFeatureProcessor:
             "processing_time": float(stats["processing_time"]),
         }
 
+        # Return both post-selection and zero-bias histogram data if requested
+        histogram_data_to_return = None
+        if return_histogram_data:
+            histogram_data_to_return = {
+                "post_selection": raw_histogram_data_for_file,
+                "zero_bias": zero_bias_histogram_data_for_file,
+            }
+
         return (
             processed_inputs,
             processed_labels,
             stats,
-            raw_histogram_data_for_file if return_histogram_data else None,
+            histogram_data_to_return,
         )
 
     def _compute_dataset_normalization(
