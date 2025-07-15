@@ -1086,7 +1086,7 @@ class PhysliteFeatureProcessor:
             else:
                 # Ensure parent directory exists
                 plot_output.parent.mkdir(parents=True, exist_ok=True)
-                self.logger.warning(
+                self.logger.info(
                     "Plotting distributions is enabled. This will significantly slow down processing."
                 )
 

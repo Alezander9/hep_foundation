@@ -1,6 +1,5 @@
 import logging
 import shutil
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +23,16 @@ EXPECTED_ROOT_STRUCTURE = {
         "required": True,
         "description": "Foundation model experiments",
     },
+    "test_detailed.log": {
+        "type": "file",
+        "required": True,
+        "description": "Detailed test execution logs",
+    },
+    "test_run.log": {
+        "type": "file",
+        "required": False,
+        "description": "Pytest execution logs (when using wrapper script)",
+    },
 }
 
 # Pipeline output root structure (_test_results/test_foundation_experiments/)
@@ -32,11 +41,6 @@ EXPECTED_PIPELINE_ROOT_STRUCTURE = {
         "type": "file",
         "required": True,
         "description": "Model registry index file",
-    },
-    "test_logs": {
-        "type": "directory",
-        "required": True,
-        "description": "Test execution logs",
     },
     "*_Foundation_VAE_Model": {
         "type": "pattern",
@@ -256,6 +260,11 @@ EXPECTED_DATASET_STRUCTURE = {
                 "required": False,
                 "description": "Background histogram data",
             },
+            "atlas_dataset_features_zero_bias_hist_data.json": {
+                "type": "file",
+                "required": False,
+                "description": "Background zero-bias histogram data",
+            },
             "background_bin_edges_metadata.json": {
                 "type": "file",
                 "required": False,
@@ -265,6 +274,11 @@ EXPECTED_DATASET_STRUCTURE = {
                 "type": "pattern",
                 "required": False,
                 "description": "Signal histogram data files",
+            },
+            "*_dataset_features_zero_bias_hist_data.json": {
+                "type": "pattern",
+                "required": False,
+                "description": "Signal zero-bias histogram data files",
             },
         },
     },
@@ -277,6 +291,11 @@ EXPECTED_DATASET_STRUCTURE = {
                 "type": "file",
                 "required": False,
                 "description": "Feature comparison plot",
+            },
+            "comparison_input_features_zero_bias_background_vs_signals.png": {
+                "type": "file",
+                "required": False,
+                "description": "Zero-bias feature comparison plot",
             },
         },
     },
@@ -518,10 +537,8 @@ def experiment_dir():
     if base_dir.exists():
         shutil.rmtree(base_dir)
 
-    # Create the main test directory and the logs subdirectory
+    # Create the main test directory
     experiments_dir.mkdir(parents=True, exist_ok=True)
-    log_dir = experiments_dir / "test_logs"
-    log_dir.mkdir(exist_ok=True)
 
     print(f"\nTest results will be stored in: {experiments_dir.absolute()}\n")
 
@@ -550,12 +567,14 @@ def pipeline(experiment_dir):
 @pytest.fixture(scope="session", autouse=True)
 def setup_logging(experiment_dir):
     """Configure logging for all tests"""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_dir = Path(experiment_dir) / "test_logs"
-    log_dir.mkdir(exist_ok=True)
+    # Use simpler log path structure - put logs directly in _test_results
+    results_dir = Path(
+        experiment_dir
+    ).parent  # Go up from test_foundation_experiments to _test_results
+    log_file = results_dir / "test_detailed.log"
 
-    # Configure root logger to write to both file and console
-    log_file = log_dir / f"test_run_{timestamp}.log"
+    # Ensure the directory exists
+    results_dir.mkdir(exist_ok=True)
 
     # Console handler with custom formatter
     console_handler = logging.StreamHandler()
