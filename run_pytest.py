@@ -2,36 +2,31 @@
 """
 Pytest wrapper for the HEP Foundation pipeline test.
 
-This script runs the pipeline test with improved output management:
-- Logs everything to a single, easy-to-find log file
-- Only shows warnings/errors in the terminal
-- Provides clear feedback about log locations
+This script runs the pipeline test with simple output management:
+- All logs go to pytest.log (handled by test setup)
+- Only warnings, errors, and progress are shown in stdout
+- Clean start and end messages
 """
 
 import subprocess
 import sys
 from datetime import datetime
-from pathlib import Path
 
 
 def run_pytest_with_filtered_output():
-    """Run pytest and filter output to show only warnings/errors in terminal."""
+    """Run pytest and show only warnings/errors/progress in stdout."""
 
-    # Setup paths
-    results_dir = Path("_test_results")
-    results_dir.mkdir(exist_ok=True)
-    log_file = results_dir / "test_run.log"
-
+    # Print starting message
     print("=" * 60)
     print("HEP Foundation Pipeline Test")
     print("=" * 60)
     print(f"Starting time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("Full logs will be saved to: _test_results/test_run.log")
-    print("Only warnings and errors will be shown below.")
+    print("Full logs saved to: _test_results/pytest.log")
+    print("Showing only warnings, errors, and progress below:")
     print("=" * 60)
     print()
 
-    # Run pytest with unbuffered output
+    # Run pytest
     cmd = [
         sys.executable,
         "-u",
@@ -44,7 +39,7 @@ def run_pytest_with_filtered_output():
     ]
 
     try:
-        # Start the process
+        # Start the process and capture output
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -53,70 +48,39 @@ def run_pytest_with_filtered_output():
             bufsize=1,
         )
 
-        # Process output line by line
-        important_lines = []
-        total_lines = 0
+        # Filter output - only show warnings, errors, and progress
+        for line in process.stdout:
+            line_lower = line.lower().strip()
 
-        with open(log_file, "w") as f:
-            f.write("HEP Foundation Pipeline Test Log\n")
-            f.write(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"Command: {' '.join(cmd)}\n")
-            f.write("=" * 80 + "\n\n")
-
-            for line in process.stdout:
-                total_lines += 1
-
-                # Write everything to log file
-                f.write(line)
-                f.flush()  # Ensure immediate writing
-
-                # Check if line contains important information
-                line_lower = line.lower().strip()
-                is_important = (
-                    "error" in line_lower
-                    or "warning" in line_lower
-                    or "failed" in line_lower
-                    or "exception" in line_lower
-                    or "traceback" in line_lower
-                    or line.startswith("FAILED ")
-                    or line.startswith("ERROR ")
-                    or "assertion" in line_lower
-                    or "::" in line
-                    and ("PASSED" in line or "FAILED" in line)
-                    or line.strip().startswith("=")
-                    and ("FAILURES" in line or "ERRORS" in line)
-                )
-
-                if is_important:
-                    important_lines.append(line.rstrip())
-                    print(line.rstrip())
+            # Check if line contains warnings, errors, or progress
+            if any(
+                keyword in line_lower
+                for keyword in [
+                    "warning",
+                    "error",
+                    "failed",
+                    "exception",
+                    "traceback",
+                    "assertion",
+                    "critical",
+                    "progress",
+                ]
+            ):
+                print(line.rstrip())
 
         # Wait for process to complete
         return_code = process.wait()
 
-        # Write completion info to log
-        with open(log_file, "a") as f:
-            f.write(
-                f"\n\nTest completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-            )
-            f.write(f"Exit code: {return_code}\n")
-            f.write(f"Total lines processed: {total_lines}\n")
-
+        # Print ending message
         print()
         print("=" * 60)
         print(f"Test completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"Exit code: {return_code}")
-        print()
-        print("📄 Full logs available at: _test_results/test_run.log")
 
         if return_code == 0:
             print("✅ Test completed successfully!")
         else:
-            print("❌ Test failed - check logs for details")
-            print()
-            print("Recent important output:")
-            for line in important_lines[-10:]:  # Show last 10 important lines
-                print(f"  {line}")
+            print("❌ Test failed - check pytest.log for details")
 
         print("=" * 60)
 
@@ -124,16 +88,10 @@ def run_pytest_with_filtered_output():
 
     except KeyboardInterrupt:
         print("\n🛑 Test interrupted by user")
-        with open(log_file, "a") as f:
-            f.write(
-                f"\n\nTest interrupted: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-            )
         return 130
 
     except Exception as e:
         print(f"\n💥 Error running test: {e}")
-        with open(log_file, "a") as f:
-            f.write(f"\n\nError running test: {e}\n")
         return 1
 
 

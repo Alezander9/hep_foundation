@@ -437,6 +437,7 @@ class DatasetManager:
                         task_config=dataset_config.task_config,
                         run_number=run_number,
                         catalog_limit=dataset_config.catalog_limit,
+                        event_limit=dataset_config.event_limit,
                         delete_catalogs=delete_catalogs,
                         plot_distributions=dataset_config.plot_distributions,
                         plot_output=plot_output,
@@ -753,6 +754,7 @@ class DatasetManager:
                     inputs, labels, stats, _ = self.feature_processor._process_data(
                         task_config=dataset_config.task_config,
                         signal_key=signal_key,
+                        event_limit=dataset_config.event_limit,
                         delete_catalogs=False,  # Always keep signal catalogs
                         plot_distributions=dataset_config.plot_distributions,
                         plot_output=plot_output_for_signal_json,  # Pass path for JSON saving

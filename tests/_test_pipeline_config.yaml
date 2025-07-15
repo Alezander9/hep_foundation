@@ -10,6 +10,7 @@ dataset:
   run_numbers: ["00298967", "00311481"]  # Just 2 runs for speed
   signal_keys: ["zprime_tt", "wprime_taunu", "dm_associated", "leptoquark", "dm_4top_scalar"]  # 5 signals for testing
   catalog_limit: 2  # Very small for testing
+  event_limit: 2000  # Limit events per catalog for faster testing
   validation_fraction: 0.1
   test_fraction: 0.1
   shuffle_buffer: 100  # Small buffer
@@ -31,8 +32,7 @@ task:
         - "derived.InDetTrackParticlesAuxDyn.pt"
         - "derived.InDetTrackParticlesAuxDyn.reducedChiSquared"
       filter_branches:
-        - {"branch": "InDetTrackParticlesAuxDyn.d0", "min": -5.0, "max": 5.0}
-        - {"branch": "InDetTrackParticlesAuxDyn.z0", "min": -80.0, "max": 80.0}
+        - {"branch": "InDetTrackParticlesAuxDyn.z0", "min": -100.0, "max": 100.0}
       sort_by_branch: null
       min_length: 10
       max_length: 30
@@ -103,8 +103,8 @@ training:
 
 # Evaluation Settings - minimal for testing
 evaluation:
-  regression_data_sizes: [1000, 2000]  # Small sizes for testing
-  signal_classification_data_sizes: [1000, 2000]  # Small sizes for testing
+  regression_data_sizes: [500, 1000]  # Small sizes for testing
+  signal_classification_data_sizes: [500, 1000]  # Small sizes for testing
   fixed_epochs: 3  # Very few epochs for testing
   anomaly_eval_batch_size: 512  # Smaller for testing
 

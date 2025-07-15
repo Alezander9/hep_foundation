@@ -1039,6 +1039,7 @@ class PhysliteFeatureProcessor:
         run_number: Optional[str] = None,
         signal_key: Optional[str] = None,
         catalog_limit: Optional[int] = None,
+        event_limit: Optional[int] = None,
         plot_distributions: bool = False,
         delete_catalogs: bool = True,
         plot_output: Optional[Path] = None,
@@ -1056,6 +1057,7 @@ class PhysliteFeatureProcessor:
             run_number: Optional run number for ATLAS data
             signal_key: Optional signal type for signal data
             catalog_limit: Optional limit on number of catalogs to process
+            event_limit: Optional limit on number of events to process per catalog (only events that pass selection count)
             plot_distributions: Whether to generate distribution plots
             delete_catalogs: Whether to delete catalogs after processing
             plot_output: Optional complete path (including filename) for saving plots
@@ -1204,6 +1206,8 @@ class PhysliteFeatureProcessor:
             # Reset counters for this specific catalog
             current_catalog_samples_count = 0
             current_catalog_zero_bias_count = 0
+            processed_events_in_catalog = 0  # Counter for event_limit
+            catalog_event_limit_reached = False  # Flag to break out of batch loop
 
             self.logger.info(
                 f"Processing catalog {catalog_idx + 1}/{num_catalogs_to_process} with path: {catalog_path}"
@@ -1451,6 +1455,18 @@ class PhysliteFeatureProcessor:
                                         first_event_logged = True  # Set flag after logging the first processed event
 
                                     catalog_stats["processed"] += 1
+                                    processed_events_in_catalog += 1
+
+                                    # Check event limit for this catalog
+                                    if (
+                                        event_limit is not None
+                                        and processed_events_in_catalog >= event_limit
+                                    ):
+                                        self.logger.info(
+                                            f"Reached event limit of {event_limit} for catalog {catalog_idx + 1}. Stopping processing of this catalog."
+                                        )
+                                        catalog_event_limit_reached = True
+                                        break  # Exit the event loop for this catalog
 
                                     # --- Accumulate post-selection data for plotting ---
                                     if (
@@ -1571,6 +1587,10 @@ class PhysliteFeatureProcessor:
                                 exc_info=True,
                             )
                             continue  # Try to continue with the next batch
+
+                        # Check if event limit was reached during this batch
+                        if catalog_event_limit_reached:
+                            break  # Exit the batch iteration loop
 
                 # Update statistics
                 catalog_duration = (datetime.now() - catalog_start_time).total_seconds()
