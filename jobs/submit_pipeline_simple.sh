@@ -7,7 +7,7 @@
 #SBATCH -n 1
 #SBATCH -c 32
 #SBATCH --gpus-per-task=1
-#SBATCH --time=05:00:00
+#SBATCH --time=08:00:00
 #SBATCH --output=logs/slurm-simple-%j.out
 #SBATCH --error=logs/slurm-simple-%j.err
 #SBATCH --mail-type=BEGIN,END,FAIL

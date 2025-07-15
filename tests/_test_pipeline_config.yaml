@@ -8,7 +8,7 @@ created_by: "automated_test"
 # Dataset Configuration - minimal for fast testing
 dataset:
   run_numbers: ["00298967", "00311481"]  # Just 2 runs for speed
-  signal_keys: ["zprime_tt", "zprime_bb"]  # 2 signals for testing
+  signal_keys: ["zprime_tt", "wprime_taunu", "dm_associated", "leptoquark", "dm_4top_scalar"]  # 5 signals for testing
   catalog_limit: 2  # Very small for testing
   validation_fraction: 0.1
   test_fraction: 0.1
@@ -30,7 +30,9 @@ task:
         - "derived.InDetTrackParticlesAuxDyn.eta"
         - "derived.InDetTrackParticlesAuxDyn.pt"
         - "derived.InDetTrackParticlesAuxDyn.reducedChiSquared"
-      filter_branches: []
+      filter_branches:
+        - {"branch": "InDetTrackParticlesAuxDyn.d0", "min": -5.0, "max": 5.0}
+        - {"branch": "InDetTrackParticlesAuxDyn.z0", "min": -80.0, "max": 80.0}
       sort_by_branch: null
       min_length: 10
       max_length: 30

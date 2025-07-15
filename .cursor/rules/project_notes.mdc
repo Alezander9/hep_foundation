@@ -3,17 +3,20 @@ description: "Explanation of hep_foundation Project"
 alwaysApply: true
 ---
 
-# HEP Foundation Project Overview
 
-We are building a foundation model for particle physics. This project analyzes High Energy Physics data, specifically ATLAS PHYSLITE data.
-
-## Coding Agent Rules
+<rules>
 - IMPORTANT: avoid `uv pip install <package>` in favor of `uv add [--dev] <package>`
 - IMPORTANT: try to use `uv` commands instead of directly editing `pyproject.toml` to ensure the .venv does not desync
 - IMPORTANT: Do not ever write one-off custom tests for functionality, always default to running pytest instead
 - **Linting & Formatting**: Uses` for linting and formatting. Run `uv run ruff check .` to check for issues and `uv run ruff format .` to format code after making significant changes.
-- **Testing**: Our project is tested with pytest. We have a comprehensive test for the foundation model pipeline, run it with: `uv run pytest tests/test_pipeline.py`
+- **Testing**: Our project is tested with pytest. We have a comprehensive test for the foundation model pipeline, run it with: `pytest tests/test_pipeline.py`
 - **Logging**: logger.debug should be used for temporary logging to understand an issue
+</rules>
+
+<project_overview>
+# HEP Foundation Project Overview
+
+We are building a foundation model for particle physics. This project analyzes High Energy Physics data, specifically ATLAS PHYSLITE data.
 
 ## Setup
 - Uses uv + pyproject.toml for .venv management
@@ -291,3 +294,5 @@ Pipeline order: Training → Regression → Signal Classification → Anomaly De
 - Runs foundation model on ATLAS background and signal data
 - Compares MSE and KLD between background and signal
 - Uses foundation model backbone for anomaly scoring
+
+</project_overview>

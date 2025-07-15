@@ -423,9 +423,11 @@ class DatasetManager:
                     plot_data_dir / "background_bin_edges_metadata.json"
                 )
 
-            # Accumulate histogram data across all runs
+            # Accumulate histogram data across all runs - separate for post-selection and zero-bias
             accumulated_histogram_data = {}
+            accumulated_zero_bias_histogram_data = {}
             accumulated_sampled_events = 0
+            accumulated_zero_bias_sampled_events = 0
 
             first_event_logged = False
             for run_number in dataset_config.run_numbers:
@@ -451,15 +453,45 @@ class DatasetManager:
                     total_stats["total_features"] += stats["total_features"]
                     total_stats["processing_time"] += stats["processing_time"]
 
-                    # Accumulate histogram data if available
+                    # Accumulate histogram data if available (now handles both post-selection and zero-bias)
                     if histogram_data and dataset_config.plot_distributions:
-                        self._accumulate_histogram_data(
-                            accumulated_histogram_data, histogram_data
-                        )
-                        if "_metadata" in histogram_data:
-                            accumulated_sampled_events += histogram_data[
-                                "_metadata"
-                            ].get("total_sampled_events", 0)
+                        # Handle the new structure with both post-selection and zero-bias data
+                        if (
+                            isinstance(histogram_data, dict)
+                            and "post_selection" in histogram_data
+                        ):
+                            # New format with both datasets
+                            post_selection_data = histogram_data.get("post_selection")
+                            zero_bias_data = histogram_data.get("zero_bias")
+
+                            if post_selection_data:
+                                self._accumulate_histogram_data(
+                                    accumulated_histogram_data, post_selection_data
+                                )
+                                if "_metadata" in post_selection_data:
+                                    accumulated_sampled_events += post_selection_data[
+                                        "_metadata"
+                                    ].get("total_sampled_events", 0)
+
+                            if zero_bias_data:
+                                self._accumulate_histogram_data(
+                                    accumulated_zero_bias_histogram_data, zero_bias_data
+                                )
+                                if "_metadata" in zero_bias_data:
+                                    accumulated_zero_bias_sampled_events += (
+                                        zero_bias_data["_metadata"].get(
+                                            "total_sampled_events", 0
+                                        )
+                                    )
+                        else:
+                            # Legacy format (fallback for compatibility)
+                            self._accumulate_histogram_data(
+                                accumulated_histogram_data, histogram_data
+                            )
+                            if "_metadata" in histogram_data:
+                                accumulated_sampled_events += histogram_data[
+                                    "_metadata"
+                                ].get("total_sampled_events", 0)
 
                 except Exception as e:
                     self.logger.error(f"Error unpacking process_data result: {str(e)}")
@@ -468,19 +500,31 @@ class DatasetManager:
             if not all_inputs:
                 raise ValueError("No events passed selection criteria")
 
-            # Save accumulated histogram data if plotting was enabled
-            if (
-                dataset_config.plot_distributions
-                and plot_output
-                and accumulated_histogram_data
-            ):
-                self._save_accumulated_histogram_data(
-                    accumulated_histogram_data,
-                    total_stats,
-                    accumulated_sampled_events,
-                    plot_output,
-                    bin_edges_metadata_path,
-                )
+            # Save accumulated histogram data if plotting was enabled (both post-selection and zero-bias)
+            if dataset_config.plot_distributions and plot_output:
+                # Save post-selection data
+                if accumulated_histogram_data:
+                    self._save_accumulated_histogram_data(
+                        accumulated_histogram_data,
+                        total_stats,
+                        accumulated_sampled_events,
+                        plot_output,
+                        bin_edges_metadata_path,
+                    )
+
+                # Save zero-bias data
+                if accumulated_zero_bias_histogram_data:
+                    # Create zero-bias plot output path
+                    zero_bias_plot_output = plot_output.parent / (
+                        plot_output.stem + "_zero_bias" + plot_output.suffix
+                    )
+                    self._save_accumulated_histogram_data(
+                        accumulated_zero_bias_histogram_data,
+                        total_stats,
+                        accumulated_zero_bias_sampled_events,
+                        zero_bias_plot_output,
+                        bin_edges_metadata_path,
+                    )
 
             # Create HDF5 dataset
             with h5py.File(dataset_path, "w") as f:
@@ -906,6 +950,85 @@ class DatasetManager:
                     self.logger.error(
                         f"Failed to create combined comparison plot: {e_comp_plot}"
                     )
+
+                # --- Create zero-bias comparison plot AFTER post-selection plot ---
+                self.logger.info(
+                    "Creating zero-bias input feature distribution comparison plot for background vs. signals."
+                )
+
+                # Find corresponding zero-bias histogram files
+                background_zero_bias_hist_path = background_hist_data_path.parent / (
+                    background_hist_data_path.stem.replace(
+                        "_hist_data", "_zero_bias_hist_data"
+                    )
+                    + background_hist_data_path.suffix
+                )
+
+                zero_bias_signal_hist_paths = []
+                zero_bias_legend_labels = []
+
+                # Check if background zero-bias data exists
+                if background_zero_bias_hist_path.exists():
+                    # Collect zero-bias signal histogram paths
+                    for i, signal_hist_path in enumerate(
+                        collected_signal_hist_data_paths
+                    ):
+                        signal_zero_bias_path = signal_hist_path.parent / (
+                            signal_hist_path.stem.replace(
+                                "_hist_data", "_zero_bias_hist_data"
+                            )
+                            + signal_hist_path.suffix
+                        )
+                        if signal_zero_bias_path.exists():
+                            zero_bias_signal_hist_paths.append(signal_zero_bias_path)
+                            # Add "Zero-bias" to the original legend label
+                            original_label = collected_signal_legend_labels[i]
+                            zero_bias_legend_labels.append(
+                                f"{original_label} (Zero-bias)"
+                            )
+                        else:
+                            self.logger.warning(
+                                f"Zero-bias histogram data not found for signal: {signal_zero_bias_path}"
+                            )
+
+                    # Create zero-bias plot if we have both background and at least one signal
+                    if zero_bias_signal_hist_paths:
+                        zero_bias_hist_data_paths_for_plot = [
+                            background_zero_bias_hist_path
+                        ] + zero_bias_signal_hist_paths
+                        zero_bias_legend_labels_for_plot = [
+                            "Background (ATLAS) Zero-bias"
+                        ] + zero_bias_legend_labels
+
+                        zero_bias_comparison_plot_path = (
+                            comparison_plot_output_dir
+                            / "comparison_input_features_zero_bias_background_vs_signals.png"
+                        )
+
+                        try:
+                            create_plot_from_hist_data(
+                                hist_data_paths=zero_bias_hist_data_paths_for_plot,
+                                output_plot_path=str(zero_bias_comparison_plot_path),
+                                legend_labels=zero_bias_legend_labels_for_plot,
+                                title_prefix="Input Features Zero-bias: Background vs Signals",
+                            )
+                            self.logger.info(
+                                f"Saved zero-bias comparison plot to {zero_bias_comparison_plot_path}"
+                            )
+                        except Exception as e_zero_bias_plot:
+                            self.logger.error(
+                                f"Failed to create zero-bias comparison plot: {e_zero_bias_plot}"
+                            )
+                    else:
+                        self.logger.warning(
+                            "No zero-bias signal histogram data found for zero-bias comparison plot."
+                        )
+                else:
+                    self.logger.warning(
+                        f"Background zero-bias histogram data not found at {background_zero_bias_hist_path}. Skipping zero-bias comparison plot."
+                    )
+                # --- End of zero-bias combined plot logic ---
+
             elif dataset_config.plot_distributions:
                 if (
                     not background_hist_data_path
