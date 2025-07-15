@@ -15,7 +15,7 @@ def progress(self, message, *args, **kwargs):
 logging.Logger.progress = progress
 
 
-def log_progress(message):
+def log_progress(message, *args, **kwargs):
     """Convenience function to log a progress message."""
     logging.getLogger().progress(message)
 
