@@ -222,12 +222,14 @@ class FoundationModelPipeline:
             "Process: Train → Anomaly Detection → Regression → Signal Classification"
         )
         self.logger.info("=" * 100)
+        self.logger.progress("Starting full foundation model pipeline")
 
         try:
             # Step 1: Train the foundation model
             self.logger.info("=" * 50)
             self.logger.info("STEP 1/4: TRAINING FOUNDATION MODEL")
             self.logger.info("=" * 50)
+            self.logger.progress("Step 1/4: Training foundation model")
 
             foundation_model_path = self.run_process(
                 process_name="train",
@@ -252,6 +254,7 @@ class FoundationModelPipeline:
             self.logger.info("=" * 50)
             self.logger.info("STEP 2/4: ANOMALY DETECTION EVALUATION")
             self.logger.info("=" * 50)
+            self.logger.progress("Step 2/4: Running anomaly detection evaluation")
 
             anomaly_success = self.run_process(
                 process_name="anomaly",
@@ -272,6 +275,7 @@ class FoundationModelPipeline:
             self.logger.info("=" * 50)
             self.logger.info("STEP 3/4: REGRESSION EVALUATION")
             self.logger.info("=" * 50)
+            self.logger.progress("Step 3/4: Running regression evaluation")
 
             regression_success = self.run_process(
                 process_name="regression",
@@ -313,6 +317,7 @@ class FoundationModelPipeline:
                 return False
 
             self.logger.info("Signal classification evaluation completed successfully")
+            self.logger.progress("Step 4/4: Signal classification evaluation completed")
 
             # Final summary
             self.logger.info("=" * 100)
@@ -323,6 +328,9 @@ class FoundationModelPipeline:
                 "All four processes (train → anomaly → regression → signal classification) completed successfully"
             )
             self.logger.info("=" * 100)
+            self.logger.progress(
+                "Full foundation model pipeline completed successfully!"
+            )
 
             return True
 

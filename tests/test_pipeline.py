@@ -23,15 +23,10 @@ EXPECTED_ROOT_STRUCTURE = {
         "required": True,
         "description": "Foundation model experiments",
     },
-    "test_detailed.log": {
+    "pytest.log": {
         "type": "file",
         "required": True,
         "description": "Detailed test execution logs",
-    },
-    "test_run.log": {
-        "type": "file",
-        "required": False,
-        "description": "Pytest execution logs (when using wrapper script)",
     },
 }
 
@@ -571,7 +566,7 @@ def setup_logging(experiment_dir):
     results_dir = Path(
         experiment_dir
     ).parent  # Go up from test_foundation_experiments to _test_results
-    log_file = results_dir / "test_detailed.log"
+    log_file = results_dir / "pytest.log"
 
     # Ensure the directory exists
     results_dir.mkdir(exist_ok=True)

@@ -1,5 +1,24 @@
 import logging
 
+# Add custom PROGRESS log level (between INFO=20 and WARNING=30)
+PROGRESS_LEVEL = 25
+logging.addLevelName(PROGRESS_LEVEL, "PROGRESS")
+
+
+def progress(self, message, *args, **kwargs):
+    """Log a progress message at PROGRESS level."""
+    if self.isEnabledFor(PROGRESS_LEVEL):
+        self._log(PROGRESS_LEVEL, message, args, **kwargs)
+
+
+# Add the progress method to Logger class
+logging.Logger.progress = progress
+
+
+def log_progress(message, *args, **kwargs):
+    """Convenience function to log a progress message."""
+    logging.getLogger().progress(message)
+
 
 def setup_logging(level=logging.INFO, log_file=None):
     """Setup logging configuration for the entire package
