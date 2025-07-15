@@ -30,7 +30,9 @@ task:
         - "derived.InDetTrackParticlesAuxDyn.eta"
         - "derived.InDetTrackParticlesAuxDyn.pt"
         - "derived.InDetTrackParticlesAuxDyn.reducedChiSquared"
-      filter_branches: []
+      filter_branches:
+        - {"branch": "InDetTrackParticlesAuxDyn.d0", "min": -5.0, "max": 5.0}
+        - {"branch": "InDetTrackParticlesAuxDyn.z0", "min": -80.0, "max": 80.0}
       sort_by_branch: null
       min_length: 10
       max_length: 30
