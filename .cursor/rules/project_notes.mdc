@@ -9,7 +9,7 @@ alwaysApply: true
 - IMPORTANT: try to use `uv` commands instead of directly editing `pyproject.toml` to ensure the .venv does not desync
 - IMPORTANT: Do not ever write one-off custom tests for functionality, always default to running pytest instead
 - **Linting & Formatting**: Uses` for linting and formatting. Run `uv run ruff check .` to check for issues and `uv run ruff format .` to format code after making significant changes.
-- **Testing**: Our project is tested with pytest. We have a comprehensive test for the foundation model pipeline, run it with: `pytest tests/test_pipeline.py`
+- **Testing**: Our project is tested with pytest. We have a comprehensive test for the foundation model pipeline, run it with: `python run_pytest.py`. This is a wrapper for our pytest tests.
 - **Logging**: logger.debug should be used for temporary logging to understand an issue
 </rules>
 
