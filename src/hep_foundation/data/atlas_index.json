@@ -199,7 +199,7 @@
     "wprime_munu": "mc20_13TeV_MC_Pythia8EvtGen_A14NNPDF23LO_Wprime_munu_SSM3000",
     "wprime_tb_lep": "mc20_13TeV_MC_MadGraphPythia8EvtGen_A14NNPDF23LO_WpL_tblep_M3000",
     "wprime_tb_had": "mc20_13TeV_MC_MadGraphPythia8EvtGen_A14NNPDF23LO_WpL_tbhad_M3000",
-    "dm_associated": "mc20_13TeV_MC_PowhegPy8EG_A14N23LO_DMA_500_700_gq0p25",
+    "DMA": "mc20_13TeV_MC_PowhegPy8EG_A14N23LO_DMA_500_700_gq0p25",
     "leptoquark": "mc20_13TeV_MC_aMcAtNloPy8EG_A14N30NLO_LQd_gstML_0p3_nonallhad_M1000",
     "dm_4top_scalar": "mc20_13TeV_MC_MGPy8EG_A14N23LO_DM_4topscalar_p1000_c1_nonallhad"
   }

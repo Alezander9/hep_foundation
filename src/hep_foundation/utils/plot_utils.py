@@ -1,6 +1,14 @@
 """
 Plotting utilities and theme settings for consistent, publication-quality visualizations.
 Provides color palettes, sizing guidelines, and helper functions for scientific plots.
+
+The module includes:
+- HIGH_CONTRAST_COLORS: Extended 15-color palette for complex multi-series plots
+- AESTHETIC_COLORS: 5-color gradient palette for simple plots
+- Color cycling functions with automatic palette management
+- Visualization utilities to preview color palettes
+- Line style management for model type differentiation
+- Publication-ready styling functions
 """
 
 import logging
@@ -25,6 +33,15 @@ HIGH_CONTRAST_COLORS: list[str] = [
     "dimgrey",  # Neutral grey #4B4B4B
     "purple",  # Deep purple #610061
     "orchid",  # Light purple #B752B4
+    # Extensions for plots with >7 data series
+    "darkturquoise",  # Bright cyan/teal #00CED1
+    "chocolate",  # Rich brown #D2691E
+    "hotpink",  # Vibrant pink #FF69B4
+    "gold",  # Bright yellow-orange #FFD700
+    "darkslategray",  # Dark blue-grey #2F4F4F
+    "mediumseagreen",  # Medium green #3CB371
+    "indianred",  # Muted red #CD5C5C
+    "plum",  # Light purple-pink #DDA0DD
 ]
 
 # Aesthetic gradient for simple plots or subplots
