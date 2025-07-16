@@ -48,7 +48,7 @@ python scripts/run_pipelines.py
 The HEP Foundation pipeline is designed as a simple workflow:
 
 1. **Create configs** → Put YAML configuration files in `_experiment_config_stack/`
-2. **Run pipeline** → Execute `python scripts/run_pipelines.py` 
+2. **Run pipeline** → Execute `python scripts/run_pipelines.py`
 3. **Get results** → Find experiment results in `_foundation_experiments/`
 
 Use `tests/_test_pipeline_config.yaml` as a template - just modify the values for your experiments. The pipeline processes all configs in the stack and removes them as it completes each one.
@@ -58,7 +58,7 @@ Use `tests/_test_pipeline_config.yaml` as a template - just modify the values fo
 Each experiment produces a complete folder in `_foundation_experiments/` containing:
 
 - **Training results** - Model weights, training history, and plots
-- **Regression evaluation** - Data efficiency comparison across model types  
+- **Regression evaluation** - Data efficiency comparison across model types
 - **Signal classification** - Binary classification performance analysis
 - **Anomaly detection** - Background vs signal discrimination metrics
 - **Reproducibility** - Copy of original config and experiment metadata
@@ -70,7 +70,7 @@ The pipeline automatically runs the full sequence: foundation model training →
 ### Performance Expectations
 
 - **Dataset size**: Typically O(1M) events per dataset
-- **Training speed**: ~15 seconds per epoch on NERSC A100 GPU  
+- **Training speed**: ~15 seconds per epoch on NERSC A100 GPU
 - **GPU requirement**: Strongly recommended for training (CPU training is very slow)
 
 ### Recommended Workflow
@@ -78,19 +78,12 @@ The pipeline automatically runs the full sequence: foundation model training →
 <details>
 <summary><strong>For NERSC users</strong></summary>
 
-1. **Create datasets locally** - The pipeline is bottlenecked by downloading ROOT files from CERN OpenData, so run data creation on your local machine:
+1. **Download catalogs on login nodes** - The pipeline is bottlenecked by downloading ROOT files from CERN OpenData, so run downloads first before requesting a job:
    ```bash
-   python scripts/create_datasets.py  # Creates datasets without deleting configs
+   python scripts/download_catalogs.py  # Downloads catalogs
    ```
 
-2. **Transfer to NERSC** - Use provided transfer utilities:
-   ```bash
-   python scripts/transfer_configs.py    # Transfer config files
-   python scripts/transfer_datasets.py  # Transfer dataset files  
-   ```
-   (Requires environment variables and SSH key setup)
-
-3. **Run training on cluster**:
+2. **Run pipeline on NERSC cluster**:
    ```bash
    sbatch jobs/submit_pipeline_simple.sh
    ```
@@ -132,7 +125,7 @@ _test_results/              # Test outputs (cleaned each run)
 
 **Key configuration sections:**
 - `dataset`: Data selection (ATLAS run numbers, signal types)
-- `models`: VAE and DNN architectures  
+- `models`: VAE and DNN architectures
 - `training`: Training parameters (epochs, batch size, learning rate)
 - `evaluation`: Data sizes for efficiency studies
 
@@ -150,7 +143,7 @@ Each experiment folder contains:
 ├── training/                   # Training metrics and plots
 └── testing/
     ├── regression_evaluation/      # Data efficiency: regression tasks
-    ├── signal_classification/      # Data efficiency: classification  
+    ├── signal_classification/      # Data efficiency: classification
     └── anomaly_detection/          # Background vs signal scoring
 ```
 
@@ -170,6 +163,10 @@ Each experiment folder contains:
 - `scripts/test_gpu.py` - Verify TensorFlow GPU access on your system
 - `src/hep_foundation/utils/plot_utils.py` - Standardized colors, fonts, and styling for all plots
 
+**Testing:**
+- `test/test_pipeline` - Small scale (~60s) test of the whole pipeline. Flags nissing or unexpected files in output folder `_test_results`
+- `python run_pytest.py` - Python wrapper for tests, only logs warnings, errors, and progress logs. Full logs go to `_test_results/pytest.log`
+
 ---
 
 ## Citation
@@ -181,7 +178,7 @@ Each experiment folder contains:
 </div>
 
 ```
-Yue, A. (2024). HEP Foundation: Foundation models for High Energy Physics data analysis. 
+Yue, A. (2024). HEP Foundation: Foundation models for High Energy Physics data analysis.
 https://github.com/Alezander9/hep-foundation
 ```
 
@@ -217,9 +214,9 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 <div align="center">
 
-**Questions or issues?**  
+**Questions or issues?**
 
-Email: [alexyue@stanford.edu](mailto:alexyue@stanford.edu)  
+Email: [alexyue@stanford.edu](mailto:alexyue@stanford.edu)
 GitHub: [Alezander9/hep-foundation](https://github.com/Alezander9/hep-foundation)
 
 </div>
