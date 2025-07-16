@@ -102,22 +102,4 @@ _foundation_experiments/  # Results (auto-created)
 │   └── testing/                   # Evaluation results
 ```
 
-## Quick Commands Reference
-```bash
-# Preview what will run
-python scripts/run_pipelines.py --dry-run
-
-# Run all experiments
-python scripts/run_pipelines.py
-
-# Run first 2 experiments only
-python scripts/run_pipelines.py --max-configs 2
-
-# Monitor progress
-tail -f logs/pipeline_*.log
-
-# Check what's in the stack
-ls _experiment_config_stack/*.yaml
-```
-
 **Note**: Each config is automatically deleted after successful processing. Original configs are preserved in experiment folders for reproducibility.
