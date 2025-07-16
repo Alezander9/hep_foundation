@@ -202,11 +202,6 @@ def create_training_history_plot_from_json(
     # Create line style mapping: one line style per model type
     model_to_linestyle = plot_utils.MODEL_LINE_STYLES
 
-    logger.info(f"Found {len(dataset_sizes)} unique dataset sizes: {dataset_sizes}")
-    logger.info(f"Found {len(model_types)} unique model types: {model_types}")
-    logger.info(f"Color mapping: {size_to_color}")
-    logger.info(f"Line style mapping: {model_to_linestyle}")
-
     # Plot each training run with systematic styling
     for train_idx, training_data in enumerate(loaded_training_data_list):
         history = training_data["history"]
@@ -865,9 +860,6 @@ def create_combined_two_panel_loss_plot_from_json(
         output_plot_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(output_plot_path, dpi=300, bbox_inches="tight")
         plt.close(fig)
-        logger.info(
-            f"Successfully created combined two-panel loss distribution plot and saved to {output_plot_path}"
-        )
     except Exception as e:
         logger.error(
             f"Failed to save combined loss distribution plot to {output_plot_path}: {e}"
@@ -1081,9 +1073,6 @@ def create_combined_roc_curves_plot_from_json(
         output_plot_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(output_plot_path, dpi=300, bbox_inches="tight")
         plt.close(fig)
-        logger.info(
-            f"Successfully created combined two-panel ROC curves plot and saved to {output_plot_path}"
-        )
     except Exception as e:
         logger.error(
             f"Failed to save combined ROC curves plot to {output_plot_path}: {e}"

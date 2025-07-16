@@ -66,10 +66,6 @@ class TrainingProgressCallback(tf.keras.callbacks.Callback):
                 f"Epoch {epoch + 1}/{self.epochs} completed in {time_taken:.1f}s - {metrics}"
             )
 
-    def on_train_end(self, logs=None):
-        if self.verbosity != "silent":
-            self.logger.info(f"Training completed after {self.epochs} epochs")
-
 
 class ModelTrainer:
     """Handles model training and evaluation"""
@@ -441,8 +437,6 @@ class ModelTrainer:
         # Save to JSON
         with open(json_path, "w") as f:
             json.dump(training_data, f, indent=2)
-
-        self.logger.info(f"Training history saved to: {json_path}")
         return json_path
 
     def train(
@@ -496,10 +490,9 @@ class ModelTrainer:
                 features, targets = batch
                 # Get the shape without the batch dimension
                 input_shape = features.shape[1:]
-                self.logger.info("Training dataset batch shapes:")
-                self.logger.info(f"  Features: {features.shape}")
-                self.logger.info(f"  Targets: {targets.shape}")
-                self.logger.info(f"  Inferred input shape: {input_shape}")
+                self.logger.info(
+                    f"Training dataset batch shapes: Features: {features.shape}, Targets: {targets.shape}, Inferred input shape: {input_shape}"
+                )
                 break
 
             if input_shape is None:
@@ -549,9 +542,11 @@ class ModelTrainer:
         for metric, values in history.history.items():
             self.metrics_history[metric] = [float(v) for v in values]
 
-        self.logger.info("Training completed. Final metrics:")
-        for metric, values in self.metrics_history.items():
-            self.logger.info(f"  {metric}: {values[-1]:.6f}")
+        final_metrics_str = ", ".join(
+            f"{metric}: {values[-1]:.6f}"
+            for metric, values in self.metrics_history.items()
+        )
+        self.logger.info(f"Training completed. Final metrics: {final_metrics_str}")
 
         # Save training history to JSON if directory provided
         if training_history_dir is not None:

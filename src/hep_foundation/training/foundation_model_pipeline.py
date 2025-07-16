@@ -227,9 +227,8 @@ class FoundationModelPipeline:
         try:
             # Step 1: Train the foundation model
             self.logger.info("=" * 50)
-            self.logger.info("STEP 1/4: TRAINING FOUNDATION MODEL")
+            self.logger.progress("STEP 1/4: TRAINING FOUNDATION MODEL")
             self.logger.info("=" * 50)
-            self.logger.progress("Step 1/4: Training foundation model")
 
             foundation_model_path = self.run_process(
                 process_name="train",
@@ -252,9 +251,8 @@ class FoundationModelPipeline:
 
             # Step 2: Run anomaly detection evaluation
             self.logger.info("=" * 50)
-            self.logger.info("STEP 2/4: ANOMALY DETECTION EVALUATION")
+            self.logger.progress("STEP 2/4: ANOMALY DETECTION EVALUATION")
             self.logger.info("=" * 50)
-            self.logger.progress("Step 2/4: Running anomaly detection evaluation")
 
             anomaly_success = self.run_process(
                 process_name="anomaly",
@@ -269,13 +267,10 @@ class FoundationModelPipeline:
                 self.logger.error("Anomaly detection evaluation failed")
                 return False
 
-            self.logger.info("Anomaly detection evaluation completed successfully")
-
             # Step 3: Run regression evaluation
             self.logger.info("=" * 50)
-            self.logger.info("STEP 3/4: REGRESSION EVALUATION")
+            self.logger.progress("STEP 3/4: REGRESSION EVALUATION")
             self.logger.info("=" * 50)
-            self.logger.progress("Step 3/4: Running regression evaluation")
 
             regression_success = self.run_process(
                 process_name="regression",
@@ -293,11 +288,9 @@ class FoundationModelPipeline:
                 self.logger.error("Regression evaluation failed")
                 return False
 
-            self.logger.info("Regression evaluation completed successfully")
-
             # Step 4: Run signal classification evaluation
             self.logger.info("=" * 50)
-            self.logger.info("STEP 4/4: SIGNAL CLASSIFICATION EVALUATION")
+            self.logger.progress("STEP 4/4: SIGNAL CLASSIFICATION EVALUATION")
             self.logger.info("=" * 50)
 
             signal_classification_success = self.run_process(
@@ -315,8 +308,6 @@ class FoundationModelPipeline:
             if not signal_classification_success:
                 self.logger.error("Signal classification evaluation failed")
                 return False
-
-            self.logger.info("Signal classification evaluation completed successfully")
             self.logger.progress("Step 4/4: Signal classification evaluation completed")
 
             # Final summary
@@ -910,7 +901,6 @@ class FoundationModelPipeline:
                 "Anomaly detection evaluation completed. Results are available in the testing directory."
             )
 
-            self.logger.info("Anomaly detection evaluation completed successfully")
             return True
 
         except Exception as e:
@@ -1160,7 +1150,7 @@ class FoundationModelPipeline:
 
             # 3. Run experiments for each data size
             for data_size in data_sizes:
-                self.logger.info(f"\n{'=' * 50}")
+                self.logger.info(f"{'=' * 50}")
                 self.logger.info(f"Training with {data_size} events")
                 self.logger.info(f"{'=' * 50}")
 
@@ -1481,8 +1471,6 @@ class FoundationModelPipeline:
                     self.logger.info(f"  Fine-Tuned improvement: {ft_improvement:.1f}%")
                     self.logger.info(f"  Fixed improvement: {fx_improvement:.1f}%")
                 self.logger.info("")
-
-            self.logger.info("Regression evaluation completed successfully")
             return True
 
         except Exception as e:
@@ -1804,7 +1792,7 @@ class FoundationModelPipeline:
 
             # 5. Run experiments for each data size
             for data_size in data_sizes:
-                self.logger.info(f"\n{'=' * 50}")
+                self.logger.info(f"{'=' * 50}")
                 self.logger.info(f"Training with {data_size} events")
                 self.logger.info(f"{'=' * 50}")
 
@@ -2191,8 +2179,6 @@ class FoundationModelPipeline:
                         f"  Fixed accuracy improvement: {fx_acc_improvement:.1f}%"
                     )
                 self.logger.info("")
-
-            self.logger.info("Signal classification evaluation completed successfully")
             return True
 
         except Exception as e:

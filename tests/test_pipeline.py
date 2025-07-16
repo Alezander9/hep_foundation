@@ -600,7 +600,6 @@ def test_run_full_pipeline(pipeline, test_configs, experiment_dir):
     """Test the full pipeline (train → regression → anomaly)"""
     logger = logging.getLogger(__name__)
 
-    logger.info("Starting full pipeline test")
     try:
         # Load test config to get evaluation settings
         test_config_path = Path(__file__).parent / "_test_pipeline_config.yaml"

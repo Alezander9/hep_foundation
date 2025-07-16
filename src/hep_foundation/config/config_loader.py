@@ -185,6 +185,9 @@ class PipelineConfigLoader:
             shuffle_buffer=dataset_dict["shuffle_buffer"],
             plot_distributions=dataset_dict.get("plot_distributions", True),
             include_labels=dataset_dict.get("include_labels", True),
+            hdf5_compression=dataset_dict.get(
+                "hdf5_compression", True
+            ),  # Default to True for backward compatibility
             task_config=task_config,
         )
 

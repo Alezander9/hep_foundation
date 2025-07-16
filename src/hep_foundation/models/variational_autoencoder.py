@@ -998,9 +998,6 @@ class AnomalyDetectionEvaluator:
         with open(json_path, "w") as f:
             json.dump(loss_data, f, indent=2)
 
-        self.logger.info(
-            f"Saved {loss_type} loss distribution data for {signal_name} to {json_path}"
-        )
         return json_path
 
     def _save_roc_curve_data(

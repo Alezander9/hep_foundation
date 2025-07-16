@@ -17,6 +17,7 @@ class DatasetConfig:
     plot_distributions: bool
     event_limit: Optional[int] = None
     include_labels: bool = True
+    hdf5_compression: bool = True  # Whether to compress HDF5 datasets (True for production, False for fast tests)
     task_config: Optional[TaskConfig] = None
 
     def validate(self) -> None:
@@ -44,5 +45,6 @@ class DatasetConfig:
             "shuffle_buffer": self.shuffle_buffer,
             "plot_distributions": self.plot_distributions,
             "include_labels": self.include_labels,
+            "hdf5_compression": self.hdf5_compression,
             "task_config": self.task_config.to_dict() if self.task_config else None,
         }

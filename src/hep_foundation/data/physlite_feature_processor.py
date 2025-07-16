@@ -116,7 +116,7 @@ class PhysliteFeatureProcessor:
             # Add aggregator branches
             for aggregator in selection_config.feature_array_aggregators:
                 self.logger.info(
-                    f"[debug] Adding aggregator branches: {aggregator.input_branches}"
+                    f"Adding aggregator branches: {aggregator.input_branches}"
                 )
                 # Add input branches
                 for selector in aggregator.input_branches:
@@ -1088,9 +1088,6 @@ class PhysliteFeatureProcessor:
             else:
                 # Ensure parent directory exists
                 plot_output.parent.mkdir(parents=True, exist_ok=True)
-                self.logger.info(
-                    "Plotting distributions is enabled. This will significantly slow down processing."
-                )
 
         # Initialize statistics
         stats = {
@@ -1106,7 +1103,7 @@ class PhysliteFeatureProcessor:
         # Collect all initially required branch names (including derived ones)
         initially_required_branches = self.get_required_branches(task_config)
         self.logger.info(
-            f"[debug] Initially required branches (incl. derived): {initially_required_branches}"
+            f"Initially required branches (incl. derived): {initially_required_branches}"
         )
 
         # Separate derived features and identify their dependencies
@@ -1288,11 +1285,6 @@ class PhysliteFeatureProcessor:
                                 if not raw_event_data:
                                     continue
 
-                                # Log raw data only for the very first event encountered overall
-                                if not first_event_logged and evt_idx == 0:
-                                    self.logger.info(
-                                        f"First event raw data (Catalog {catalog_idx + 1}, Batch Event {evt_idx}): {raw_event_data}"
-                                    )
                                 # --- Calculate Derived Features ---
                                 processed_event_data = (
                                     raw_event_data.copy()
@@ -1446,12 +1438,15 @@ class PhysliteFeatureProcessor:
 
                                     # Log processed data only for the very first event and set the flag
                                     if not first_event_logged and evt_idx == 0:
-                                        # self.logger.info(
-                                        #     f"First event processed input_features_for_dataset: {input_features_for_dataset}"
-                                        # )
-                                        # self.logger.info(
-                                        #     f"First event processed label_features_for_dataset: {label_features_for_dataset}"
-                                        # )
+                                        self.logger.info(
+                                            f"First event raw data (Catalog {catalog_idx + 1}, Batch Event {evt_idx}): {raw_event_data}"
+                                        )
+                                        self.logger.info(
+                                            f"First event processed input_features_for_dataset: {input_features_for_dataset}"
+                                        )
+                                        self.logger.info(
+                                            f"First event processed label_features_for_dataset: {label_features_for_dataset}"
+                                        )
                                         first_event_logged = True  # Set flag after logging the first processed event
 
                                     catalog_stats["processed"] += 1

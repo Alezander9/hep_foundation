@@ -529,6 +529,9 @@ class DatasetManager:
 
             # Create HDF5 dataset
             with h5py.File(dataset_path, "w") as f:
+                # Determine compression setting
+                compression = "gzip" if dataset_config.hdf5_compression else None
+
                 # Create input features group
                 features_group = f.create_group("features")
 
@@ -542,7 +545,7 @@ class DatasetManager:
 
                 for name, values in scalar_features.items():
                     features_group.create_dataset(
-                        f"scalar/{name}", data=np.array(values), compression="gzip"
+                        f"scalar/{name}", data=np.array(values), compression=compression
                     )
 
                 # Save aggregated features if any exist
@@ -555,7 +558,9 @@ class DatasetManager:
                     )
 
                     features_group.create_dataset(
-                        f"aggregated/{agg_name}", data=stacked_data, compression="gzip"
+                        f"aggregated/{agg_name}",
+                        data=stacked_data,
+                        compression=compression,
                     )
 
                 # Create labels group if we have labels
@@ -588,7 +593,7 @@ class DatasetManager:
                             label_subgroup.create_dataset(
                                 f"scalar/{name}",
                                 data=np.array(values),
-                                compression="gzip",
+                                compression=compression,
                             )
 
                         # Save aggregated features if any exist
@@ -605,7 +610,7 @@ class DatasetManager:
                             label_subgroup.create_dataset(
                                 f"aggregated/{agg_name}",
                                 data=stacked_data,
-                                compression="gzip",
+                                compression=compression,
                             )
 
                 # Compute and store normalization parameters
@@ -670,10 +675,6 @@ class DatasetManager:
         dataset_path = dataset_dir / "signal_dataset.h5"
         config_path = dataset_dir / "_dataset_config.yaml"
 
-        self.logger.info(f"[Debug] Signal dataset directory: {dataset_dir}")
-        self.logger.info(f"[Debug] Signal dataset path: {dataset_path}")
-        self.logger.info(f"[Debug] Signal config path: {config_path}")
-
         return dataset_path, config_path
 
     def _create_signal_dataset(
@@ -693,7 +694,7 @@ class DatasetManager:
             - Dataset ID
             - Path to created dataset
         """
-        self.logger.info("[Debug] Creating new signal dataset")
+        self.logger.info("Creating new signal dataset")
 
         # Generate dataset ID and paths
         dataset_id = self.generate_dataset_id(dataset_config)
@@ -702,23 +703,21 @@ class DatasetManager:
 
         dataset_path, config_path = self.get_signal_dataset_paths(dataset_id)
 
-        self.logger.info(f"[Debug] Generated dataset ID: {dataset_id}")
-        self.logger.info(
-            f"[Debug] Signal keys to process: {dataset_config.signal_keys}"
-        )
-        self.logger.info(f"[Debug] Will create dataset at: {dataset_path}")
+        self.logger.info(f"Signal keys to process: {dataset_config.signal_keys}")
+        self.logger.info(f"Will create dataset at: {dataset_path}")
 
         collected_signal_hist_data_paths = []
         collected_signal_legend_labels = []
 
         try:
             with h5py.File(dataset_path, "w") as f:
-                self.logger.info(
-                    "[Debug] Created HDF5 file, processing signal types..."
-                )
+                self.logger.info("Created HDF5 file, processing signal types...")
+                # Determine compression setting
+                compression = "gzip" if dataset_config.hdf5_compression else None
+
                 first_event_logged = False
                 for signal_key in dataset_config.signal_keys:
-                    self.logger.info(f"[Debug] Processing signal type: {signal_key}")
+                    self.logger.info(f"Processing signal type: {signal_key}")
 
                     plot_output_for_signal_json = None
                     bin_edges_metadata_path = None
@@ -734,7 +733,7 @@ class DatasetManager:
                             plots_dir / f"{signal_key}_dataset_features.png"
                         )
                         self.logger.info(
-                            f"[Debug] plot_output for signal JSON data naming: {plot_output_for_signal_json}"
+                            f"plot_output for signal JSON data: {plot_output_for_signal_json}"
                         )
 
                         # Use background bin edges metadata if available
@@ -784,7 +783,9 @@ class DatasetManager:
 
                     for name, values in scalar_features.items():
                         features_group.create_dataset(
-                            f"scalar/{name}", data=np.array(values), compression="gzip"
+                            f"scalar/{name}",
+                            data=np.array(values),
+                            compression=compression,
                         )
 
                     # Save aggregated features
@@ -800,7 +801,7 @@ class DatasetManager:
                         features_group.create_dataset(
                             f"aggregated/{agg_name}",
                             data=stacked_data,
-                            compression="gzip",
+                            compression=compression,
                         )
 
                     # Create labels group if we have labels
@@ -840,7 +841,7 @@ class DatasetManager:
                                 label_subgroup.create_dataset(
                                     f"scalar/{name}",
                                     data=np.array(values),
-                                    compression="gzip",
+                                    compression=compression,
                                 )
 
                             # Save aggregated features if any exist
@@ -860,7 +861,7 @@ class DatasetManager:
                                 label_subgroup.create_dataset(
                                     f"aggregated/{agg_name_label}",
                                     data=stacked_data_label,  # Renamed var
-                                    compression="gzip",
+                                    compression=compression,
                                 )
 
                     # Compute and store normalization parameters

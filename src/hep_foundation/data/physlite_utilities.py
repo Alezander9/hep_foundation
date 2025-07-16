@@ -75,7 +75,7 @@ def get_branch_info(
             # Determine the branch type from the derived feature's shape
             branch_type = _determine_branch_type(branch_info_dict)
             logger.info(
-                f"[debug] Branch '{branch_name}' identified as derived: type={branch_type}, info={branch_info_dict}"
+                f"Branch '{branch_name}' identified as derived: type={branch_type}, info={branch_info_dict}"
             )
             return True, branch_type, branch_info_dict
         else:

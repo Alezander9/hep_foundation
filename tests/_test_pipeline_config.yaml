@@ -8,7 +8,7 @@ created_by: "automated_test"
 # Dataset Configuration - minimal for fast testing
 dataset:
   run_numbers: ["00298967", "00311481"]  # Just 2 runs for speed
-  signal_keys: ["zprime_tt", "wprime_taunu", "dm_associated", "leptoquark", "dm_4top_scalar"]  # 5 signals for testing
+  signal_keys: ["zprime_tt", "wprime_taunu"]  # 2 signals for testing (removed "dm_associated", "leptoquark", "dm_4top_scalar")
   catalog_limit: 2  # Very small for testing
   event_limit: 2000  # Limit events per catalog for faster testing
   validation_fraction: 0.1
@@ -16,6 +16,7 @@ dataset:
   shuffle_buffer: 100  # Small buffer
   plot_distributions: true  # Keep plots for verification
   include_labels: true
+  hdf5_compression: false  # Disable compression for faster test dataset creation
 
 # Task Configuration - matches existing test setup
 task:
@@ -34,8 +35,8 @@ task:
       filter_branches:
         - {"branch": "InDetTrackParticlesAuxDyn.z0", "min": -100.0, "max": 100.0}
       sort_by_branch: null
-      min_length: 10
-      max_length: 30
+      min_length: 1
+      max_length: 10
 
   label_features:
     - []
@@ -66,7 +67,7 @@ models:
         start: 0.01
         end: 0.1
         warmup_epochs: 1
-        cycle_epochs: 1
+        cycle_epochs: 2
 
   dnn:
     model_type: "dnn_predictor"
@@ -95,7 +96,7 @@ training:
   dnn:
     batch_size: 1024
     learning_rate: 0.001
-    epochs: 10
+    epochs: 0 # This gets overridden by the evaluation config
     early_stopping:
       patience: 2
       min_delta: 0.001

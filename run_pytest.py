@@ -15,12 +15,13 @@ from datetime import datetime
 
 def run_pytest_with_filtered_output():
     """Run pytest and show only warnings/errors/progress in stdout."""
+    start_time = datetime.now()
 
     # Print starting message
     print("=" * 60)
     print("HEP Foundation Pipeline Test")
     print("=" * 60)
-    print(f"Starting time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Starting time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
     print("Full logs saved to: _test_results/pytest.log")
     print("Showing only warnings, errors, and progress below:")
     print("=" * 60)
@@ -71,16 +72,21 @@ def run_pytest_with_filtered_output():
         # Wait for process to complete
         return_code = process.wait()
 
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
+
         # Print ending message
         print()
         print("=" * 60)
-        print(f"Test completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"Exit code: {return_code}")
+        print(f"Test completed: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Duration: {duration:.1f}s")
 
         if return_code == 0:
             print("✅ Test completed successfully!")
         else:
-            print("❌ Test failed - check pytest.log for details")
+            print(
+                "❌ Test failed with exit code: {return_code} - check pytest.log for details"
+            )
 
         print("=" * 60)
 

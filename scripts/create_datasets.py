@@ -496,7 +496,7 @@ class DatasetCreationProcessor:
         failed_count = 0
 
         for i, config_path in enumerate(config_files, 1):
-            self.logger.info(f"\n{'=' * 50}")
+            self.logger.info(f"{'=' * 50}")
             self.logger.info(f"CONFIG {i}/{len(config_files)}: {config_path.name}")
             self.logger.info(f"{'=' * 50}")
 
