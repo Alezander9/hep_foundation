@@ -1066,13 +1066,14 @@ class FoundationModelPipeline:
                 return regressor_model_wrapper.model
 
             # Helper function to create subset dataset
-            def create_subset_dataset(dataset, num_events):
+            def create_subset_dataset(dataset, num_events, data_size_index=None):
                 """Create a subset of the dataset with exactly num_events events"""
                 # Convert to unbatched dataset to count events precisely
                 unbatched = dataset.unbatch()
-                # Shuffle the data before taking subset to ensure random sampling
-                # Use a fixed seed for reproducibility across different model comparisons
-                shuffled = unbatched.shuffle(buffer_size=50000, seed=42)
+                # Use different seed for each data size to ensure independent sampling
+                # This prevents smaller datasets from being strict subsets of larger ones
+                seed = 42 + (data_size_index or 0)  # Different seed for each data size
+                shuffled = unbatched.shuffle(buffer_size=50000, seed=seed)
                 subset = shuffled.take(num_events)
                 # Rebatch with original batch size
                 return subset.batch(dnn_training_config.batch_size)
@@ -1149,13 +1150,15 @@ class FoundationModelPipeline:
                 # Will save histories for all data sizes processed
 
             # 3. Run experiments for each data size
-            for data_size in data_sizes:
+            for data_size_index, data_size in enumerate(data_sizes):
                 self.logger.info(f"{'=' * 50}")
                 self.logger.info(f"Training with {data_size} events")
                 self.logger.info(f"{'=' * 50}")
 
                 # Create subset of training data
-                train_subset = create_subset_dataset(train_dataset, data_size)
+                train_subset = create_subset_dataset(
+                    train_dataset, data_size, data_size_index
+                )
 
                 # --- Model 1: From Scratch ---
                 self.logger.info("Building From Scratch model...")
@@ -1713,13 +1716,14 @@ class FoundationModelPipeline:
                 return classifier_model_wrapper.model
 
             # Helper function to create subset dataset
-            def create_subset_dataset(dataset, num_events):
+            def create_subset_dataset(dataset, num_events, data_size_index=None):
                 """Create a subset of the dataset with exactly num_events events"""
                 # Convert to unbatched dataset to count events precisely
                 unbatched = dataset.unbatch()
-                # Shuffle the data before taking subset to ensure random sampling
-                # Use a fixed seed for reproducibility across different model comparisons
-                shuffled = unbatched.shuffle(buffer_size=50000, seed=42)
+                # Use different seed for each data size to ensure independent sampling
+                # This prevents smaller datasets from being strict subsets of larger ones
+                seed = 42 + (data_size_index or 0)  # Different seed for each data size
+                shuffled = unbatched.shuffle(buffer_size=50000, seed=seed)
                 subset = shuffled.take(num_events)
                 # Rebatch with original batch size
                 return subset.batch(dnn_training_config.batch_size)
@@ -1791,13 +1795,15 @@ class FoundationModelPipeline:
             }
 
             # 5. Run experiments for each data size
-            for data_size in data_sizes:
+            for data_size_index, data_size in enumerate(data_sizes):
                 self.logger.info(f"{'=' * 50}")
                 self.logger.info(f"Training with {data_size} events")
                 self.logger.info(f"{'=' * 50}")
 
                 # Create subset of training data
-                train_subset = create_subset_dataset(labeled_train_dataset, data_size)
+                train_subset = create_subset_dataset(
+                    labeled_train_dataset, data_size, data_size_index
+                )
 
                 # Enable training history saving for all data sizes
                 should_save_history = True
