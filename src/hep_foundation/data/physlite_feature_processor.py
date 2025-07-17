@@ -47,7 +47,7 @@ class PhysliteFeatureProcessor:
         atlas_manager=None,
         custom_label_map_path: Optional[
             str
-        ] = "src/hep_foundation/data/plot_labels.json",
+        ] = "src/hep_foundation/data/physlite_plot_labels.json",
     ):
         """
         Initialize the PhysliteFeatureProcessor.
@@ -789,24 +789,16 @@ class PhysliteFeatureProcessor:
         self,
         event_data: dict[str, np.ndarray],
         selection_config: PhysliteSelectionConfig,
-    ) -> Optional[dict[str, np.ndarray]]:
+    ) -> Optional[dict[str, Any]]:
         """
-        Process a single selection configuration to extract and aggregate features.
-        (Modified to return structure compatible with _process_event needs)
+        Process an event according to a selection configuration.
 
-        Args:
-            event_data: Dictionary mapping branch names to their values
-            selection_config: Configuration defining what features to select and how to aggregate arrays
-
-        Returns:
-            Dictionary containing:
-                - 'scalar_features': Dict of selected scalar features {branch_name: value}
-                - 'aggregated_features': Dict of aggregated array features
-                                         {aggregator_key: {"array": array,
-                                                           "input_branch_details": [{"name": str, "num_output_cols": int}, ...],
-                                                           "n_valid_elements": int}
-                                         }
-            Returns None if any required features are missing or aggregation fails
+        New approach:
+        - Each aggregator ALWAYS returns correctly shaped arrays (max_length x num_features)
+        - If aggregator fails, return zeros with correct shape
+        - If any aggregator fails a filter, reject entire event
+        - Concatenate all aggregator results at the end
+        - Skip event if all aggregators are zero
         """
         # Extract scalar features
         scalar_features = {}
@@ -815,223 +807,356 @@ class PhysliteFeatureProcessor:
                 event_data, selection_config.feature_selectors
             )
 
-        # Process aggregators
+        # Process aggregators with new approach
         aggregated_features = {}
+        is_passing_filters = True  # Track if event passes all filters
+
         if selection_config.feature_array_aggregators:
             for idx, aggregator in enumerate(
                 selection_config.feature_array_aggregators
             ):
-                # --- Check Requirements and Get Input Arrays ---
-                array_features = {}  # Stores input arrays for aggregation
-                required_for_agg = set(s.branch.name for s in aggregator.input_branches)
-                filter_branch_names = set(
-                    f.branch.name for f in aggregator.filter_branches
-                )
-                required_for_agg.update(filter_branch_names)
-                if aggregator.sort_by_branch:
-                    required_for_agg.add(aggregator.sort_by_branch.branch.name)
+                agg_key = f"aggregator_{idx}"
 
-                if not all(
-                    branch_name in event_data for branch_name in required_for_agg
-                ):
-                    missing = required_for_agg - set(event_data.keys())
-                    self.logger.debug(
-                        f"Missing required branches for aggregator {idx}: {missing}. Skipping event."
-                    )  # Debug log
-                    return None
-
-                # --- Check length consistency on RAW arrays (number of tracks/entries) ---
-                initial_length = -1
-                raw_array_features = {}  # Store raw arrays
-                for branch_name in required_for_agg:
-                    current_array = event_data[branch_name]
-                    raw_array_features[branch_name] = current_array  # Store raw
-
-                    # Use __len__ which works for numpy arrays and STL Vectors from uproot >= 4
-                    try:
-                        current_length = len(current_array)
-                    except TypeError:
-                        self.logger.warning(
-                            f"Could not get length of raw data for branch '{branch_name}' (type {type(current_array)}) in aggregator {idx}. Skipping event."
-                        )
-                        return None
-
-                    if initial_length == -1:
-                        initial_length = current_length
-                    elif initial_length != current_length:
-                        self.logger.warning(
-                            f"RAW input/filter/sort array length mismatch in aggregator {idx} ('{branch_name}' has {current_length}, expected {initial_length}). Skipping event."
-                        )
-                        return None
-
-                # If after checking all required, we didn't find any length (e.g., all were empty)
-                if initial_length == -1:
-                    self.logger.warning(
-                        f"Could not determine initial length for aggregator {idx} (required branches might be empty?). Skipping."
-                    )
-                    return None
-                # If length is 0, we can skip this aggregator for this event
-                if initial_length == 0:
-                    self.logger.debug(
-                        f"Initial length is zero for aggregator {idx}. Skipping processing for this event."
-                    )
-                    # We don't return None for the whole event, just skip this aggregator
-                    continue  # Continue to the next aggregator
-
-                # --- Convert STL Vectors and prepare arrays for filtering/aggregation ---
-                array_features = {}  # For input branches used in aggregation
-                filter_arrays = {}  # For branches used only for filtering
-                sort_value = None  # For the sort branch
-                post_conversion_length = (
-                    -1
-                )  # Track length *after* conversion for mask/sort
-
-                for branch_name in required_for_agg:
-                    # Convert only once
-                    converted_array = self._convert_stl_vector_array(
-                        branch_name, raw_array_features[branch_name]
+                # Try to process this aggregator
+                try:
+                    result_array, input_branch_details, n_valid_elements, hist_data = (
+                        self._process_single_aggregator(event_data, aggregator, idx)
                     )
 
-                    # --- Store converted array based on its role ---
-                    is_input_branch = branch_name in (
-                        s.branch.name for s in aggregator.input_branches
+                    # Check if this aggregator failed a filter (indicated by None return)
+                    if result_array is None:
+                        # Filter failed - reject entire event
+                        is_passing_filters = False
+                        break
+
+                    # Store successful aggregator result
+                    aggregated_features[agg_key] = {
+                        "array": result_array,
+                        "input_branch_details": input_branch_details,
+                        "n_valid_elements": n_valid_elements,
+                        "hist_data": hist_data,
+                    }
+
+                except Exception as e:
+                    self.logger.warning(f"Error processing aggregator {idx}: {e}")
+                    # On error, create zero-filled array with correct shape
+                    zero_array, zero_branch_details, zero_n_valid, zero_hist_data = (
+                        self._create_zero_aggregator(event_data, aggregator, idx)
                     )
-                    is_filter_branch = branch_name in filter_branch_names
-                    is_sort_branch = (
-                        aggregator.sort_by_branch
-                        and branch_name == aggregator.sort_by_branch.branch.name
-                    )
+                    aggregated_features[agg_key] = {
+                        "array": zero_array,
+                        "input_branch_details": zero_branch_details,
+                        "n_valid_elements": zero_n_valid,
+                        "hist_data": zero_hist_data,
+                    }
 
-                    if is_input_branch:
-                        array_features[branch_name] = converted_array
-                    if is_filter_branch:
-                        filter_arrays[branch_name] = converted_array
-                    if is_sort_branch:
-                        sort_value = converted_array
+        # If any aggregator failed filters, reject the entire event
+        if not is_passing_filters:
+            self.logger.debug(
+                "Event rejected due to filter failure in one or more aggregators"
+            )
+            return None
 
-                    # --- Use the length of the FIRST relevant converted array for mask/sort ---
-                    # Prioritize sort > filter > input branch for determining the reference length
-                    if post_conversion_length == -1:
-                        if is_sort_branch or is_filter_branch or is_input_branch:
-                            post_conversion_length = len(converted_array)
+        # Check if all aggregators are zero (no useful data)
+        if aggregated_features:
+            all_zero = True
+            for agg_data in aggregated_features.values():
+                if agg_data["n_valid_elements"] > 0:
+                    all_zero = False
+                    break
 
-                # Ensure we determined a post-conversion length if inputs/filters/sort exist
-                if post_conversion_length == -1 and required_for_agg:
-                    self.logger.error(
-                        f"Internal error: Could not determine post-conversion length for aggregator {idx} despite having required branches. Skipping event."
-                    )
-                    return None
-                elif post_conversion_length <= 0 and required_for_agg:
-                    # This can happen if conversion leads to empty arrays (e.g. vector<vector<float>> where inner is empty)
-                    self.logger.debug(
-                        f"Post-conversion length is zero for aggregator {idx}. Skipping processing for this event."
-                    )
-                    continue  # Skip this aggregator
-
-                # --- Prepare and Apply Filters ---
-                valid_mask = np.ones(
-                    post_conversion_length, dtype=bool
-                )  # Mask based on post-conversion length
-                if aggregator.filter_branches:
-                    # filter_arrays should already be populated and converted above
-                    if not filter_arrays:
-                        self.logger.error(
-                            f"Filter branches defined for aggregator {idx} but filter_arrays dictionary is empty. Skipping event."
-                        )
-                        return None
-
-                    # Check consistency of filter array lengths *after conversion*
-                    for f_name, f_arr in filter_arrays.items():
-                        if len(f_arr) != post_conversion_length:
-                            self.logger.warning(
-                                f"Post-conversion FILTER array length mismatch in aggregator {idx} ('{f_name}' has {len(f_arr)}, expected {post_conversion_length}). Skipping event."
-                            )
-                            return None
-
-                    # Apply filters using the consistent post-conversion length mask
-                    filter_mask = self._apply_feature_array_filters(
-                        filter_arrays, aggregator.filter_branches
-                    )
-                    if (
-                        len(filter_mask) != post_conversion_length
-                    ):  # Check mask length against post-conversion length
-                        self.logger.warning(
-                            f"Filter mask length ({len(filter_mask)}) mismatch vs expected post-conversion length ({post_conversion_length}) for aggregator {idx}. Skipping event."
-                        )
-                        return None
-                    valid_mask &= filter_mask
-
-                # --- Prepare and Apply Sorting ---
-                if aggregator.sort_by_branch:
-                    # sort_value should be populated and converted above
-                    if (
-                        sort_value is None
-                    ):  # Should not happen if required check passed, but safety check
-                        self.logger.error(
-                            f"Sort branch '{aggregator.sort_by_branch.branch.name}' not found after conversion for aggregator {idx}. Skipping event."
-                        )
-                        return None
-                    # Check sort value length against post-conversion length
-                    if len(sort_value) != post_conversion_length:
-                        self.logger.warning(
-                            f"Post-conversion SORT array length mismatch in aggregator {idx} ('{aggregator.sort_by_branch.branch.name}' has {len(sort_value)}, expected {post_conversion_length}). Skipping event."
-                        )
-                        return None
-
-                    masked_sort_value = sort_value[valid_mask]
-                    if len(masked_sort_value) == 0:
-                        sort_indices = np.array([], dtype=int)
-                    else:
-                        sort_indices = np.argsort(masked_sort_value)[::-1]
-                else:
-                    sort_indices = np.arange(
-                        np.sum(valid_mask)
-                    )  # Indices relative to masked array
-
-                # --- Apply Aggregator ---
-                # Pass the CONVERTED array_features
-                (
-                    result_array,
-                    num_cols_per_segment,
-                    n_valid_elements_for_agg,
-                    hist_data,
-                ) = self._apply_feature_array_aggregator(
-                    array_features, aggregator, valid_mask, sort_indices
-                )
-                if result_array is None:
-                    self.logger.debug(
-                        f"Aggregator {idx} returned None. Skipping event."
-                    )  # Debug log
-                    return None
-
-                input_branch_details = []
-                if num_cols_per_segment:  # Check if num_cols_per_segment is not None
-                    for i, selector in enumerate(aggregator.input_branches):
-                        input_branch_details.append(
-                            {
-                                "name": selector.branch.name,
-                                "num_output_cols": num_cols_per_segment[i],
-                            }
-                        )
-
-                aggregated_features[f"aggregator_{idx}"] = {
-                    "array": result_array,
-                    "input_branch_details": input_branch_details,
-                    "n_valid_elements": n_valid_elements_for_agg,
-                    "hist_data": hist_data,
-                }
+            if all_zero:
+                self.logger.debug("Event rejected: all aggregators returned zero data")
+                return None
 
         # Return results if we have anything
         if not scalar_features and not aggregated_features:
-            self.logger.debug(
-                "No scalar features found and no successful aggregations for this selection config."
-            )
+            self.logger.debug("No scalar features and no aggregated features found")
             return None
 
         return {
             "scalar_features": scalar_features,
             "aggregated_features": aggregated_features,
         }
+
+    def _process_single_aggregator(
+        self,
+        event_data: dict[str, np.ndarray],
+        aggregator: PhysliteFeatureArrayAggregator,
+        idx: int,
+    ) -> tuple[Optional[np.ndarray], list[dict], int, Optional[dict]]:
+        """
+        Process a single aggregator, always returning correctly shaped arrays.
+
+        Returns:
+            - result_array: Always (max_length, num_features) or None if filter failed
+            - input_branch_details: List of branch detail dicts
+            - n_valid_elements: Number of valid elements before padding
+            - hist_data: Histogram data or None
+        """
+        # --- Check Requirements and Get Input Arrays ---
+        array_features = {}  # Stores input arrays for aggregation
+        required_for_agg = set(s.branch.name for s in aggregator.input_branches)
+        filter_branch_names = set(f.branch.name for f in aggregator.filter_branches)
+        required_for_agg.update(filter_branch_names)
+        if aggregator.sort_by_branch:
+            required_for_agg.add(aggregator.sort_by_branch.branch.name)
+
+        # Check if all required branches exist
+        if not all(branch_name in event_data for branch_name in required_for_agg):
+            missing = required_for_agg - set(event_data.keys())
+            self.logger.debug(
+                f"Missing required branches for aggregator {idx}: {missing}"
+            )
+            # Return zero-filled array with correct shape
+            return self._create_zero_aggregator(event_data, aggregator, idx)
+
+        # --- Check length consistency on RAW arrays ---
+        initial_length = -1
+        raw_array_features = {}
+        for branch_name in required_for_agg:
+            current_array = event_data[branch_name]
+            raw_array_features[branch_name] = current_array
+
+            try:
+                current_length = len(current_array)
+            except TypeError:
+                self.logger.warning(
+                    f"Could not get length of raw data for branch '{branch_name}' in aggregator {idx}"
+                )
+                return self._create_zero_aggregator(event_data, aggregator, idx)
+
+            if initial_length == -1:
+                initial_length = current_length
+            elif initial_length != current_length:
+                self.logger.warning(f"RAW array length mismatch in aggregator {idx}")
+                return self._create_zero_aggregator(event_data, aggregator, idx)
+
+        # If no length found or zero length
+        if initial_length <= 0:
+            self.logger.debug(
+                f"Initial length is {initial_length} for aggregator {idx}"
+            )
+            return self._create_zero_aggregator(event_data, aggregator, idx)
+
+        # --- Convert STL Vectors and prepare arrays ---
+        array_features = {}
+        filter_arrays = {}
+        sort_value = None
+        post_conversion_length = -1
+
+        for branch_name in required_for_agg:
+            converted_array = self._convert_stl_vector_array(
+                branch_name, raw_array_features[branch_name]
+            )
+
+            is_input_branch = branch_name in (
+                s.branch.name for s in aggregator.input_branches
+            )
+            is_filter_branch = branch_name in filter_branch_names
+            is_sort_branch = (
+                aggregator.sort_by_branch
+                and branch_name == aggregator.sort_by_branch.branch.name
+            )
+
+            if is_input_branch:
+                array_features[branch_name] = converted_array
+            if is_filter_branch:
+                filter_arrays[branch_name] = converted_array
+            if is_sort_branch:
+                sort_value = converted_array
+
+            if post_conversion_length == -1:
+                if is_sort_branch or is_filter_branch or is_input_branch:
+                    post_conversion_length = len(converted_array)
+
+        # --- Apply Filters ---
+        valid_mask = np.ones(post_conversion_length, dtype=bool)
+        for filter_config in aggregator.filter_branches:
+            filter_name = filter_config.branch.name
+            filter_array = filter_arrays.get(filter_name)
+            if filter_array is None:
+                continue
+
+            # Apply filter
+            if hasattr(filter_config, "min") and filter_config.min is not None:
+                valid_mask &= filter_array >= filter_config.min
+            if hasattr(filter_config, "max") and filter_config.max is not None:
+                valid_mask &= filter_array <= filter_config.max
+
+        # Check if we meet minimum length requirement after filtering
+        n_valid = np.sum(valid_mask)
+        if n_valid < aggregator.min_length:
+            self.logger.debug(
+                f"Aggregator {idx}: n_valid ({n_valid}) < min_length ({aggregator.min_length})"
+            )
+            return self._create_zero_aggregator(event_data, aggregator, idx)
+
+        # --- Apply Sorting ---
+        if aggregator.sort_by_branch and sort_value is not None:
+            if len(sort_value) != post_conversion_length:
+                self.logger.warning(f"Sort array length mismatch in aggregator {idx}")
+                return self._create_zero_aggregator(event_data, aggregator, idx)
+
+            masked_sort_value = sort_value[valid_mask]
+            if len(masked_sort_value) == 0:
+                sort_indices = np.array([], dtype=int)
+            else:
+                sort_indices = np.argsort(masked_sort_value)[::-1]
+        else:
+            sort_indices = np.arange(n_valid)
+
+        # --- Apply Aggregation ---
+        processed_feature_segments = []
+        for selector in aggregator.input_branches:
+            branch_name = selector.branch.name
+            values = array_features.get(branch_name)
+            if values is None:
+                self.logger.warning(
+                    f"Input branch '{branch_name}' not found for aggregator {idx}"
+                )
+                return self._create_zero_aggregator(event_data, aggregator, idx)
+
+            # Apply mask and reshape
+            filtered_values = values[valid_mask]
+            if filtered_values.shape[0] != n_valid:
+                self.logger.warning(
+                    f"Filtered array shape mismatch for '{branch_name}' in aggregator {idx}"
+                )
+                return self._create_zero_aggregator(event_data, aggregator, idx)
+
+            if filtered_values.ndim == 1:
+                filtered_values = filtered_values.reshape(-1, 1)
+            elif filtered_values.ndim != 2:
+                self.logger.warning(
+                    f"Unexpected array dimension for '{branch_name}' in aggregator {idx}"
+                )
+                return self._create_zero_aggregator(event_data, aggregator, idx)
+
+            processed_feature_segments.append(filtered_values)
+
+        if not processed_feature_segments:
+            self.logger.warning(f"No feature segments collected for aggregator {idx}")
+            return self._create_zero_aggregator(event_data, aggregator, idx)
+
+        # Get num_cols per segment
+        num_cols_per_segment = [
+            seg.shape[1] if seg.ndim == 2 else 1 for seg in processed_feature_segments
+        ]
+
+        # Stack features horizontally
+        try:
+            features = np.hstack(processed_feature_segments)
+        except ValueError as e:
+            self.logger.error(f"Error during np.hstack in aggregator {idx}: {e}")
+            return self._create_zero_aggregator(event_data, aggregator, idx)
+
+        # Apply sorting
+        if len(sort_indices) != n_valid:
+            self.logger.warning(f"Sort indices length mismatch in aggregator {idx}")
+            return self._create_zero_aggregator(event_data, aggregator, idx)
+
+        try:
+            sort_indices = np.asarray(sort_indices, dtype=int)
+            sorted_features = features[sort_indices]
+        except (IndexError, Exception) as e:
+            self.logger.error(f"Error applying sort_indices in aggregator {idx}: {e}")
+            return self._create_zero_aggregator(event_data, aggregator, idx)
+
+        # Handle length requirements (padding/truncation)
+        num_selected_tracks = sorted_features.shape[0]
+        num_features_per_track = sorted_features.shape[1]
+
+        # Capture clipped features for histogram
+        if num_selected_tracks > aggregator.max_length:
+            clipped_features_for_hist = sorted_features[: aggregator.max_length, :]
+            clipped_num_tracks = aggregator.max_length
+            final_features = clipped_features_for_hist.copy()
+        elif num_selected_tracks < aggregator.max_length:
+            clipped_features_for_hist = sorted_features.copy()
+            clipped_num_tracks = num_selected_tracks
+            # Pad with zeros
+            num_padding_tracks = aggregator.max_length - num_selected_tracks
+            padding = np.zeros(
+                (num_padding_tracks, num_features_per_track),
+                dtype=sorted_features.dtype,
+            )
+            final_features = np.vstack([sorted_features, padding])
+        else:
+            clipped_features_for_hist = sorted_features.copy()
+            clipped_num_tracks = num_selected_tracks
+            final_features = sorted_features
+
+        # Build input_branch_details
+        input_branch_details = []
+        for i, selector in enumerate(aggregator.input_branches):
+            input_branch_details.append(
+                {
+                    "name": selector.branch.name,
+                    "num_output_cols": num_cols_per_segment[i],
+                }
+            )
+
+        # Prepare histogram data
+        hist_data = {
+            "clipped_features": clipped_features_for_hist,
+            "clipped_num_tracks": clipped_num_tracks,
+            "num_cols_per_segment": num_cols_per_segment,
+        }
+
+        return final_features, input_branch_details, n_valid, hist_data
+
+    def _create_zero_aggregator(
+        self,
+        event_data: dict[str, np.ndarray],
+        aggregator: PhysliteFeatureArrayAggregator,
+        idx: int,
+    ) -> tuple[np.ndarray, list[dict], int, None]:
+        """
+        Create a zero-filled aggregator result with correct shape.
+
+        Returns:
+            - zero_array: (max_length, total_features) filled with zeros
+            - input_branch_details: List of branch detail dicts
+            - n_valid_elements: 0 (no valid elements for failed aggregator)
+            - hist_data: None (no histogram data for failed aggregator)
+        """
+        total_features = 0
+        input_branch_details = []
+
+        for selector in aggregator.input_branches:
+            branch_name = selector.branch.name
+
+            # Determine actual column count by conversion
+            try:
+                sample_data = event_data.get(branch_name)
+                if sample_data is not None:
+                    converted_sample = self._convert_stl_vector_array(
+                        branch_name, sample_data
+                    )
+                    if converted_sample.ndim == 1:
+                        num_cols = 1
+                    elif converted_sample.ndim == 2:
+                        num_cols = converted_sample.shape[1]
+                    else:
+                        num_cols = 1
+                else:
+                    num_cols = 1
+            except Exception:
+                num_cols = 1
+
+            total_features += num_cols
+            input_branch_details.append(
+                {
+                    "name": selector.branch.name,
+                    "num_output_cols": num_cols,
+                }
+            )
+
+        # Create zero-filled array with correct shape
+        zero_array = np.zeros((aggregator.max_length, total_features), dtype=np.float32)
+
+        return zero_array, input_branch_details, 0, None
 
     def _process_data(
         self,
@@ -2129,7 +2254,7 @@ class PhysliteFeatureProcessor:
                 for name, values in scalar_features.items()
             }
 
-        # Compute for aggregated features
+            # Compute for aggregated features
         if inputs[0]["aggregated_features"]:
             norm_params["features"]["aggregated"] = {}
             for agg_name, agg_data in inputs[0]["aggregated_features"].items():
@@ -2186,7 +2311,7 @@ class PhysliteFeatureProcessor:
                         for name, values in scalar_features.items()
                     }
 
-                # Compute for aggregated features
+                    # Compute for aggregated features
                 if label_data[0]["aggregated_features"]:
                     label_norm["aggregated"] = {}
                     for agg_name, agg_data in label_data[0][

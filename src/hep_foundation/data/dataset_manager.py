@@ -548,8 +548,8 @@ class DatasetManager:
                         f"scalar/{name}", data=np.array(values), compression=compression
                     )
 
-                # Save aggregated features if any exist
-                for agg_name, agg_data in inputs[0]["aggregated_features"].items():
+                    # Save aggregated features if any exist
+                for agg_name, agg_data in all_inputs[0]["aggregated_features"].items():
                     stacked_data = np.stack(
                         [
                             input_data["aggregated_features"][agg_name]
@@ -596,7 +596,7 @@ class DatasetManager:
                                 compression=compression,
                             )
 
-                        # Save aggregated features if any exist
+                            # Save aggregated features if any exist
                         for agg_name, agg_data in label_data[0][
                             "aggregated_features"
                         ].items():

@@ -7,6 +7,7 @@ _processed_datasets
 _test_results
 _experiment_config_stack/*.yaml
 _experiment_config_stack/*.yml
+__temp_configs/
 # Python cache files
 __pycache__/
 *.py[cod]

@@ -85,7 +85,7 @@ def run_pytest_with_filtered_output():
             print("✅ Test completed successfully!")
         else:
             print(
-                "❌ Test failed with exit code: {return_code} - check pytest.log for details"
+                f"❌ Test failed with exit code: {return_code} - check _test_results/pytest.log for details"
             )
 
         print("=" * 60)
