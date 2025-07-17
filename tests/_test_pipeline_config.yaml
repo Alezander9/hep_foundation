@@ -33,10 +33,49 @@ task:
         - "derived.InDetTrackParticlesAuxDyn.pt"
         - "derived.InDetTrackParticlesAuxDyn.reducedChiSquared"
       filter_branches:
+        - {"branch": "InDetTrackParticlesAuxDyn.d0", "min": -5.0, "max": 5.0}
         - {"branch": "InDetTrackParticlesAuxDyn.z0", "min": -100.0, "max": 100.0}
+      sort_by_branch: {"branch": "InDetTrackParticlesAuxDyn.qOverP"}
+      min_length: 1
+      max_length: 30
+    - input_branches:
+        - "MET_Core_AnalysisMETAuxDyn.mpx"
+        - "MET_Core_AnalysisMETAuxDyn.mpy"
+      filter_branches: []
       sort_by_branch: null
       min_length: 1
-      max_length: 10
+      max_length: 1
+    - input_branches:
+        - "AnalysisElectronsAuxDyn.pt"
+        - "AnalysisElectronsAuxDyn.eta"
+        - "AnalysisElectronsAuxDyn.phi"
+        - "AnalysisElectronsAuxDyn.m"
+        - "AnalysisElectronsAuxDyn.charge"
+      filter_branches: []
+      sort_by_branch: {"branch": "AnalysisElectronsAuxDyn.pt"}
+      min_length: 1
+      max_length: 30
+    - input_branches:
+        - "AnalysisMuonsAuxDyn.pt"
+        - "AnalysisMuonsAuxDyn.eta"
+        - "AnalysisMuonsAuxDyn.phi"
+        - "AnalysisMuonsAuxDyn.charge"
+        - "AnalysisMuonsAuxDyn.MuonSpectrometerPt"
+        - "AnalysisMuonsAuxDyn.InnerDetectorPt"
+        - "AnalysisMuonsAuxDyn.EnergyLoss"
+      filter_branches: []
+      sort_by_branch: {"branch": "AnalysisMuonsAuxDyn.pt"}
+      min_length: 1
+      max_length: 30
+    - input_branches:
+        - "AnalysisJetsAuxDyn.pt"
+        - "AnalysisJetsAuxDyn.eta"
+        - "AnalysisJetsAuxDyn.phi"
+        - "AnalysisJetsAuxDyn.m"
+      filter_branches: []
+      sort_by_branch: {"branch": "AnalysisJetsAuxDyn.pt"}
+      min_length: 1
+      max_length: 30
 
   label_features:
     - []
