@@ -815,7 +815,7 @@ class PhysliteFeatureProcessor:
                 event_data, selection_config.feature_selectors
             )
 
-        # Process aggregators
+        # Process aggregators - ensure ALL configured aggregators are always present
         aggregated_features = {}
         if selection_config.feature_array_aggregators:
             for idx, aggregator in enumerate(
@@ -998,21 +998,47 @@ class PhysliteFeatureProcessor:
                 ) = self._apply_feature_array_aggregator(
                     array_features, aggregator, valid_mask, sort_indices
                 )
+                # Handle failed aggregators by creating zero-filled arrays
                 if result_array is None:
                     self.logger.debug(
-                        f"Aggregator {idx} returned None. Skipping event."
-                    )  # Debug log
-                    return None
+                        f"Aggregator {idx} returned None (likely insufficient tracks). Creating zero-filled array."
+                    )
 
-                input_branch_details = []
-                if num_cols_per_segment:  # Check if num_cols_per_segment is not None
-                    for i, selector in enumerate(aggregator.input_branches):
+                    # Determine the expected shape from the aggregator configuration
+                    total_features = 0
+                    input_branch_details = []
+                    for selector in aggregator.input_branches:
+                        # Simplified: assume 1 feature per branch for now
+                        # This could be enhanced to calculate actual features per branch
+                        total_features += 1
                         input_branch_details.append(
                             {
                                 "name": selector.branch.name,
-                                "num_output_cols": num_cols_per_segment[i],
+                                "num_output_cols": 1,
                             }
                         )
+
+                    # Create zero-filled array with correct shape (max_length, total_features)
+                    result_array = np.zeros(
+                        (aggregator.max_length, total_features), dtype=np.float32
+                    )
+                    n_valid_elements_for_agg = (
+                        0  # No valid elements for failed aggregator
+                    )
+                    hist_data = None  # No histogram data for failed aggregator
+                else:
+                    # Successful aggregator - build input_branch_details from actual data
+                    input_branch_details = []
+                    if (
+                        num_cols_per_segment
+                    ):  # Check if num_cols_per_segment is not None
+                        for i, selector in enumerate(aggregator.input_branches):
+                            input_branch_details.append(
+                                {
+                                    "name": selector.branch.name,
+                                    "num_output_cols": num_cols_per_segment[i],
+                                }
+                            )
 
                 aggregated_features[f"aggregator_{idx}"] = {
                     "array": result_array,
@@ -1020,6 +1046,43 @@ class PhysliteFeatureProcessor:
                     "n_valid_elements": n_valid_elements_for_agg,
                     "hist_data": hist_data,
                 }
+
+        # Ensure ALL configured aggregators are present, even if they failed
+        if selection_config.feature_array_aggregators:
+            for idx, aggregator in enumerate(
+                selection_config.feature_array_aggregators
+            ):
+                agg_key = f"aggregator_{idx}"
+                if agg_key not in aggregated_features:
+                    # This aggregator was skipped entirely - create zero-filled array
+                    self.logger.debug(
+                        f"Aggregator {idx} missing entirely. Creating zero-filled array."
+                    )
+
+                    # Determine shape from aggregator configuration
+                    total_features = 0
+                    input_branch_details = []
+                    for selector in aggregator.input_branches:
+                        # Simplified: assume 1 feature per branch for now
+                        total_features += 1
+                        input_branch_details.append(
+                            {
+                                "name": selector.branch.name,
+                                "num_output_cols": 1,
+                            }
+                        )
+
+                    # Create zero-filled array with correct shape
+                    zero_array = np.zeros(
+                        (aggregator.max_length, total_features), dtype=np.float32
+                    )
+
+                    aggregated_features[agg_key] = {
+                        "array": zero_array,
+                        "input_branch_details": input_branch_details,
+                        "n_valid_elements": 0,
+                        "hist_data": None,
+                    }
 
         # Return results if we have anything
         if not scalar_features and not aggregated_features:
@@ -2129,24 +2192,10 @@ class PhysliteFeatureProcessor:
                 for name, values in scalar_features.items()
             }
 
-        # Compute for aggregated features
-        if inputs and inputs[0]["aggregated_features"]:
+            # Compute for aggregated features
+        if inputs[0]["aggregated_features"]:
             norm_params["features"]["aggregated"] = {}
-
-            # Find aggregators that are present in ALL events
-            all_agg_names = set(inputs[0]["aggregated_features"].keys())
-            common_agg_names = all_agg_names.copy()
-            for input_data in inputs[1:]:
-                common_agg_names &= set(input_data["aggregated_features"].keys())
-
-            if len(common_agg_names) != len(all_agg_names):
-                missing_aggs = all_agg_names - common_agg_names
-                self.logger.warning(
-                    f"Some aggregators missing in some events during normalization. "
-                    f"Missing: {missing_aggs}. Computing normalization only for common aggregators: {common_agg_names}"
-                )
-
-            for agg_name in sorted(common_agg_names):  # Sort for consistent ordering
+            for agg_name, agg_data in inputs[0]["aggregated_features"].items():
                 # Stack all events for this aggregator
                 stacked_data = np.stack(
                     [
@@ -2200,32 +2249,12 @@ class PhysliteFeatureProcessor:
                         for name, values in scalar_features.items()
                     }
 
-                # Compute for aggregated features
-                if label_data and label_data[0]["aggregated_features"]:
+                    # Compute for aggregated features
+                if label_data[0]["aggregated_features"]:
                     label_norm["aggregated"] = {}
-
-                    # Find aggregators that are present in ALL label events
-                    all_label_agg_names = set(
-                        label_data[0]["aggregated_features"].keys()
-                    )
-                    common_label_agg_names = all_label_agg_names.copy()
-                    for event_labels in label_data[1:]:
-                        common_label_agg_names &= set(
-                            event_labels["aggregated_features"].keys()
-                        )
-
-                    if len(common_label_agg_names) != len(all_label_agg_names):
-                        missing_label_aggs = (
-                            all_label_agg_names - common_label_agg_names
-                        )
-                        self.logger.warning(
-                            f"Some label aggregators missing in some events during normalization. "
-                            f"Missing: {missing_label_aggs}. Computing normalization only for common aggregators: {common_label_agg_names}"
-                        )
-
-                    for agg_name in sorted(
-                        common_label_agg_names
-                    ):  # Sort for consistent ordering
+                    for agg_name, agg_data in label_data[0][
+                        "aggregated_features"
+                    ].items():
                         stacked_data = np.stack(
                             [
                                 event_labels["aggregated_features"][agg_name]

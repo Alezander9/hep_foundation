@@ -548,42 +548,20 @@ class DatasetManager:
                         f"scalar/{name}", data=np.array(values), compression=compression
                     )
 
-                # Save aggregated features if any exist
-                # First, find aggregators that are present in ALL events
-                if all_inputs and all_inputs[0]["aggregated_features"]:
-                    # Get all possible aggregator names from the first event
-                    all_agg_names = set(all_inputs[0]["aggregated_features"].keys())
+                    # Save aggregated features if any exist
+                for agg_name, agg_data in all_inputs[0]["aggregated_features"].items():
+                    stacked_data = np.stack(
+                        [
+                            input_data["aggregated_features"][agg_name]
+                            for input_data in all_inputs
+                        ]
+                    )
 
-                    # Find aggregators that exist in ALL events
-                    common_agg_names = all_agg_names.copy()
-                    for input_data in all_inputs[1:]:
-                        common_agg_names &= set(
-                            input_data["aggregated_features"].keys()
-                        )
-
-                    if len(common_agg_names) != len(all_agg_names):
-                        missing_aggs = all_agg_names - common_agg_names
-                        self.logger.warning(
-                            f"Some aggregators missing in some events. "
-                            f"Missing: {missing_aggs}. Using only common aggregators: {common_agg_names}"
-                        )
-
-                    # Only process aggregators that exist in all events
-                    for agg_name in sorted(
-                        common_agg_names
-                    ):  # Sort for consistent ordering
-                        stacked_data = np.stack(
-                            [
-                                input_data["aggregated_features"][agg_name]
-                                for input_data in all_inputs
-                            ]
-                        )
-
-                        features_group.create_dataset(
-                            f"aggregated/{agg_name}",
-                            data=stacked_data,
-                            compression=compression,
-                        )
+                    features_group.create_dataset(
+                        f"aggregated/{agg_name}",
+                        data=stacked_data,
+                        compression=compression,
+                    )
 
                 # Create labels group if we have labels
                 if all_labels and dataset_config.task_config.labels:
@@ -618,42 +596,22 @@ class DatasetManager:
                                 compression=compression,
                             )
 
-                        # Save aggregated features if any exist
-                        # Find aggregators that are present in ALL label events
-                        if label_data and label_data[0]["aggregated_features"]:
-                            all_label_agg_names = set(
-                                label_data[0]["aggregated_features"].keys()
+                            # Save aggregated features if any exist
+                        for agg_name, agg_data in label_data[0][
+                            "aggregated_features"
+                        ].items():
+                            stacked_data = np.stack(
+                                [
+                                    event_labels["aggregated_features"][agg_name]
+                                    for event_labels in label_data
+                                ]
                             )
-                            common_label_agg_names = all_label_agg_names.copy()
-                            for event_labels in label_data[1:]:
-                                common_label_agg_names &= set(
-                                    event_labels["aggregated_features"].keys()
-                                )
 
-                            if len(common_label_agg_names) != len(all_label_agg_names):
-                                missing_label_aggs = (
-                                    all_label_agg_names - common_label_agg_names
-                                )
-                                self.logger.warning(
-                                    f"Some label aggregators missing in some events for label config {label_idx}. "
-                                    f"Missing: {missing_label_aggs}. Using only common aggregators: {common_label_agg_names}"
-                                )
-
-                            for agg_name in sorted(
-                                common_label_agg_names
-                            ):  # Sort for consistent ordering
-                                stacked_data = np.stack(
-                                    [
-                                        event_labels["aggregated_features"][agg_name]
-                                        for event_labels in label_data
-                                    ]
-                                )
-
-                                label_subgroup.create_dataset(
-                                    f"aggregated/{agg_name}",
-                                    data=stacked_data,
-                                    compression=compression,
-                                )
+                            label_subgroup.create_dataset(
+                                f"aggregated/{agg_name}",
+                                data=stacked_data,
+                                compression=compression,
+                            )
 
                 # Compute and store normalization parameters
                 norm_params = self.feature_processor._compute_dataset_normalization(
@@ -831,40 +789,20 @@ class DatasetManager:
                         )
 
                     # Save aggregated features
-                    # First, find aggregators that are present in ALL events
-                    if inputs and inputs[0]["aggregated_features"]:
-                        # Get all possible aggregator names from the first event
-                        all_agg_names = set(inputs[0]["aggregated_features"].keys())
-
-                        # Find aggregators that exist in ALL events
-                        common_agg_names = all_agg_names.copy()
-                        for input_data in inputs[1:]:
-                            common_agg_names &= set(
-                                input_data["aggregated_features"].keys()
-                            )
-
-                        if len(common_agg_names) != len(all_agg_names):
-                            missing_aggs = all_agg_names - common_agg_names
-                            self.logger.warning(
-                                f"Some aggregators missing in some signal events for {signal_key}. "
-                                f"Missing: {missing_aggs}. Using only common aggregators: {common_agg_names}"
-                            )
-
-                        # Only process aggregators that exist in all events
-                        for agg_name in sorted(
-                            common_agg_names
-                        ):  # Sort for consistent ordering
-                            stacked_data = np.stack(
-                                [
-                                    input_data["aggregated_features"][agg_name]
-                                    for input_data in inputs
-                                ]
-                            )
-                            features_group.create_dataset(
-                                f"aggregated/{agg_name}",
-                                data=stacked_data,
-                                compression=compression,
-                            )
+                    for agg_name, agg_data_val in inputs[0][
+                        "aggregated_features"
+                    ].items():  # Renamed agg_data to agg_data_val
+                        stacked_data = np.stack(
+                            [
+                                input_data["aggregated_features"][agg_name]
+                                for input_data in inputs
+                            ]
+                        )
+                        features_group.create_dataset(
+                            f"aggregated/{agg_name}",
+                            data=stacked_data,
+                            compression=compression,
+                        )
 
                     # Create labels group if we have labels
                     if labels and dataset_config.task_config.labels:
@@ -907,47 +845,24 @@ class DatasetManager:
                                 )
 
                             # Save aggregated features if any exist
-                            # Find aggregators that are present in ALL label events for signal
-                            if label_data and label_data[0]["aggregated_features"]:
-                                all_signal_label_agg_names = set(
-                                    label_data[0]["aggregated_features"].keys()
-                                )
-                                common_signal_label_agg_names = (
-                                    all_signal_label_agg_names.copy()
-                                )
-                                for event_labels in label_data[1:]:
-                                    common_signal_label_agg_names &= set(
-                                        event_labels["aggregated_features"].keys()
-                                    )
-
-                                if len(common_signal_label_agg_names) != len(
-                                    all_signal_label_agg_names
-                                ):
-                                    missing_signal_label_aggs = (
-                                        all_signal_label_agg_names
-                                        - common_signal_label_agg_names
-                                    )
-                                    self.logger.warning(
-                                        f"Some signal label aggregators missing in some events for {signal_key} label config {label_idx}. "
-                                        f"Missing: {missing_signal_label_aggs}. Using only common aggregators: {common_signal_label_agg_names}"
-                                    )
-
-                                for agg_name_label in sorted(
-                                    common_signal_label_agg_names
-                                ):  # Sort for consistent ordering
-                                    stacked_data_label = np.stack(  # Renamed var
-                                        [
-                                            event_labels["aggregated_features"][
-                                                agg_name_label
-                                            ]
-                                            for event_labels in label_data
+                            for agg_name_label, agg_data_label_val in label_data[
+                                0
+                            ][  # Renamed vars
+                                "aggregated_features"
+                            ].items():
+                                stacked_data_label = np.stack(  # Renamed var
+                                    [
+                                        event_labels["aggregated_features"][
+                                            agg_name_label
                                         ]
-                                    )
-                                    label_subgroup.create_dataset(
-                                        f"aggregated/{agg_name_label}",
-                                        data=stacked_data_label,  # Renamed var
-                                        compression=compression,
-                                    )
+                                        for event_labels in label_data
+                                    ]
+                                )
+                                label_subgroup.create_dataset(
+                                    f"aggregated/{agg_name_label}",
+                                    data=stacked_data_label,  # Renamed var
+                                    compression=compression,
+                                )
 
                     # Compute and store normalization parameters
                     norm_params = self.feature_processor._compute_dataset_normalization(
