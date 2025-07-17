@@ -5,7 +5,7 @@
 #SBATCH --qos=shared
 #SBATCH --nodes=1
 #SBATCH -n 1
-#SBATCH -c 8          # Reduce from 32 to 8 cores
+#SBATCH -c 32         # Required: NERSC gpu_shared_ss11 queue mandates 32 cores per GPU
 #SBATCH --gpus-per-task=1
 #SBATCH --time=08:00:00
 #SBATCH --output=logs/slurm-simple-%j.out
@@ -40,9 +40,10 @@ module load tensorflow/2.12.0
 export SLURM_CPU_BIND="cores"
 export NUMEXPR_MAX_THREADS=128
 export CUDA_VISIBLE_DEVICES=0
-export TF_NUM_INTEROP_THREADS=4
-export TF_NUM_INTRAOP_THREADS=4
-export OMP_NUM_THREADS=4
+# Utilize available cores while keeping GPU workload optimal
+export TF_NUM_INTEROP_THREADS=8
+export TF_NUM_INTRAOP_THREADS=16
+export OMP_NUM_THREADS=16
 
 # Verify GPU access
 echo "Checking GPU access..."
