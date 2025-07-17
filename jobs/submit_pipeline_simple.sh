@@ -5,7 +5,7 @@
 #SBATCH --qos=shared
 #SBATCH --nodes=1
 #SBATCH -n 1
-#SBATCH -c 32
+#SBATCH -c 8          # Reduce from 32 to 8 cores
 #SBATCH --gpus-per-task=1
 #SBATCH --time=08:00:00
 #SBATCH --output=logs/slurm-simple-%j.out
@@ -40,6 +40,9 @@ module load tensorflow/2.12.0
 export SLURM_CPU_BIND="cores"
 export NUMEXPR_MAX_THREADS=128
 export CUDA_VISIBLE_DEVICES=0
+export TF_NUM_INTEROP_THREADS=4
+export TF_NUM_INTRAOP_THREADS=4
+export OMP_NUM_THREADS=4
 
 # Verify GPU access
 echo "Checking GPU access..."
