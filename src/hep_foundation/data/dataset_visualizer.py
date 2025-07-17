@@ -650,6 +650,7 @@ def create_combined_two_panel_loss_plot_from_json(
     output_plot_path: Union[str, Path],
     legend_labels: Optional[list[str]] = None,
     title_prefix: str = "Loss Distributions",
+    log_scale: bool = True,
 ):
     """
     Creates a two-panel loss distribution plot (reconstruction + KL divergence) from saved JSON data.
@@ -661,6 +662,7 @@ def create_combined_two_panel_loss_plot_from_json(
         output_plot_path: Path to save the PNG plot.
         legend_labels: Optional list of labels for the legend. If provided, must match the number of paths.
         title_prefix: Prefix for the main plot title.
+        log_scale: Whether to use log scale for y-axis. Default is True.
     """
     logger = get_logger(__name__)
 
@@ -700,7 +702,7 @@ def create_combined_two_panel_loss_plot_from_json(
 
                 recon_data_list.append(loss_data)
                 if legend_labels and idx < len(legend_labels):
-                    effective_legend_labels.append(legend_labels[idx])
+                    base_label = legend_labels[idx]
                 else:
                     # Extract signal name from filename
                     filename_parts = json_path.stem.split("_")
@@ -710,7 +712,33 @@ def create_combined_two_panel_loss_plot_from_json(
                         ]  # loss_distributions_{signal_name}_reconstruction_data
                     else:
                         signal_name = json_path.stem
-                    effective_legend_labels.append(signal_name)
+                    base_label = signal_name
+
+                # Try to load corresponding ROC data to get AUC values for enhanced legend
+                enhanced_label = base_label
+                try:
+                    # Construct ROC data path by replacing pattern in filename
+                    # loss_distributions_{signal_name}_reconstruction_data.json -> roc_curves_{signal_name}_reconstruction_data.json
+                    roc_path = json_path.parent / json_path.name.replace(
+                        "loss_distributions_", "roc_curves_"
+                    )
+
+                    if roc_path.exists():
+                        with open(roc_path) as roc_f:
+                            roc_data = json.load(roc_f)
+                            if (
+                                "reconstruction" in roc_data
+                                and "auc" in roc_data["reconstruction"]
+                            ):
+                                auc_value = roc_data["reconstruction"]["auc"]
+                                enhanced_label = f"{base_label} (AUC = {auc_value:.3f})"
+                except Exception as e:
+                    logger.debug(
+                        f"Could not load ROC data for AUC enhancement from {json_path.name}: {e}"
+                    )
+                    # Continue with base label if ROC data loading fails
+
+                effective_legend_labels.append(enhanced_label)
         except Exception as e:
             logger.error(
                 f"Failed to load reconstruction loss data from {json_path}: {e}. Skipping this file."
@@ -759,8 +787,9 @@ def create_combined_two_panel_loss_plot_from_json(
         )
         return
 
+    scale_suffix = "log_scale" if log_scale else "linear_scale"
     logger.info(
-        f"Creating combined two-panel loss distribution plot from {len(recon_data_list)} dataset(s) to {output_plot_path}"
+        f"Creating combined two-panel loss distribution plot ({scale_suffix}) from {len(recon_data_list)} dataset(s) to {output_plot_path}"
     )
 
     # Set up the two-panel plot
@@ -837,29 +866,46 @@ def create_combined_two_panel_loss_plot_from_json(
     ax1.set_xlabel("Reconstruction Loss", fontsize=plot_utils.FONT_SIZES["large"])
     ax1.set_ylabel("Density", fontsize=plot_utils.FONT_SIZES["large"])
     ax1.set_title("Reconstruction Loss", fontsize=plot_utils.FONT_SIZES["large"])
-    ax1.legend(fontsize=plot_utils.FONT_SIZES["normal"])
     ax1.grid(True, alpha=0.3)
-    ax1.set_yscale("log")
+    if log_scale:
+        ax1.set_yscale("log")
 
     ax2.set_xlabel("KL Divergence", fontsize=plot_utils.FONT_SIZES["large"])
     ax2.set_ylabel("Density", fontsize=plot_utils.FONT_SIZES["large"])
     ax2.set_title("KL Divergence", fontsize=plot_utils.FONT_SIZES["large"])
-    ax2.legend(fontsize=plot_utils.FONT_SIZES["normal"])
     ax2.grid(True, alpha=0.3)
-    ax2.set_yscale("log")
+    if log_scale:
+        ax2.set_yscale("log")
+
+    # Create shared legend below both plots
+    handles, labels = ax1.get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc="lower center",
+        bbox_to_anchor=(0.5, 0.02),
+        ncol=min(len(labels), 4),  # Arrange horizontally, max 4 columns
+        fontsize=plot_utils.FONT_SIZES["normal"],
+    )
 
     # Main title
+    scale_text = "Log Scale" if log_scale else "Linear Scale"
     fig.suptitle(
-        f"{title_prefix}: Background vs Signals",
+        f"{title_prefix}: Background vs Signals ({scale_text})",
         fontsize=plot_utils.FONT_SIZES["xlarge"],
     )
-    plt.tight_layout()
+    plt.tight_layout(
+        rect=[0, 0.12, 1, 0.95]
+    )  # Leave space for legend below and title above
 
     # Save the plot
     try:
         output_plot_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(output_plot_path, dpi=300, bbox_inches="tight")
         plt.close(fig)
+        logger.info(
+            f"Successfully created {scale_suffix} loss distribution plot: {output_plot_path}"
+        )
     except Exception as e:
         logger.error(
             f"Failed to save combined loss distribution plot to {output_plot_path}: {e}"
@@ -1049,7 +1095,6 @@ def create_combined_roc_curves_plot_from_json(
     ax1.set_xlabel("False Positive Rate", fontsize=plot_utils.FONT_SIZES["large"])
     ax1.set_ylabel("True Positive Rate", fontsize=plot_utils.FONT_SIZES["large"])
     ax1.set_title("Reconstruction Loss", fontsize=plot_utils.FONT_SIZES["large"])
-    ax1.legend(fontsize=plot_utils.FONT_SIZES["normal"], loc="lower right")
     ax1.grid(True, alpha=0.3)
     ax1.set_xlim([0.0, 1.0])
     ax1.set_ylim([0.0, 1.05])
@@ -1057,16 +1102,30 @@ def create_combined_roc_curves_plot_from_json(
     ax2.set_xlabel("False Positive Rate", fontsize=plot_utils.FONT_SIZES["large"])
     ax2.set_ylabel("True Positive Rate", fontsize=plot_utils.FONT_SIZES["large"])
     ax2.set_title("KL Divergence", fontsize=plot_utils.FONT_SIZES["large"])
-    ax2.legend(fontsize=plot_utils.FONT_SIZES["normal"], loc="lower right")
     ax2.grid(True, alpha=0.3)
     ax2.set_xlim([0.0, 1.0])
     ax2.set_ylim([0.0, 1.05])
+
+    # Create shared legend below both plots
+    handles, labels = ax1.get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc="lower center",
+        bbox_to_anchor=(0.5, 0.02),
+        ncol=min(
+            len(labels), 3
+        ),  # Arrange horizontally, max 3 columns for ROC (labels are longer with AUC)
+        fontsize=plot_utils.FONT_SIZES["normal"],
+    )
 
     # Main title
     fig.suptitle(
         f"{title_prefix}: Signal Performance", fontsize=plot_utils.FONT_SIZES["xlarge"]
     )
-    plt.tight_layout()
+    plt.tight_layout(
+        rect=[0, 0.15, 1, 0.95]
+    )  # Leave more space for legend below (AUC labels are longer)
 
     # Save the plot
     try:

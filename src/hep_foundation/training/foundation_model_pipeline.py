@@ -970,7 +970,14 @@ class FoundationModelPipeline:
                 batch_size = tf.shape(batch[0])[0]
                 total_train_events += batch_size.numpy()
 
+            # Count total test events for plot labeling
+            total_test_events = 0
+            for batch in test_dataset:
+                batch_size = tf.shape(batch[0])[0]
+                total_test_events += batch_size.numpy()
+
             self.logger.info(f"Total training events available: {total_train_events}")
+            self.logger.info(f"Total test events: {total_test_events}")
 
             # Filter data_sizes to only include sizes <= total_train_events
             data_sizes = [
@@ -1430,7 +1437,10 @@ class FoundationModelPipeline:
                 )
 
                 plt.xlabel("Number of Training Events", fontsize=FONT_SIZES["large"])
-                plt.ylabel("Test Loss (MSE)", fontsize=FONT_SIZES["large"])
+                plt.ylabel(
+                    f"Test Loss (MSE) - over {total_test_events:,} events",
+                    fontsize=FONT_SIZES["large"],
+                )
                 plt.title(
                     "Data Efficiency: Foundation Model Benefits",
                     fontsize=FONT_SIZES["xlarge"],
@@ -1624,7 +1634,14 @@ class FoundationModelPipeline:
                 batch_size = tf.shape(batch[0])[0]
                 total_train_events += batch_size.numpy()
 
+            # Count total test events for plot labeling
+            total_test_events = 0
+            for batch in labeled_test_dataset:
+                batch_size = tf.shape(batch[0])[0]
+                total_test_events += batch_size.numpy()
+
             self.logger.info(f"Total training events available: {total_train_events}")
+            self.logger.info(f"Total test events: {total_test_events}")
 
             # Filter data_sizes to only include sizes <= total_train_events
             data_sizes = [
@@ -2077,7 +2094,8 @@ class FoundationModelPipeline:
 
                 plt.xlabel("Number of Training Events", fontsize=FONT_SIZES["large"])
                 plt.ylabel(
-                    "Test Loss (Binary Crossentropy)", fontsize=FONT_SIZES["large"]
+                    f"Test Loss (Binary Crossentropy) - over {total_test_events:,} events",
+                    fontsize=FONT_SIZES["large"],
                 )
                 plt.title(
                     f"Signal Classification Data Efficiency: Loss\n(Signal: {signal_key})",
@@ -2125,7 +2143,10 @@ class FoundationModelPipeline:
                 )
 
                 plt.xlabel("Number of Training Events", fontsize=FONT_SIZES["large"])
-                plt.ylabel("Test Accuracy", fontsize=FONT_SIZES["large"])
+                plt.ylabel(
+                    f"Test Accuracy - over {total_test_events:,} events",
+                    fontsize=FONT_SIZES["large"],
+                )
                 plt.title(
                     f"Signal Classification Data Efficiency: Accuracy\n(Signal: {signal_key})",
                     fontsize=FONT_SIZES["xlarge"],
@@ -2185,6 +2206,7 @@ class FoundationModelPipeline:
                         f"  Fixed accuracy improvement: {fx_acc_improvement:.1f}%"
                     )
                 self.logger.info("")
+
             return True
 
         except Exception as e:

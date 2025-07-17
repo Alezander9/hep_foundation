@@ -1234,7 +1234,7 @@ class AnomalyDetectionEvaluator:
             signal_recon_roc_jsons.append(sig_recon_roc_json)
             signal_kl_roc_jsons.append(sig_kl_roc_json)
 
-        # Create combined two-panel loss distribution plot
+        # Create combined two-panel loss distribution plots (log and linear scale)
         try:
             # Import here to avoid circular imports
             from hep_foundation.data.dataset_visualizer import (
@@ -1246,16 +1246,36 @@ class AnomalyDetectionEvaluator:
                 kl_json_paths = [bg_kl_json] + signal_kl_jsons
                 legend_labels = ["Background"] + signal_legend_labels
 
-                combined_plot_path = plots_dir / "combined_loss_distributions.png"
+                # Create log scale version
+                combined_plot_path_log = (
+                    plots_dir / "combined_loss_distributions_log.png"
+                )
                 create_combined_two_panel_loss_plot_from_json(
                     recon_json_paths=recon_json_paths,
                     kl_json_paths=kl_json_paths,
-                    output_plot_path=str(combined_plot_path),
+                    output_plot_path=str(combined_plot_path_log),
                     legend_labels=legend_labels,
                     title_prefix="Loss Distributions",
+                    log_scale=True,
                 )
                 self.logger.info(
-                    f"Saved combined two-panel loss distribution plot to {combined_plot_path}"
+                    f"Saved combined two-panel loss distribution plot (log scale) to {combined_plot_path_log}"
+                )
+
+                # Create linear scale version
+                combined_plot_path_linear = (
+                    plots_dir / "combined_loss_distributions_linear.png"
+                )
+                create_combined_two_panel_loss_plot_from_json(
+                    recon_json_paths=recon_json_paths,
+                    kl_json_paths=kl_json_paths,
+                    output_plot_path=str(combined_plot_path_linear),
+                    legend_labels=legend_labels,
+                    title_prefix="Loss Distributions",
+                    log_scale=False,
+                )
+                self.logger.info(
+                    f"Saved combined two-panel loss distribution plot (linear scale) to {combined_plot_path_linear}"
                 )
 
         except ImportError:
