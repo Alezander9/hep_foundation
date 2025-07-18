@@ -12,7 +12,7 @@ from tensorflow import keras
 
 from hep_foundation.config.logging_config import get_logger
 from hep_foundation.models.base_model import BaseModel, ModelConfig
-from hep_foundation.utils.plot_utils import (
+from hep_foundation.plots.plot_utils import (
     MARKER_SIZES,
     get_color_cycle,
     get_figure_size,
@@ -404,7 +404,7 @@ class VariationalAutoEncoder(BaseModel):
 
             self.logger.info(f"Available metrics: {list(self._history.keys())}")
 
-            from hep_foundation.utils.plot_utils import (
+            from hep_foundation.plots.plot_utils import (
                 FONT_SIZES,
                 LINE_WIDTHS,
                 get_color_cycle,
