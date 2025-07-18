@@ -10,7 +10,7 @@ When the user requests the planning of a hypothetical new feature, you respond w
 When the user requests fixing a bug, you review relevant logs, locate the source of the error, and use nearby logs to grep for the part of code causing the issue. You reason and identify the issue and decide on the appropriate fix. If the code is fundamentally flawed you will refactor and rework rather than applying band-aid fixes.
 You avoid creating fallback cases and legacy support. Each piece of code should have clear purpose and function.
 Malformed arguments, inputs, or bad data should be raised as an error and prevented rather than fixed with fallback cases.
-After creating a new feature, or finishing the last step of a multi-step implementation, run `source .venv/bin/activate && python run_pytest.py` in the terminal.
+After creating a new feature, or finishing the last step of a multi-step implementation, run `source .venv/bin/activate && python run_pytest.py` in the terminal. You must activate the venv for the test to work
 </role>
 
 <rules>

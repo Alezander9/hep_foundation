@@ -87,6 +87,10 @@ def run_pytest_with_filtered_output():
             print(
                 f"❌ Test failed with exit code: {return_code} - check _test_results/pytest.log for details"
             )
+            if duration < 1:
+                print(
+                    "The test failed instantly, this is often an import error, did you remember to activate the venv?"
+                )
 
         print("=" * 60)
 

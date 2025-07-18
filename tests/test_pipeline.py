@@ -180,10 +180,38 @@ EXPECTED_EXPERIMENT_STRUCTURE = {
                         "required": True,
                         "description": "Training comparison plot",
                     },
+                    "label_distribution_comparison.png": {
+                        "type": "file",
+                        "required": True,
+                        "description": "Label distribution comparison plot",
+                    },
                     "training_histories": {
                         "type": "directory",
                         "required": True,
                         "description": "Training histories for regression models",
+                    },
+                    "label_distributions": {
+                        "type": "directory",
+                        "required": True,
+                        "description": "Label distribution analysis files",
+                        "contents": {
+                            "actual_test_labels_hist.json": {
+                                "type": "file",
+                                "required": True,
+                                "description": "Actual test labels histogram data",
+                            },
+                            "label_bin_edges_metadata.json": {
+                                "type": "file",
+                                "required": True,
+                                "description": "Bin edges metadata for coordinated binning",
+                            },
+                            "*_predictions_hist.json": {
+                                "type": "pattern",
+                                "required": True,
+                                "min_count": 1,
+                                "description": "Model prediction histogram files",
+                            },
+                        },
                     },
                 },
             },
