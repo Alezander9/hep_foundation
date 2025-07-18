@@ -21,8 +21,9 @@ from hep_foundation.models.variational_autoencoder import (
     VAEConfig,
     VariationalAutoEncoder,
 )
+from hep_foundation.plots.foundation_plot_manager import FoundationPlotManager
+from hep_foundation.plots.result_plot_manager import ResultPlotManager
 from hep_foundation.training.model_trainer import ModelTrainer
-from hep_foundation.utils.result_plot_manager import ResultPlotManager
 
 
 class FoundationModelPipeline:
@@ -67,8 +68,9 @@ class FoundationModelPipeline:
         # Source config file for reproducibility
         self._source_config_file = None
 
-        # Initialize result plot manager
+        # Initialize plot managers
         self.plot_manager = ResultPlotManager()
+        self.foundation_plot_manager = FoundationPlotManager()
 
         self.logger.info("Foundation Model Pipeline initialized.")
         self.logger.info(
@@ -1170,44 +1172,24 @@ class FoundationModelPipeline:
                             if samples_collected >= max_prediction_samples:
                                 break
 
-                    # Create histogram data for predictions using coordinated binning
+                    # Save histogram data using foundation plot manager
                     if predictions_list:
                         predictions_array = np.array(
                             predictions_list[:max_prediction_samples]
                         )
-
-                        # Use predefined bin edges if available for coordinated binning
-                        predefined_bin_edges = None
-                        if bin_edges_metadata and "test_labels" in bin_edges_metadata:
-                            predefined_bin_edges = np.array(
-                                bin_edges_metadata["test_labels"]
-                            )
-                            self.logger.info(
-                                f"Using coordinated binning for {model_name} predictions"
-                            )
-
-                        predictions_hist_data = self.plot_manager.create_label_histogram_data(
-                            predictions_array,
-                            num_bins=50,  # This will be ignored if predefined_bin_edges is provided
-                            label_name="test_labels",
-                            predefined_bin_edges=predefined_bin_edges,
-                        )
-
-                        pred_hist_filename = f"{model_name}_predictions_hist.json"
 
                         # Use the parameter passed to the function, or create a default path
                         hist_save_dir = label_distributions_dir_param or (
                             regression_dir / "label_distributions"
                         )
 
-                        self.plot_manager.save_label_histogram_data(
-                            predictions_hist_data,
-                            hist_save_dir / pred_hist_filename,
-                            f"Predictions from {model_name} model trained with {data_size} samples",
-                        )
-
-                        self.logger.info(
-                            f"Saved {len(predictions_array)} predictions for {model_name}"
+                        self.foundation_plot_manager.save_model_predictions_histogram(
+                            predictions_array,
+                            model_name,
+                            data_size,
+                            hist_save_dir,
+                            bin_edges_metadata,
+                            max_samples=max_prediction_samples,
                         )
                     else:
                         self.logger.warning(
@@ -1239,41 +1221,13 @@ class FoundationModelPipeline:
                 )
                 # Will save histories for all data sizes processed
 
-            # 3. Create label distributions folder and sample actual test labels
-            self.logger.info("Creating label distribution analysis...")
+            # 3. Create label distribution analysis
             label_distributions_dir = regression_dir / "label_distributions"
-            label_distributions_dir.mkdir(parents=True, exist_ok=True)
-
-            # Sample actual test labels once (5000 samples)
-            self.logger.info("Sampling actual test labels for distribution analysis...")
-            actual_test_labels = self.plot_manager.extract_labels_from_dataset(
-                test_dataset, max_samples=5000
+            actual_labels_bin_edges_metadata = (
+                self.foundation_plot_manager.create_label_distribution_analysis(
+                    test_dataset, label_distributions_dir, max_samples=5000, num_bins=50
+                )
             )
-            actual_labels_bin_edges_metadata = None
-            if len(actual_test_labels) > 0:
-                actual_labels_hist_data = self.plot_manager.create_label_histogram_data(
-                    actual_test_labels, num_bins=50, label_name="test_labels"
-                )
-                self.plot_manager.save_label_histogram_data(
-                    actual_labels_hist_data,
-                    label_distributions_dir / "actual_test_labels_hist.json",
-                    "Actual test labels from regression dataset",
-                )
-
-                # Save bin edges metadata for coordinated binning
-                bin_edges_metadata_path = (
-                    label_distributions_dir / "label_bin_edges_metadata.json"
-                )
-                self.plot_manager.save_bin_edges_metadata(
-                    actual_labels_hist_data, bin_edges_metadata_path
-                )
-
-                # Load the bin edges for use in prediction histograms
-                actual_labels_bin_edges_metadata = (
-                    self.plot_manager.load_bin_edges_metadata(bin_edges_metadata_path)
-                )
-            else:
-                self.logger.warning("No test labels extracted for histogram analysis")
 
             # 4. Run experiments for each data size
             for data_size_index, data_size in enumerate(data_sizes):
@@ -1441,175 +1395,32 @@ class FoundationModelPipeline:
 
             # Create combined training history plot if we saved training histories
             training_histories_dir = regression_dir / "training_histories"
-            if training_histories_dir.exists():
-                training_history_files = list(
-                    training_histories_dir.glob("training_history_*.json")
-                )
-                if training_history_files:
-                    self.logger.info("Creating combined training history plot...")
+            combined_plot_path = regression_dir / "regression_training_comparison.png"
+            self.foundation_plot_manager.create_training_history_comparison_plot(
+                training_histories_dir,
+                combined_plot_path,
+                title_prefix="Regression Model Training Comparison",
+                validation_only=True,
+            )
 
-                    # Sort files to ensure consistent ordering and group by model type and data size
-                    sorted_files = []
-                    sorted_labels = []
-
-                    # Group by model type and data size
-                    for model_name in ["From_Scratch", "Fine_Tuned", "Fixed_Encoder"]:
-                        matching_files = [
-                            f for f in training_history_files if model_name in f.name
-                        ]
-
-                        # Sort by data size (extract from filename)
-                        def extract_data_size(filename):
-                            # Extract data size from filename like "From_Scratch_10k"
-                            for part in filename.stem.split("_"):
-                                if part.endswith("k"):
-                                    return int(part[:-1]) * 1000
-                                elif part.isdigit():
-                                    return int(part)
-                            return 0
-
-                        matching_files.sort(key=extract_data_size)
-
-                        for file in matching_files:
-                            sorted_files.append(file)
-                            # Extract model name and data size for label
-                            model_display_name = model_name.replace("_", " ")
-                            # Extract data size from filename
-                            data_size_str = None
-                            for part in file.stem.split("_"):
-                                if part.endswith("k") or part.isdigit():
-                                    data_size_str = part
-                                    break
-
-                            if data_size_str:
-                                sorted_labels.append(
-                                    f"{model_display_name} ({data_size_str})"
-                                )
-                            else:
-                                sorted_labels.append(model_display_name)
-
-                    if sorted_files:
-                        combined_plot_path = (
-                            regression_dir / "regression_training_comparison.png"
-                        )
-                        self.plot_manager.create_training_history_comparison_plot(
-                            training_history_json_paths=sorted_files,
-                            output_plot_path=combined_plot_path,
-                            legend_labels=sorted_labels,
-                            title_prefix="Regression Model Training Comparison",
-                            validation_only=True,  # Only show validation loss
-                        )
-                        self.logger.info(
-                            f"Combined training history plot saved to: {combined_plot_path}"
-                        )
-                    else:
-                        self.logger.warning(
-                            "Could not find expected training history files for combined plot"
-                        )
-                else:
-                    self.logger.info(
-                        "No training history files found for combined plot"
-                    )
-
-            # Create the plot
-            try:
-                import matplotlib.pyplot as plt
-
-                from hep_foundation.utils.plot_utils import (
-                    FONT_SIZES,
-                    LINE_WIDTHS,
-                    get_color_cycle,
-                    get_figure_size,
-                    set_science_style,
-                )
-
-                set_science_style(use_tex=False)
-
-                plt.figure(figsize=get_figure_size("single", ratio=1.2))
-                colors = get_color_cycle("high_contrast")
-
-                # Plot the three models
-                plt.loglog(
-                    results["data_sizes"],
-                    results["From_Scratch"],
-                    "o-",
-                    color=colors[0],
-                    linewidth=LINE_WIDTHS["thick"],
-                    markersize=8,
-                    label="From Scratch",
-                )
-                plt.loglog(
-                    results["data_sizes"],
-                    results["Fine_Tuned"],
-                    "s-",
-                    color=colors[1],
-                    linewidth=LINE_WIDTHS["thick"],
-                    markersize=8,
-                    label="Fine-Tuned",
-                )
-                plt.loglog(
-                    results["data_sizes"],
-                    results["Fixed_Encoder"],
-                    "^-",
-                    color=colors[2],
-                    linewidth=LINE_WIDTHS["thick"],
-                    markersize=8,
-                    label="Fixed Encoder",
-                )
-
-                plt.xlabel("Number of Training Events", fontsize=FONT_SIZES["large"])
-                plt.ylabel(
-                    f"Test Loss (MSE) - over {total_test_events:,} events",
-                    fontsize=FONT_SIZES["large"],
-                )
-                plt.title(
-                    "Data Efficiency: Foundation Model Benefits",
-                    fontsize=FONT_SIZES["xlarge"],
-                )
-                plt.legend(fontsize=FONT_SIZES["normal"], loc="upper right")
-                plt.grid(True, alpha=0.3, which="both")
-
-                # Save plot
-                plot_file = regression_dir / "regression_data_efficiency_plot.png"
-                plt.savefig(plot_file, dpi=300, bbox_inches="tight")
-                plt.close()
-
-                self.logger.info(f"Data efficiency plot saved to: {plot_file}")
-
-            except Exception as e:
-                self.logger.error(f"Failed to create plot: {str(e)}")
-
-            # 5. Display summary
-            self.logger.info("=" * 100)
-            self.logger.info("Regression Evaluation Results Summary")
-            self.logger.info("=" * 100)
-
-            for i, data_size in enumerate(results["data_sizes"]):
-                self.logger.info(f"Training Events: {data_size}")
-                self.logger.info(f"  From Scratch:  {results['From_Scratch'][i]:.6f}")
-                self.logger.info(f"  Fine-Tuned:    {results['Fine_Tuned'][i]:.6f}")
-                self.logger.info(f"  Fixed Encoder: {results['Fixed_Encoder'][i]:.6f}")
-
-                # Calculate improvement ratios
-                if results["From_Scratch"][i] > 0:
-                    ft_improvement = (
-                        (results["From_Scratch"][i] - results["Fine_Tuned"][i])
-                        / results["From_Scratch"][i]
-                        * 100
-                    )
-                    fx_improvement = (
-                        (results["From_Scratch"][i] - results["Fixed_Encoder"][i])
-                        / results["From_Scratch"][i]
-                        * 100
-                    )
-                    self.logger.info(f"  Fine-Tuned improvement: {ft_improvement:.1f}%")
-                    self.logger.info(f"  Fixed improvement: {fx_improvement:.1f}%")
-                self.logger.info("")
+            # Create the data efficiency plot
+            plot_file = regression_dir / "regression_data_efficiency_plot.png"
+            self.foundation_plot_manager.create_data_efficiency_plot(
+                results,
+                plot_file,
+                plot_type="regression",
+                metric_name="Test Loss (MSE)",
+                total_test_events=total_test_events,
+            )
 
             # Create label distribution comparison plot
-            self.logger.info("Creating label distribution comparison plot...")
-            self.plot_manager.create_label_distribution_comparison_plot(
+            self.foundation_plot_manager.create_label_distribution_comparison_plot(
                 regression_dir, data_sizes
+            )
+
+            # 5. Display summary
+            self.foundation_plot_manager.log_evaluation_summary(
+                results, evaluation_type="regression"
             )
 
             return True
@@ -2107,237 +1918,45 @@ class FoundationModelPipeline:
 
             # Create combined training history plot if we saved training histories
             training_histories_dir = classification_dir / "training_histories"
-            if training_histories_dir.exists():
-                training_history_files = list(
-                    training_histories_dir.glob("training_history_*.json")
-                )
-                if training_history_files:
-                    self.logger.info("Creating combined training history plot...")
+            combined_plot_path = (
+                classification_dir / "signal_classification_training_comparison.png"
+            )
+            self.foundation_plot_manager.create_training_history_comparison_plot(
+                training_histories_dir,
+                combined_plot_path,
+                title_prefix="Signal Classification Model Training Comparison",
+                validation_only=True,
+            )
 
-                    # Sort files to ensure consistent ordering and group by model type and data size
-                    sorted_files = []
-                    sorted_labels = []
+            # Create the data efficiency plots
+            # Plot 1: Loss comparison
+            loss_plot_file = classification_dir / "signal_classification_loss_plot.png"
+            self.foundation_plot_manager.create_data_efficiency_plot(
+                results,
+                loss_plot_file,
+                plot_type="classification_loss",
+                metric_name="Test Loss (Binary Crossentropy)",
+                total_test_events=total_test_events,
+                signal_key=signal_key,
+            )
 
-                    # Group by model type and data size
-                    for model_name in ["From_Scratch", "Fine_Tuned", "Fixed_Encoder"]:
-                        matching_files = [
-                            f for f in training_history_files if model_name in f.name
-                        ]
-
-                        # Sort by data size (extract from filename)
-                        def extract_data_size(filename):
-                            # Extract data size from filename like "From_Scratch_10k"
-                            for part in filename.stem.split("_"):
-                                if part.endswith("k"):
-                                    return int(part[:-1]) * 1000
-                                elif part.isdigit():
-                                    return int(part)
-                            return 0
-
-                        matching_files.sort(key=extract_data_size)
-
-                        for file in matching_files:
-                            sorted_files.append(file)
-                            # Extract model name and data size for label
-                            model_display_name = model_name.replace("_", " ")
-                            # Extract data size from filename
-                            data_size_str = None
-                            for part in file.stem.split("_"):
-                                if part.endswith("k") or part.isdigit():
-                                    data_size_str = part
-                                    break
-
-                            if data_size_str:
-                                sorted_labels.append(
-                                    f"{model_display_name} ({data_size_str})"
-                                )
-                            else:
-                                sorted_labels.append(model_display_name)
-
-                    if sorted_files:
-                        combined_plot_path = (
-                            classification_dir
-                            / "signal_classification_training_comparison.png"
-                        )
-                        self.plot_manager.create_training_history_comparison_plot(
-                            training_history_json_paths=sorted_files,
-                            output_plot_path=combined_plot_path,
-                            legend_labels=sorted_labels,
-                            title_prefix="Signal Classification Model Training Comparison",
-                            validation_only=True,  # Only show validation loss
-                        )
-                        self.logger.info(
-                            f"Combined training history plot saved to: {combined_plot_path}"
-                        )
-                    else:
-                        self.logger.warning(
-                            "Could not find expected training history files for combined plot"
-                        )
-                else:
-                    self.logger.info(
-                        "No training history files found for combined plot"
-                    )
-
-            # Create the plots
-            try:
-                import matplotlib.pyplot as plt
-
-                from hep_foundation.utils.plot_utils import (
-                    FONT_SIZES,
-                    LINE_WIDTHS,
-                    get_color_cycle,
-                    get_figure_size,
-                    set_science_style,
-                )
-
-                set_science_style(use_tex=False)
-                colors = get_color_cycle("high_contrast")
-
-                # Plot 1: Loss comparison
-                plt.figure(figsize=get_figure_size("single", ratio=1.2))
-
-                plt.loglog(
-                    results["data_sizes"],
-                    results["From_Scratch_loss"],
-                    "o-",
-                    color=colors[0],
-                    linewidth=LINE_WIDTHS["thick"],
-                    markersize=8,
-                    label="From Scratch",
-                )
-                plt.loglog(
-                    results["data_sizes"],
-                    results["Fine_Tuned_loss"],
-                    "s-",
-                    color=colors[1],
-                    linewidth=LINE_WIDTHS["thick"],
-                    markersize=8,
-                    label="Fine-Tuned",
-                )
-                plt.loglog(
-                    results["data_sizes"],
-                    results["Fixed_Encoder_loss"],
-                    "^-",
-                    color=colors[2],
-                    linewidth=LINE_WIDTHS["thick"],
-                    markersize=8,
-                    label="Fixed Encoder",
-                )
-
-                plt.xlabel("Number of Training Events", fontsize=FONT_SIZES["large"])
-                plt.ylabel(
-                    f"Test Loss (Binary Crossentropy) - over {total_test_events:,} events",
-                    fontsize=FONT_SIZES["large"],
-                )
-                plt.title(
-                    f"Signal Classification Data Efficiency: Loss\n(Signal: {signal_key})",
-                    fontsize=FONT_SIZES["xlarge"],
-                )
-                plt.legend(fontsize=FONT_SIZES["normal"], loc="upper right")
-                plt.grid(True, alpha=0.3, which="both")
-
-                # Save loss plot
-                loss_plot_file = (
-                    classification_dir / "signal_classification_loss_plot.png"
-                )
-                plt.savefig(loss_plot_file, dpi=300, bbox_inches="tight")
-                plt.close()
-
-                # Plot 2: Accuracy comparison
-                plt.figure(figsize=get_figure_size("single", ratio=1.2))
-
-                plt.semilogx(
-                    results["data_sizes"],
-                    results["From_Scratch_accuracy"],
-                    "o-",
-                    color=colors[0],
-                    linewidth=LINE_WIDTHS["thick"],
-                    markersize=8,
-                    label="From Scratch",
-                )
-                plt.semilogx(
-                    results["data_sizes"],
-                    results["Fine_Tuned_accuracy"],
-                    "s-",
-                    color=colors[1],
-                    linewidth=LINE_WIDTHS["thick"],
-                    markersize=8,
-                    label="Fine-Tuned",
-                )
-                plt.semilogx(
-                    results["data_sizes"],
-                    results["Fixed_Encoder_accuracy"],
-                    "^-",
-                    color=colors[2],
-                    linewidth=LINE_WIDTHS["thick"],
-                    markersize=8,
-                    label="Fixed Encoder",
-                )
-
-                plt.xlabel("Number of Training Events", fontsize=FONT_SIZES["large"])
-                plt.ylabel(
-                    f"Test Accuracy - over {total_test_events:,} events",
-                    fontsize=FONT_SIZES["large"],
-                )
-                plt.title(
-                    f"Signal Classification Data Efficiency: Accuracy\n(Signal: {signal_key})",
-                    fontsize=FONT_SIZES["xlarge"],
-                )
-                plt.legend(fontsize=FONT_SIZES["normal"], loc="lower right")
-                plt.grid(True, alpha=0.3, which="both")
-                plt.ylim(0, 1)  # Accuracy is between 0 and 1
-
-                # Save accuracy plot
-                accuracy_plot_file = (
-                    classification_dir / "signal_classification_accuracy_plot.png"
-                )
-                plt.savefig(accuracy_plot_file, dpi=300, bbox_inches="tight")
-                plt.close()
-
-                self.logger.info(f"Loss plot saved to: {loss_plot_file}")
-                self.logger.info(f"Accuracy plot saved to: {accuracy_plot_file}")
-
-            except Exception as e:
-                self.logger.error(f"Failed to create plots: {str(e)}")
+            # Plot 2: Accuracy comparison
+            accuracy_plot_file = (
+                classification_dir / "signal_classification_accuracy_plot.png"
+            )
+            self.foundation_plot_manager.create_data_efficiency_plot(
+                results,
+                accuracy_plot_file,
+                plot_type="classification_accuracy",
+                metric_name="Test Accuracy",
+                total_test_events=total_test_events,
+                signal_key=signal_key,
+            )
 
             # 7. Display summary
-            self.logger.info("=" * 100)
-            self.logger.info("Signal Classification Evaluation Results Summary")
-            self.logger.info("=" * 100)
-            self.logger.info(f"Signal Dataset: {signal_key}")
-
-            for i, data_size in enumerate(results["data_sizes"]):
-                self.logger.info(f"Training Events: {data_size}")
-                self.logger.info(
-                    f"  From Scratch:  Loss: {results['From_Scratch_loss'][i]:.6f}, Accuracy: {results['From_Scratch_accuracy'][i]:.6f}"
-                )
-                self.logger.info(
-                    f"  Fine-Tuned:    Loss: {results['Fine_Tuned_loss'][i]:.6f}, Accuracy: {results['Fine_Tuned_accuracy'][i]:.6f}"
-                )
-                self.logger.info(
-                    f"  Fixed Encoder: Loss: {results['Fixed_Encoder_loss'][i]:.6f}, Accuracy: {results['Fixed_Encoder_accuracy'][i]:.6f}"
-                )
-
-                # Calculate improvement ratios for accuracy
-                scratch_acc = results["From_Scratch_accuracy"][i]
-                if scratch_acc < 1.0:  # Avoid division issues
-                    ft_acc_improvement = (
-                        (results["Fine_Tuned_accuracy"][i] - scratch_acc)
-                        / (1.0 - scratch_acc)
-                        * 100
-                    )
-                    fx_acc_improvement = (
-                        (results["Fixed_Encoder_accuracy"][i] - scratch_acc)
-                        / (1.0 - scratch_acc)
-                        * 100
-                    )
-                    self.logger.info(
-                        f"  Fine-Tuned accuracy improvement: {ft_acc_improvement:.1f}%"
-                    )
-                    self.logger.info(
-                        f"  Fixed accuracy improvement: {fx_acc_improvement:.1f}%"
-                    )
-                self.logger.info("")
+            self.foundation_plot_manager.log_evaluation_summary(
+                results, evaluation_type="signal_classification", signal_key=signal_key
+            )
 
             return True
 

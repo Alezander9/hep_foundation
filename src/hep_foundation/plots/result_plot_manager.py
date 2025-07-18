@@ -8,7 +8,7 @@ import tensorflow as tf
 from matplotlib.lines import Line2D
 
 from hep_foundation.config.logging_config import get_logger
-from hep_foundation.utils import plot_utils
+from hep_foundation.plots import plot_utils
 
 
 class ResultPlotManager:

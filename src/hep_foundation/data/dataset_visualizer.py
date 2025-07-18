@@ -8,7 +8,7 @@ import matplotlib.ticker as mticker
 import numpy as np
 
 from hep_foundation.config.logging_config import get_logger
-from hep_foundation.utils import plot_utils
+from hep_foundation.plots import plot_utils
 
 
 def format_event_count(event_count: int) -> str:
