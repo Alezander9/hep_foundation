@@ -1398,7 +1398,7 @@ class FoundationModelPipeline:
             # Create combined training history plot if we saved training histories
             training_histories_dir = regression_dir / "training_histories"
             combined_plot_path = regression_dir / "regression_training_comparison.png"
-            self.foundation_plot_manager.create_training_history_comparison_plot(
+            self.foundation_plot_manager.create_training_history_comparison_plot_from_directory(
                 training_histories_dir,
                 combined_plot_path,
                 title_prefix="Regression Model Training Comparison",
@@ -1923,7 +1923,7 @@ class FoundationModelPipeline:
             combined_plot_path = (
                 classification_dir / "signal_classification_training_comparison.png"
             )
-            self.foundation_plot_manager.create_training_history_comparison_plot(
+            self.foundation_plot_manager.create_training_history_comparison_plot_from_directory(
                 training_histories_dir,
                 combined_plot_path,
                 title_prefix="Signal Classification Model Training Comparison",

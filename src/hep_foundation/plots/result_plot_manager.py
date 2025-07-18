@@ -552,6 +552,8 @@ class ResultPlotManager:
         title_prefix: str = "Training History",
         metrics_to_plot: Optional[list[str]] = None,
         validation_only: bool = False,
+        handle_outliers: bool = True,
+        outlier_percentile: float = 95.0,
     ):
         """
         Creates a training history plot from saved training history JSON data.
@@ -564,6 +566,8 @@ class ResultPlotManager:
             title_prefix: Prefix for the main plot title.
             metrics_to_plot: Optional list of specific metrics to plot. If None, plots all loss metrics.
             validation_only: If True, only plots validation metrics (no training metrics).
+            handle_outliers: If True, creates a 1x2 subplot with full range and cropped view.
+            outlier_percentile: Percentile threshold for cropping the zoomed view (default: 95.0).
         """
         if not isinstance(training_history_json_paths, list):
             training_history_json_paths = [training_history_json_paths]
@@ -665,8 +669,43 @@ class ResultPlotManager:
             self.logger.error("No common metrics found across all training histories.")
             return
 
-        # Create figure
-        fig, ax = plt.subplots(figsize=plot_utils.get_figure_size("single", ratio=1.2))
+        # Collect all loss values to determine outlier threshold if needed
+        all_loss_values = []
+        if handle_outliers:
+            for training_data in loaded_training_data_list:
+                history = training_data["history"]
+                for metric in metrics_to_plot:
+                    if metric in history:
+                        all_loss_values.extend(history[metric])
+
+            if all_loss_values:
+                outlier_threshold = np.percentile(all_loss_values, outlier_percentile)
+                self.logger.info(
+                    f"Outlier threshold ({outlier_percentile}th percentile): {outlier_threshold:.6f}"
+                )
+            else:
+                self.logger.warning(
+                    "No loss values found for outlier detection, using single plot"
+                )
+                handle_outliers = False
+
+        # Create figure - either single plot or 1x2 subplot
+        if handle_outliers and all_loss_values:
+            # Use double-column width for 1x2 subplot with slightly less height to prevent it being too tall
+            fig, (ax_full, ax_cropped) = plt.subplots(
+                1, 2, figsize=plot_utils.get_figure_size("double", ratio=2.0)
+            )
+            axes = [ax_full, ax_cropped]
+            panel_titles = [
+                "Full Range (All Data)",
+                f"Cropped View ({outlier_percentile:.0f}th Percentile)",
+            ]
+        else:
+            fig, ax = plt.subplots(
+                figsize=plot_utils.get_figure_size("single", ratio=1.2)
+            )
+            axes = [ax]
+            panel_titles = [None]
 
         # Parse legend labels to extract dataset sizes and model types for systematic styling
         def parse_label(label):
@@ -728,92 +767,120 @@ class ResultPlotManager:
         # Create line style mapping: one line style per model type
         model_to_linestyle = plot_utils.MODEL_LINE_STYLES
 
-        # Plot each training run with systematic styling
-        for train_idx, training_data in enumerate(loaded_training_data_list):
-            history = training_data["history"]
-            label = effective_legend_labels[train_idx]
+        # Plot each training run with systematic styling on each axis
+        for ax_idx, current_ax in enumerate(axes):
+            for train_idx, training_data in enumerate(loaded_training_data_list):
+                history = training_data["history"]
+                label = effective_legend_labels[train_idx]
 
-            # Get dataset size and model type for this training run
-            dataset_size, model_type = label_info[train_idx]
+                # Get dataset size and model type for this training run
+                dataset_size, model_type = label_info[train_idx]
 
-            # Get color based on dataset size and line style based on model type
-            base_color = size_to_color.get(
-                dataset_size, colors[0]
-            )  # fallback to first color
-            base_linestyle = model_to_linestyle.get(
-                model_type, "-"
-            )  # fallback to solid line
+                # Get color based on dataset size and line style based on model type
+                base_color = size_to_color.get(
+                    dataset_size, colors[0]
+                )  # fallback to first color
+                base_linestyle = model_to_linestyle.get(
+                    model_type, "-"
+                )  # fallback to solid line
 
-            if validation_only:
-                # Plot only validation metrics with clean labels (no "- validation" suffix)
-                val_metrics = [m for m in metrics_to_plot if m.startswith("val_")]
-                for metric_idx, metric in enumerate(val_metrics):
-                    if metric in history:
-                        values = history[metric]
-                        epochs = list(range(1, len(values) + 1))
+                if validation_only:
+                    # Plot only validation metrics with clean labels (no "- validation" suffix)
+                    val_metrics = [m for m in metrics_to_plot if m.startswith("val_")]
+                    for metric_idx, metric in enumerate(val_metrics):
+                        if metric in history:
+                            values = history[metric]
+                            epochs = list(range(1, len(values) + 1))
 
-                        # Use clean label without "- validation" suffix
-                        line_label = f"{label}"
-                        ax.plot(
-                            epochs,
-                            values,
-                            color=base_color,
-                            linewidth=plot_utils.LINE_WIDTHS["thick"],
-                            linestyle=base_linestyle,
-                            label=line_label,
-                        )
+                            # Use clean label without "- validation" suffix
+                            # Only add label for first axis to avoid legend duplication
+                            line_label = f"{label}" if ax_idx == 0 else None
+                            current_ax.plot(
+                                epochs,
+                                values,
+                                color=base_color,
+                                linewidth=plot_utils.LINE_WIDTHS["thick"],
+                                linestyle=base_linestyle,
+                                label=line_label,
+                            )
+                else:
+                    # Plot training metrics (using base line style)
+                    train_metrics = [
+                        m
+                        for m in metrics_to_plot
+                        if not m.startswith(("val_", "test_"))
+                    ]
+                    for metric_idx, metric in enumerate(train_metrics):
+                        if metric in history:
+                            values = history[metric]
+                            epochs = list(range(1, len(values) + 1))
+
+                            line_label = (
+                                f"{label}"
+                                if len(train_metrics) == 1
+                                else f"{label} - {metric}"
+                            )
+                            # Only add label for first axis to avoid legend duplication
+                            line_label = line_label if ax_idx == 0 else None
+                            current_ax.plot(
+                                epochs,
+                                values,
+                                color=base_color,
+                                linewidth=plot_utils.LINE_WIDTHS["thick"],
+                                linestyle=base_linestyle,
+                                label=line_label,
+                            )
+
+                    # Plot validation metrics (using base line style - systematic approach)
+                    val_metrics = [m for m in metrics_to_plot if m.startswith("val_")]
+                    for metric_idx, metric in enumerate(val_metrics):
+                        if metric in history:
+                            values = history[metric]
+                            epochs = list(range(1, len(values) + 1))
+
+                            # Use same color and line style for validation (systematic approach)
+                            line_label = (
+                                f"{label} - {metric}"
+                                if len(val_metrics) > 1
+                                else f"{label} - validation"
+                            )
+                            # Only add label for first axis to avoid legend duplication
+                            line_label = line_label if ax_idx == 0 else None
+                            current_ax.plot(
+                                epochs,
+                                values,
+                                color=base_color,
+                                linewidth=plot_utils.LINE_WIDTHS["thick"],
+                                linestyle=base_linestyle,
+                                label=line_label,
+                            )
+
+        # Format each axis
+        for ax_idx, current_ax in enumerate(axes):
+            current_ax.set_xlabel("Epoch", fontsize=plot_utils.FONT_SIZES["large"])
+            current_ax.set_ylabel(
+                "Loss (log scale)", fontsize=plot_utils.FONT_SIZES["large"]
+            )
+            current_ax.set_yscale("log")
+            current_ax.grid(True, alpha=0.3, which="both")
+
+            # Set panel-specific title
+            if len(axes) > 1:
+                if ax_idx == 0:
+                    current_ax.set_title(
+                        f"{title_prefix}\n{panel_titles[ax_idx]}",
+                        fontsize=plot_utils.FONT_SIZES["large"],
+                    )
+                else:
+                    current_ax.set_title(
+                        panel_titles[ax_idx], fontsize=plot_utils.FONT_SIZES["large"]
+                    )
+                    # Set y-limit for cropped view
+                    current_ax.set_ylim(top=outlier_threshold)
             else:
-                # Plot training metrics (using base line style)
-                train_metrics = [
-                    m for m in metrics_to_plot if not m.startswith(("val_", "test_"))
-                ]
-                for metric_idx, metric in enumerate(train_metrics):
-                    if metric in history:
-                        values = history[metric]
-                        epochs = list(range(1, len(values) + 1))
-
-                        line_label = (
-                            f"{label}"
-                            if len(train_metrics) == 1
-                            else f"{label} - {metric}"
-                        )
-                        ax.plot(
-                            epochs,
-                            values,
-                            color=base_color,
-                            linewidth=plot_utils.LINE_WIDTHS["thick"],
-                            linestyle=base_linestyle,
-                            label=line_label,
-                        )
-
-                # Plot validation metrics (using base line style - systematic approach)
-                val_metrics = [m for m in metrics_to_plot if m.startswith("val_")]
-                for metric_idx, metric in enumerate(val_metrics):
-                    if metric in history:
-                        values = history[metric]
-                        epochs = list(range(1, len(values) + 1))
-
-                        # Use same color and line style for validation (systematic approach)
-                        line_label = (
-                            f"{label} - {metric}"
-                            if len(val_metrics) > 1
-                            else f"{label} - validation"
-                        )
-                        ax.plot(
-                            epochs,
-                            values,
-                            color=base_color,
-                            linewidth=plot_utils.LINE_WIDTHS["thick"],
-                            linestyle=base_linestyle,
-                            label=line_label,
-                        )
-
-        # Format the plot
-        ax.set_xlabel("Epoch", fontsize=plot_utils.FONT_SIZES["large"])
-        ax.set_ylabel("Loss (log scale)", fontsize=plot_utils.FONT_SIZES["large"])
-        ax.set_title(title_prefix, fontsize=plot_utils.FONT_SIZES["xlarge"])
-        ax.set_yscale("log")
-        ax.grid(True, alpha=0.3, which="both")
+                current_ax.set_title(
+                    title_prefix, fontsize=plot_utils.FONT_SIZES["xlarge"]
+                )
 
         # Create custom legend with dataset sizes (colors) and model types (line styles)
         # Create legend elements for dataset sizes (colors)
@@ -865,8 +932,9 @@ class ResultPlotManager:
             legend_elements.append(Line2D([0], [0], color="none", label="Model Types:"))
             legend_elements.extend(model_legend_elements)
 
-        # Create the legend
-        legend = ax.legend(
+        # Create the legend (only on first axis for multi-panel plots)
+        legend_ax = axes[0]
+        legend = legend_ax.legend(
             handles=legend_elements,
             fontsize=plot_utils.FONT_SIZES["normal"],
             loc="upper right",

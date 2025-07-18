@@ -157,21 +157,28 @@ class FoundationPlotManager:
             self.logger.error(f"Failed to create data efficiency plot: {str(e)}")
             return False
 
-    def create_training_history_comparison_plot(
+    def create_training_history_comparison_plot_from_directory(
         self,
         training_histories_dir: Path,
         output_path: Path,
         title_prefix: str = "Model Training Comparison",
         validation_only: bool = True,
+        handle_outliers: bool = True,
+        outlier_percentile: float = 95.0,
     ) -> bool:
         """
-        Create a combined training history plot comparing different models.
+        Create a combined training history plot comparing different models from a directory.
+
+        This method discovers training history JSON files in a directory, sorts them by model type
+        and data size, then delegates to the core plotting function.
 
         Args:
             training_histories_dir: Directory containing training history JSON files
             output_path: Path where to save the plot
             title_prefix: Prefix for the plot title
             validation_only: Whether to show only validation loss
+            handle_outliers: If True, creates a 1x2 subplot with full range and cropped view
+            outlier_percentile: Percentile threshold for cropping the zoomed view (default: 95.0)
 
         Returns:
             bool: True if plot was created successfully, False otherwise
@@ -238,6 +245,8 @@ class FoundationPlotManager:
                     legend_labels=sorted_labels,
                     title_prefix=title_prefix,
                     validation_only=validation_only,
+                    handle_outliers=handle_outliers,
+                    outlier_percentile=outlier_percentile,
                 )
                 self.logger.info(
                     f"Combined training history plot saved to: {output_path}"
