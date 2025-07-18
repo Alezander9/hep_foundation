@@ -16,10 +16,12 @@ from hep_foundation.models.dnn_predictor import DNNPredictorConfig
 from hep_foundation.models.model_factory import ModelFactory
 from hep_foundation.models.model_registry import ModelRegistry
 from hep_foundation.models.variational_autoencoder import (
-    AnomalyDetectionEvaluator,
     BetaSchedule,
     VAEConfig,
     VariationalAutoEncoder,
+)
+from hep_foundation.pipeline.anomaly_detection_evaluator import (
+    AnomalyDetectionEvaluator,
 )
 from hep_foundation.plots.foundation_plot_manager import FoundationPlotManager
 from hep_foundation.plots.result_plot_manager import ResultPlotManager

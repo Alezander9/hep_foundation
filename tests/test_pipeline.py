@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 from hep_foundation.config.config_loader import load_pipeline_config
-from hep_foundation.training.foundation_model_pipeline import FoundationModelPipeline
+from hep_foundation.pipeline.foundation_model_pipeline import FoundationModelPipeline
 
 # Expected file structure after full pipeline completion
 # This serves as documentation and validation for pipeline outputs
