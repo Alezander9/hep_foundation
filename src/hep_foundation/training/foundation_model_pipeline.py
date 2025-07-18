@@ -22,6 +22,7 @@ from hep_foundation.models.variational_autoencoder import (
     VariationalAutoEncoder,
 )
 from hep_foundation.training.model_trainer import ModelTrainer
+from hep_foundation.utils.result_plot_manager import ResultPlotManager
 
 
 class FoundationModelPipeline:
@@ -65,6 +66,9 @@ class FoundationModelPipeline:
 
         # Source config file for reproducibility
         self._source_config_file = None
+
+        # Initialize result plot manager
+        self.plot_manager = ResultPlotManager()
 
         self.logger.info("Foundation Model Pipeline initialized.")
         self.logger.info(
@@ -1092,6 +1096,8 @@ class FoundationModelPipeline:
                 train_subset,
                 data_size: int,
                 save_training_history: bool = False,
+                label_distributions_dir_param: Optional[Path] = None,
+                bin_edges_metadata: Optional[dict] = None,
             ):
                 self.logger.info(
                     f"Training {model_name} model with {data_size} events..."
@@ -1136,6 +1142,83 @@ class FoundationModelPipeline:
                     "test_loss", test_metrics.get("test_mse", 0.0)
                 )
 
+                # Generate predictions and save histogram data (500 samples)
+                try:
+                    self.logger.info(
+                        f"Generating predictions for {model_name} model..."
+                    )
+                    predictions_list = []
+                    samples_collected = 0
+                    max_prediction_samples = 500
+
+                    for batch in test_dataset:
+                        if isinstance(batch, tuple) and len(batch) == 2:
+                            features_batch, _ = batch
+                            predictions_batch = combined_keras_model.predict(
+                                features_batch, verbose=0
+                            )
+
+                            # Convert to numpy and flatten if needed
+                            predictions_np = (
+                                predictions_batch.flatten()
+                                if predictions_batch.ndim > 1
+                                else predictions_batch
+                            )
+                            predictions_list.extend(predictions_np)
+                            samples_collected += len(predictions_np)
+
+                            if samples_collected >= max_prediction_samples:
+                                break
+
+                    # Create histogram data for predictions using coordinated binning
+                    if predictions_list:
+                        predictions_array = np.array(
+                            predictions_list[:max_prediction_samples]
+                        )
+
+                        # Use predefined bin edges if available for coordinated binning
+                        predefined_bin_edges = None
+                        if bin_edges_metadata and "test_labels" in bin_edges_metadata:
+                            predefined_bin_edges = np.array(
+                                bin_edges_metadata["test_labels"]
+                            )
+                            self.logger.info(
+                                f"Using coordinated binning for {model_name} predictions"
+                            )
+
+                        predictions_hist_data = self.plot_manager.create_label_histogram_data(
+                            predictions_array,
+                            num_bins=50,  # This will be ignored if predefined_bin_edges is provided
+                            label_name="test_labels",
+                            predefined_bin_edges=predefined_bin_edges,
+                        )
+
+                        pred_hist_filename = f"{model_name}_predictions_hist.json"
+
+                        # Use the parameter passed to the function, or create a default path
+                        hist_save_dir = label_distributions_dir_param or (
+                            regression_dir / "label_distributions"
+                        )
+
+                        self.plot_manager.save_label_histogram_data(
+                            predictions_hist_data,
+                            hist_save_dir / pred_hist_filename,
+                            f"Predictions from {model_name} model trained with {data_size} samples",
+                        )
+
+                        self.logger.info(
+                            f"Saved {len(predictions_array)} predictions for {model_name}"
+                        )
+                    else:
+                        self.logger.warning(
+                            f"No predictions generated for {model_name}"
+                        )
+
+                except Exception as e:
+                    self.logger.error(
+                        f"Failed to generate predictions for {model_name}: {str(e)}"
+                    )
+
                 self.logger.info(
                     f"{model_name} with {data_size} events - Test Loss: {test_loss:.6f}"
                 )
@@ -1156,7 +1239,43 @@ class FoundationModelPipeline:
                 )
                 # Will save histories for all data sizes processed
 
-            # 3. Run experiments for each data size
+            # 3. Create label distributions folder and sample actual test labels
+            self.logger.info("Creating label distribution analysis...")
+            label_distributions_dir = regression_dir / "label_distributions"
+            label_distributions_dir.mkdir(parents=True, exist_ok=True)
+
+            # Sample actual test labels once (5000 samples)
+            self.logger.info("Sampling actual test labels for distribution analysis...")
+            actual_test_labels = self.plot_manager.extract_labels_from_dataset(
+                test_dataset, max_samples=5000
+            )
+            actual_labels_bin_edges_metadata = None
+            if len(actual_test_labels) > 0:
+                actual_labels_hist_data = self.plot_manager.create_label_histogram_data(
+                    actual_test_labels, num_bins=50, label_name="test_labels"
+                )
+                self.plot_manager.save_label_histogram_data(
+                    actual_labels_hist_data,
+                    label_distributions_dir / "actual_test_labels_hist.json",
+                    "Actual test labels from regression dataset",
+                )
+
+                # Save bin edges metadata for coordinated binning
+                bin_edges_metadata_path = (
+                    label_distributions_dir / "label_bin_edges_metadata.json"
+                )
+                self.plot_manager.save_bin_edges_metadata(
+                    actual_labels_hist_data, bin_edges_metadata_path
+                )
+
+                # Load the bin edges for use in prediction histograms
+                actual_labels_bin_edges_metadata = (
+                    self.plot_manager.load_bin_edges_metadata(bin_edges_metadata_path)
+                )
+            else:
+                self.logger.warning("No test labels extracted for histogram analysis")
+
+            # 4. Run experiments for each data size
             for data_size_index, data_size in enumerate(data_sizes):
                 self.logger.info(f"{'=' * 50}")
                 self.logger.info(f"Training with {data_size} events")
@@ -1212,6 +1331,8 @@ class FoundationModelPipeline:
                     train_subset,
                     data_size,
                     save_training_history=should_save_history,
+                    label_distributions_dir_param=label_distributions_dir,
+                    bin_edges_metadata=actual_labels_bin_edges_metadata,
                 )
                 results["From_Scratch"].append(scratch_loss)
 
@@ -1257,6 +1378,8 @@ class FoundationModelPipeline:
                     train_subset,
                     data_size,
                     save_training_history=should_save_history,
+                    label_distributions_dir_param=label_distributions_dir,
+                    bin_edges_metadata=actual_labels_bin_edges_metadata,
                 )
                 results["Fine_Tuned"].append(finetuned_loss)
 
@@ -1302,10 +1425,12 @@ class FoundationModelPipeline:
                     train_subset,
                     data_size,
                     save_training_history=should_save_history,
+                    label_distributions_dir_param=label_distributions_dir,
+                    bin_edges_metadata=actual_labels_bin_edges_metadata,
                 )
                 results["Fixed_Encoder"].append(fixed_loss)
 
-            # 4. Save results and create plots
+            # 5. Save results and create plots
             self.logger.info("Creating data efficiency plot...")
 
             # Save results to JSON
@@ -1364,14 +1489,10 @@ class FoundationModelPipeline:
                                 sorted_labels.append(model_display_name)
 
                     if sorted_files:
-                        from hep_foundation.data.dataset_visualizer import (
-                            create_training_history_plot_from_json,
-                        )
-
                         combined_plot_path = (
                             regression_dir / "regression_training_comparison.png"
                         )
-                        create_training_history_plot_from_json(
+                        self.plot_manager.create_training_history_comparison_plot(
                             training_history_json_paths=sorted_files,
                             output_plot_path=combined_plot_path,
                             legend_labels=sorted_labels,
@@ -1484,6 +1605,13 @@ class FoundationModelPipeline:
                     self.logger.info(f"  Fine-Tuned improvement: {ft_improvement:.1f}%")
                     self.logger.info(f"  Fixed improvement: {fx_improvement:.1f}%")
                 self.logger.info("")
+
+            # Create label distribution comparison plot
+            self.logger.info("Creating label distribution comparison plot...")
+            self.plot_manager.create_label_distribution_comparison_plot(
+                regression_dir, data_sizes
+            )
+
             return True
 
         except Exception as e:
@@ -1752,6 +1880,8 @@ class FoundationModelPipeline:
                 train_subset,
                 data_size: int,
                 save_training_history: bool = False,
+                label_distributions_dir_param: Optional[Path] = None,
+                bin_edges_metadata: Optional[dict] = None,
             ):
                 self.logger.info(
                     f"Training {model_name} model with {data_size} events..."
@@ -1759,7 +1889,7 @@ class FoundationModelPipeline:
 
                 # Wrap the Keras model with CustomKerasModelWrapper for ModelTrainer
                 wrapped_model_for_trainer = CustomKerasModelWrapper(
-                    combined_keras_model, name=f"{model_name}_classifier"
+                    combined_keras_model, name=model_name
                 )
 
                 trainer_config_dict = {
@@ -1866,6 +1996,8 @@ class FoundationModelPipeline:
                     train_subset,
                     data_size,
                     save_training_history=should_save_history,
+                    label_distributions_dir_param=None,  # Signal classification doesn't need label distribution analysis
+                    bin_edges_metadata=None,  # Signal classification doesn't need coordinated binning
                 )
                 results["From_Scratch_loss"].append(scratch_loss)
                 results["From_Scratch_accuracy"].append(scratch_accuracy)
@@ -1910,6 +2042,8 @@ class FoundationModelPipeline:
                     train_subset,
                     data_size,
                     save_training_history=should_save_history,
+                    label_distributions_dir_param=None,  # Signal classification doesn't need label distribution analysis
+                    bin_edges_metadata=None,  # Signal classification doesn't need coordinated binning
                 )
                 results["Fine_Tuned_loss"].append(finetuned_loss)
                 results["Fine_Tuned_accuracy"].append(finetuned_accuracy)
@@ -1953,6 +2087,8 @@ class FoundationModelPipeline:
                     train_subset,
                     data_size,
                     save_training_history=should_save_history,
+                    label_distributions_dir_param=None,  # Signal classification doesn't need label distribution analysis
+                    bin_edges_metadata=None,  # Signal classification doesn't need coordinated binning
                 )
                 results["Fixed_Encoder_loss"].append(fixed_loss)
                 results["Fixed_Encoder_accuracy"].append(fixed_accuracy)
@@ -2019,15 +2155,11 @@ class FoundationModelPipeline:
                                 sorted_labels.append(model_display_name)
 
                     if sorted_files:
-                        from hep_foundation.data.dataset_visualizer import (
-                            create_training_history_plot_from_json,
-                        )
-
                         combined_plot_path = (
                             classification_dir
                             / "signal_classification_training_comparison.png"
                         )
-                        create_training_history_plot_from_json(
+                        self.plot_manager.create_training_history_comparison_plot(
                             training_history_json_paths=sorted_files,
                             output_plot_path=combined_plot_path,
                             legend_labels=sorted_labels,

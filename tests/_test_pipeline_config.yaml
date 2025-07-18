@@ -37,16 +37,16 @@ task:
       sort_by_branch: null
       min_length: 1
       max_length: 10
-    - input_branches:
-        - "AnalysisElectronsAuxDyn.pt"
-        - "AnalysisElectronsAuxDyn.eta"
-        - "AnalysisElectronsAuxDyn.phi"
-        - "AnalysisElectronsAuxDyn.m"
-        - "AnalysisElectronsAuxDyn.charge"
-      filter_branches: []
-      sort_by_branch: {"branch": "AnalysisElectronsAuxDyn.pt"}
-      min_length: 1
-      max_length: 30
+    # - input_branches:
+    #     - "AnalysisElectronsAuxDyn.pt"
+    #     - "AnalysisElectronsAuxDyn.eta"
+    #     - "AnalysisElectronsAuxDyn.phi"
+    #     - "AnalysisElectronsAuxDyn.m"
+    #     - "AnalysisElectronsAuxDyn.charge"
+    #   filter_branches: []
+    #   sort_by_branch: {"branch": "AnalysisElectronsAuxDyn.pt"}
+    #   min_length: 1
+    #   max_length: 30
 
   label_features:
     - []
