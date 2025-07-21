@@ -27,6 +27,7 @@
   "derived.InDetTrackParticlesAuxDyn.reducedChiSquared": "Track Reduced χ²",
   "MET_Core_AnalysisMETAuxDyn.mpx": "MET x-component",
   "MET_Core_AnalysisMETAuxDyn.mpy": "MET y-component",
+  "MET_Core_AnalysisMETAuxDyn.sumet": "MET magnitude",
   "AnalysisElectronsAuxDyn.pt": "Electron pT",
   "AnalysisElectronsAuxDyn.eta": "Electron η",
   "AnalysisElectronsAuxDyn.phi": "Electron φ",
