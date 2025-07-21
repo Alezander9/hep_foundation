@@ -19,7 +19,7 @@ After creating a new feature, or finishing the last step of a multi-step impleme
 - IMPORTANT: Do not ever write one-off custom tests for functionality, always default to running pytest instead
 - **Linting & Formatting**: Uses` for linting and formatting. Run `uv run ruff check .` to check for issues and `uv run ruff format .` to format code after making significant changes.
 - **Testing**: Our project is tested with pytest. We have a comprehensive test for the foundation model pipeline, run it with: `python run_pytest.py`. This is a wrapper for our pytest tests. It will log all warnings and errors to the console, for complete logs read the `_test_results/pytest.log` file after the test is complete.
-- **Logging**: logger.debug should be used for temporary logging to understand an issue
+- **Logging**: logger.templog() should be used for temporary logging to understand an issue. These logs will appear only when running run_pytest.py and should be deleted after the bug is fixed.
 </rules>
 
 <project_overview>

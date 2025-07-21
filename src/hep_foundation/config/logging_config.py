@@ -4,6 +4,10 @@ import logging
 PROGRESS_LEVEL = 25
 logging.addLevelName(PROGRESS_LEVEL, "PROGRESS")
 
+# Add custom TEMPLOG log level (between WARNING=30 and ERROR=40)
+TEMPLOG_LEVEL = 35
+logging.addLevelName(TEMPLOG_LEVEL, "TEMPLOG")
+
 
 def progress(self, message, *args, **kwargs):
     """Log a progress message at PROGRESS level."""
@@ -11,16 +15,18 @@ def progress(self, message, *args, **kwargs):
         self._log(PROGRESS_LEVEL, message, args, **kwargs)
 
 
+def templog(self, message, *args, **kwargs):
+    """Log a templog message at TEMPLOG level."""
+    if self.isEnabledFor(TEMPLOG_LEVEL):
+        self._log(TEMPLOG_LEVEL, message, args, **kwargs)
+
+
 # Add the progress method to Logger class
 logging.Logger.progress = progress
+logging.Logger.templog = templog
 
 
-def log_progress(message, *args, **kwargs):
-    """Convenience function to log a progress message."""
-    logging.getLogger().progress(message)
-
-
-def setup_logging(level=logging.INFO, log_file=None):
+def setup_logging(level=logging.DEBUG, log_file=None):
     """Setup logging configuration for the entire package
 
     Note: TensorFlow C++ logging level is controlled by TF_CPP_MIN_LOG_LEVEL

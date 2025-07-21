@@ -23,7 +23,7 @@ def run_pytest_with_filtered_output():
     print("=" * 60)
     print(f"Starting time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
     print("Full logs saved to: _test_results/pytest.log")
-    print("Showing only warnings, errors, and progress below:")
+    print("Showing only warnings, errors, progress, and templog below:")
     print("=" * 60)
     print()
 
@@ -49,11 +49,11 @@ def run_pytest_with_filtered_output():
             bufsize=1,
         )
 
-        # Filter output - only show warnings, errors, and progress
+        # Filter output - only show warnings, errors, progress, or templog
         for line in process.stdout:
             line_lower = line.lower().strip()
 
-            # Check if line contains warnings, errors, or progress
+            # Check if line contains warnings, errors, progress, or templog
             if any(
                 keyword in line_lower
                 for keyword in [
@@ -65,6 +65,7 @@ def run_pytest_with_filtered_output():
                     "assertion",
                     "critical",
                     "progress",
+                    "templog",
                 ]
             ):
                 print(line.rstrip())
