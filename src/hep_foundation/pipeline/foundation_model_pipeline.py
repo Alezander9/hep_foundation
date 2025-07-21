@@ -1155,30 +1155,73 @@ class FoundationModelPipeline:
                     samples_collected = 0
                     max_prediction_samples = 500
 
-                    for batch in test_dataset:
+                    for batch_idx, batch in enumerate(test_dataset):
+                        if samples_collected >= max_prediction_samples:
+                            break
+
                         if isinstance(batch, tuple) and len(batch) == 2:
-                            features_batch, _ = batch
+                            features_batch, labels_batch = batch
+
                             predictions_batch = combined_keras_model.predict(
                                 features_batch, verbose=0
                             )
 
-                            # Convert to numpy and flatten if needed
-                            predictions_np = (
-                                predictions_batch.flatten()
-                                if predictions_batch.ndim > 1
-                                else predictions_batch
+                            # Don't flatten for multi-variable predictions!
+                            # Keep the original shape to preserve multiple variables
+                            if (
+                                predictions_batch.ndim == 2
+                                and predictions_batch.shape[1] > 1
+                            ):
+                                # Multi-variable predictions: shape (batch_size, num_variables)
+                                predictions_np = predictions_batch
+                            else:
+                                # Single variable: flatten if needed
+                                predictions_np = (
+                                    predictions_batch.flatten()
+                                    if predictions_batch.ndim > 1
+                                    else predictions_batch
+                                )
+
+                            # Calculate how many to take from this batch
+                            batch_size = predictions_np.shape[0]
+                            samples_to_take = min(
+                                batch_size, max_prediction_samples - samples_collected
                             )
-                            predictions_list.extend(predictions_np)
-                            samples_collected += len(predictions_np)
+
+                            # Take the samples (preserving all dimensions)
+                            batch_predictions = predictions_np[:samples_to_take]
+
+                            # Extend predictions_list properly
+                            if predictions_np.ndim == 2:
+                                # Multi-variable case: append each sample as a row
+                                for sample in batch_predictions:
+                                    predictions_list.append(sample)
+                            else:
+                                # Single variable case: extend with individual values
+                                predictions_list.extend(batch_predictions)
+
+                            samples_collected += samples_to_take
 
                             if samples_collected >= max_prediction_samples:
                                 break
 
                     # Save histogram data using foundation plot manager
                     if predictions_list:
-                        predictions_array = np.array(
-                            predictions_list[:max_prediction_samples]
-                        )
+                        # Create predictions array properly handling multi-dimensional data
+                        if (
+                            len(predictions_list) > 0
+                            and hasattr(predictions_list[0], "shape")
+                            and len(predictions_list[0].shape) > 0
+                        ):
+                            # Multi-variable predictions: stack the arrays
+                            predictions_array = np.array(
+                                predictions_list[:max_prediction_samples]
+                            )
+                        else:
+                            # Single variable predictions: convert to 1D array
+                            predictions_array = np.array(
+                                predictions_list[:max_prediction_samples]
+                            )
 
                         # Use the parameter passed to the function, or create a default path
                         hist_save_dir = label_distributions_dir_param or (
@@ -1192,6 +1235,7 @@ class FoundationModelPipeline:
                             hist_save_dir,
                             bin_edges_metadata,
                             max_samples=max_prediction_samples,
+                            label_variable_names=label_variable_names,
                         )
                     else:
                         self.logger.warning(
@@ -1227,9 +1271,31 @@ class FoundationModelPipeline:
             label_distributions_dir = regression_dir / "label_distributions"
             actual_labels_bin_edges_metadata = (
                 self.foundation_plot_manager.create_label_distribution_analysis(
-                    test_dataset, label_distributions_dir, max_samples=5000, num_bins=50
+                    test_dataset,
+                    label_distributions_dir,
+                    task_config=task_config,
+                    max_samples=5000,
+                    num_bins=50,
                 )
             )
+
+            # Extract label variable names from task config
+            label_variable_names = []
+            if hasattr(task_config, "labels") and task_config.labels:
+                first_label_config = task_config.labels[0]
+                if (
+                    hasattr(first_label_config, "feature_array_aggregators")
+                    and first_label_config.feature_array_aggregators
+                ):
+                    first_aggregator = first_label_config.feature_array_aggregators[0]
+                    if hasattr(first_aggregator, "input_branches"):
+                        for branch_selector in first_aggregator.input_branches:
+                            if hasattr(branch_selector, "branch") and hasattr(
+                                branch_selector.branch, "name"
+                            ):
+                                label_variable_names.append(branch_selector.branch.name)
+
+            self.logger.info(f"Extracted label variable names: {label_variable_names}")
 
             # 4. Run experiments for each data size
             for data_size_index, data_size in enumerate(data_sizes):
@@ -1416,9 +1482,33 @@ class FoundationModelPipeline:
             )
 
             # Create label distribution comparison plot
-            self.foundation_plot_manager.create_label_distribution_comparison_plot(
-                regression_dir, data_sizes
-            )
+            if label_variable_names:
+                # Load physlite plot labels for proper titles
+                physlite_plot_labels = None
+                try:
+                    physlite_labels_path = Path(
+                        "src/hep_foundation/data/physlite_plot_labels.json"
+                    )
+                    if physlite_labels_path.exists():
+                        with open(physlite_labels_path) as f:
+                            physlite_plot_labels = json.load(f)
+                except Exception as e:
+                    self.logger.warning(
+                        f"Could not load physlite plot labels: {str(e)}"
+                    )
+
+                # Use the new subplot-based comparison plot
+                self.foundation_plot_manager.create_label_distribution_comparison_plot_with_subplots(
+                    regression_dir,
+                    data_sizes,
+                    label_variable_names,
+                    physlite_plot_labels,
+                )
+            else:
+                # Fallback to old single-plot method
+                self.foundation_plot_manager.create_label_distribution_comparison_plot(
+                    regression_dir, data_sizes
+                )
 
             # 5. Display summary
             self.foundation_plot_manager.log_evaluation_summary(

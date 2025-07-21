@@ -26,7 +26,7 @@ logging.Logger.progress = progress
 logging.Logger.templog = templog
 
 
-def setup_logging(level=logging.DEBUG, log_file=None):
+def setup_logging(level=logging.INFO, log_file=None):
     """Setup logging configuration for the entire package
 
     Note: TensorFlow C++ logging level is controlled by TF_CPP_MIN_LOG_LEVEL
