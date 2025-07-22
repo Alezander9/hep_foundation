@@ -539,19 +539,20 @@ class FoundationModelPipeline:
             # This is essential for proper VAE loss computation (total_loss = reconstruction_loss + beta * kl_loss)
             beta_schedule_config = model_config.hyperparameters.get("beta_schedule", {})
             beta_callback = BetaSchedule(
-                beta_start=beta_schedule_config.get("start", 0.0),
-                beta_end=beta_schedule_config.get("end", 1.0),
-                total_epochs=training_config_dict["epochs"],
-                warmup_epochs=beta_schedule_config.get("warmup_epochs", 50),
-                cycle_epochs=beta_schedule_config.get("cycle_epochs", 20),
+                start=beta_schedule_config.get("start", 0.0),
+                warmup=beta_schedule_config.get("warmup", 50),
+                cycle_low=beta_schedule_config.get("cycle_low", 0.0),
+                cycle_high=beta_schedule_config.get("cycle_high", 1.0),
+                cycle_period=beta_schedule_config.get("cycle_period", 20),
             )
             callbacks.append(beta_callback)
 
             self.logger.info(
                 f"Added BetaSchedule callback: start={beta_schedule_config.get('start', 0.0)}, "
-                f"end={beta_schedule_config.get('end', 1.0)}, "
-                f"warmup_epochs={beta_schedule_config.get('warmup_epochs', 50)}, "
-                f"cycle_epochs={beta_schedule_config.get('cycle_epochs', 20)}"
+                f"warmup={beta_schedule_config.get('warmup', 50)}, "
+                f"cycle_low={beta_schedule_config.get('cycle_low', 0.0)}, "
+                f"cycle_high={beta_schedule_config.get('cycle_high', 1.0)}, "
+                f"cycle_period={beta_schedule_config.get('cycle_period', 20)}"
             )
 
             # Start training

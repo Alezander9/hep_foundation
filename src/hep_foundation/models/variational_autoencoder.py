@@ -76,7 +76,7 @@ class VAEConfig(ModelConfig):
             raise ValueError("beta_schedule is required for VAE")
 
         beta_schedule = self.hyperparameters["beta_schedule"]
-        required_beta = ["start", "end", "warmup_epochs", "cycle_epochs"]
+        required_beta = ["start", "warmup", "cycle_low", "cycle_high", "cycle_period"]
         for param in required_beta:
             if param not in beta_schedule:
                 raise ValueError(f"Missing required beta_schedule parameter: {param}")
@@ -89,26 +89,27 @@ class VAEConfig(ModelConfig):
             raise ValueError("beta_schedule.start must be a non-negative number")
 
         if (
-            not isinstance(beta_schedule["end"], (int, float))
-            or beta_schedule["end"] < beta_schedule["start"]
+            not isinstance(beta_schedule["cycle_low"], (int, float))
+            or beta_schedule["cycle_low"] < 0
         ):
-            raise ValueError("beta_schedule.end must be greater than or equal to start")
+            raise ValueError("beta_schedule.cycle_low must be a non-negative number")
 
         if (
-            not isinstance(beta_schedule["warmup_epochs"], int)
-            or beta_schedule["warmup_epochs"] < 0
+            not isinstance(beta_schedule["cycle_high"], (int, float))
+            or beta_schedule["cycle_high"] < beta_schedule["cycle_low"]
         ):
             raise ValueError(
-                "beta_schedule.warmup_epochs must be a non-negative integer"
+                "beta_schedule.cycle_high must be greater than or equal to cycle_low"
             )
 
+        if not isinstance(beta_schedule["warmup"], int) or beta_schedule["warmup"] < 0:
+            raise ValueError("beta_schedule.warmup must be a non-negative integer")
+
         if (
-            not isinstance(beta_schedule["cycle_epochs"], int)
-            or beta_schedule["cycle_epochs"] < 0
+            not isinstance(beta_schedule["cycle_period"], int)
+            or beta_schedule["cycle_period"] <= 0
         ):
-            raise ValueError(
-                "beta_schedule.cycle_epochs must be a non-negative integer"
-            )
+            raise ValueError("beta_schedule.cycle_period must be a positive integer")
 
 
 class Sampling(keras.layers.Layer):
@@ -186,32 +187,39 @@ class BetaSchedule(keras.callbacks.Callback):
 
     def __init__(
         self,
-        beta_start: float = 0.0,
-        beta_end: float = 1.0,
-        total_epochs: int = 100,
-        warmup_epochs: int = 50,
-        cycle_epochs: int = 20,
+        start: float = 0.0,
+        warmup: int = 50,
+        cycle_low: float = 0.0,
+        cycle_high: float = 1.0,
+        cycle_period: int = 20,
     ):
         super().__init__()
-        self.beta_start = beta_start
-        self.beta_end = beta_end
-        self.total_epochs = total_epochs
-        self.warmup_epochs = warmup_epochs
-        self.cycle_epochs = cycle_epochs
+        self.start = start
+        self.warmup = warmup
+        self.cycle_low = cycle_low
+        self.cycle_high = cycle_high
+        self.cycle_period = cycle_period
 
         # Initialize logger
         self.logger = get_logger(__name__)
 
     def on_epoch_begin(self, epoch: int, logs: Optional[dict] = None):
-        if epoch < self.warmup_epochs:
-            beta = self.beta_start
+        if epoch < self.warmup:
+            # Linear transition from start to cycle_low during warmup
+            if self.warmup > 0:
+                beta = self.start + (self.cycle_low - self.start) * (
+                    epoch / self.warmup
+                )
+            else:
+                beta = self.cycle_low
         else:
-            cycle_position = (epoch - self.warmup_epochs) % self.cycle_epochs
-            cycle_ratio = cycle_position / self.cycle_epochs
+            # Sinusoidal oscillation between cycle_low and cycle_high
+            cycle_position = (epoch - self.warmup) % self.cycle_period
+            cycle_ratio = cycle_position / self.cycle_period
             beta = (
-                self.beta_start
-                + (self.beta_end - self.beta_start)
-                * (np.sin(cycle_ratio * np.pi) + 1)
+                self.cycle_low
+                + (self.cycle_high - self.cycle_low)
+                * (np.sin(cycle_ratio * 2 * np.pi) + 1)
                 / 2
             )
 
@@ -242,7 +250,13 @@ class VariationalAutoEncoder(BaseModel):
         self.quant_bits = config.hyperparameters.get("quant_bits")
         self.beta_schedule = config.hyperparameters.get(
             "beta_schedule",
-            {"start": 0.0, "end": 1.0, "warmup_epochs": 50, "cycle_epochs": 20},
+            {
+                "start": 0.0,
+                "warmup": 50,
+                "cycle_low": 0.0,
+                "cycle_high": 1.0,
+                "cycle_period": 20,
+            },
         )
         self.name = config.architecture.get("name", "vae")
 
@@ -576,24 +590,29 @@ class VariationalAutoEncoder(BaseModel):
             return [0.0] * num_epochs
 
         start = self.beta_schedule.get("start", 0.0)
-        end = self.beta_schedule.get("end", 1.0)
-        warmup_epochs = self.beta_schedule.get("warmup_epochs", 0)
-        cycle_epochs = self.beta_schedule.get("cycle_epochs", 0)
+        warmup = self.beta_schedule.get("warmup", 0)
+        cycle_low = self.beta_schedule.get("cycle_low", 0.0)
+        cycle_high = self.beta_schedule.get("cycle_high", 1.0)
+        cycle_period = self.beta_schedule.get("cycle_period", 20)
 
         betas = []
         for epoch in range(num_epochs):
-            if cycle_epochs > 0 and epoch >= warmup_epochs:
-                # Cyclic beta schedule after warmup
-                cycle_position = (epoch - warmup_epochs) % cycle_epochs
-                cycle_ratio = cycle_position / cycle_epochs
-                # Use sine wave for smooth cycling (0 to 1 to 0)
-                beta = start + (end - start) * (np.sin(cycle_ratio * np.pi) + 1) / 2
-            elif warmup_epochs > 0 and epoch < warmup_epochs:
-                # Linear warmup
-                beta = start + (end - start) * (epoch / warmup_epochs)
+            if epoch < warmup:
+                # Linear transition from start to cycle_low during warmup
+                if warmup > 0:
+                    beta = start + (cycle_low - start) * (epoch / warmup)
+                else:
+                    beta = cycle_low
             else:
-                # Constant beta after warmup if no cycling
-                beta = end
+                # Sinusoidal oscillation between cycle_low and cycle_high
+                cycle_position = (epoch - warmup) % cycle_period
+                cycle_ratio = cycle_position / cycle_period
+                beta = (
+                    cycle_low
+                    + (cycle_high - cycle_low)
+                    * (np.sin(cycle_ratio * 2 * np.pi) + 1)
+                    / 2
+                )
 
             betas.append(beta)
 

@@ -125,6 +125,24 @@ EXPECTED_EXPERIMENT_STRUCTURE = {
             }
         },
     },
+    # Dataset plots copied for easy reference
+    "dataset_plots": {
+        "type": "directory",
+        "required": True,
+        "description": "Dataset plots copied from processed dataset",
+        "contents": {
+            "comparison_input_features_background_vs_signals.png": {
+                "type": "file",
+                "required": True,
+                "description": "Feature comparison plot (if signal keys specified)",
+            },
+            "comparison_input_features_zero_bias_background_vs_signals.png": {
+                "type": "file",
+                "required": True,
+                "description": "Zero-bias feature comparison plot (if signal keys specified)",
+            },
+        },
+    },
     # Evaluation results
     "testing": {
         "type": "directory",
@@ -307,17 +325,17 @@ EXPECTED_DATASET_STRUCTURE = {
     },
     "plots": {
         "type": "directory",
-        "required": False,
+        "required": True,
         "description": "Dataset visualization plots",
         "contents": {
             "comparison_input_features_background_vs_signals.png": {
                 "type": "file",
-                "required": False,
+                "required": True,
                 "description": "Feature comparison plot",
             },
             "comparison_input_features_zero_bias_background_vs_signals.png": {
                 "type": "file",
-                "required": False,
+                "required": True,
                 "description": "Zero-bias feature comparison plot",
             },
         },

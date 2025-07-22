@@ -1,5 +1,6 @@
 import json
 import platform
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -74,6 +75,63 @@ class ModelRegistry:
 
         return exp_dir
 
+    def _get_git_info(self) -> dict:
+        """Collect git repository information"""
+        git_info = {}
+
+        try:
+            # Get current commit hash
+            result = subprocess.run(
+                ["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0:
+                git_info["commit_hash"] = result.stdout.strip()
+
+            # Get current branch name
+            result = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                git_info["branch"] = result.stdout.strip()
+
+            # Check if working directory is clean (no uncommitted changes)
+            result = subprocess.run(
+                ["git", "status", "--porcelain"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                git_info["is_dirty"] = bool(result.stdout.strip())
+                git_info["uncommitted_files"] = (
+                    len(result.stdout.strip().split("\n"))
+                    if result.stdout.strip()
+                    else 0
+                )
+
+            # Get remote origin URL (if available)
+            result = subprocess.run(
+                ["git", "remote", "get-url", "origin"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                git_info["remote_origin"] = result.stdout.strip()
+
+        except (
+            subprocess.TimeoutExpired,
+            subprocess.CalledProcessError,
+            FileNotFoundError,
+        ) as e:
+            self.logger.warning(f"Could not get git information: {e}")
+            git_info["error"] = str(e)
+
+        return git_info
+
     def _get_environment_info(self) -> dict:
         """Collect information about the execution environment"""
         # Get memory info
@@ -97,6 +155,7 @@ class ModelRegistry:
                 "cuda_available": tf.test.is_built_with_cuda(),
                 "gpu_available": bool(tf.config.list_physical_devices("GPU")),
             },
+            "git": self._get_git_info(),
             "timestamp": str(datetime.now()),
         }
 
