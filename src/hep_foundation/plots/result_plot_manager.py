@@ -739,7 +739,7 @@ class ResultPlotManager:
         metrics_to_plot: Optional[list[str]] = None,
         validation_only: bool = False,
         handle_outliers: bool = True,
-        outlier_percentile: float = 95.0,
+        outlier_percentile: float = 80.0,
     ):
         """
         Creates a training history plot from saved training history JSON data.

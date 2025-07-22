@@ -1,4 +1,5 @@
 import json
+import shutil
 from pathlib import Path
 from typing import Optional, Union
 
@@ -108,7 +109,7 @@ class FoundationModelPipeline:
         foundation_model_path: str = None,
         data_sizes: list = None,
         fixed_epochs: int = None,
-    ) -> Union[bool, str]:
+    ) -> Union[bool, tuple[str, str]]:
         """
         Run the specified process with provided configurations.
 
@@ -127,7 +128,7 @@ class FoundationModelPipeline:
 
         Returns:
             bool: Success status for anomaly/regression processes
-            str: Foundation model path for train process, or None if training failed
+            tuple[str, str]: Tuple containing (foundation_model_path, dataset_path) for train process, or None if training failed
         """
         valid_processes = ["train", "anomaly", "regression", "signal_classification"]
         if process_name not in valid_processes:
@@ -238,7 +239,7 @@ class FoundationModelPipeline:
             self.logger.progress("STEP 1/4: TRAINING FOUNDATION MODEL")
             self.logger.info("=" * 50)
 
-            foundation_model_path = self.run_process(
+            training_result = self.run_process(
                 process_name="train",
                 dataset_config=dataset_config,
                 task_config=task_config,
@@ -247,15 +248,21 @@ class FoundationModelPipeline:
                 delete_catalogs=delete_catalogs,
             )
 
-            if not foundation_model_path or not isinstance(foundation_model_path, str):
+            if (
+                not training_result
+                or not isinstance(training_result, tuple)
+                or len(training_result) != 2
+            ):
                 self.logger.error(
-                    "Training failed or did not return a valid model path"
+                    "Training failed or did not return a valid (model_path, dataset_path) tuple"
                 )
                 return False
 
+            foundation_model_path, dataset_path = training_result
             self.logger.info(
                 f"Training completed successfully. Model saved at: {foundation_model_path}"
             )
+            self.logger.info(f"Dataset saved at: {dataset_path}")
 
             # Step 2: Run anomaly detection evaluation
             self.logger.info("=" * 50)
@@ -318,11 +325,45 @@ class FoundationModelPipeline:
                 return False
             self.logger.progress("Step 4/4: Signal classification evaluation completed")
 
+            # Copy dataset plots to foundation model directory for easy reference
+            self.logger.info("Copying dataset plots to foundation model directory...")
+            try:
+                # Extract dataset directory from dataset_path
+                dataset_dir = Path(dataset_path).parent
+                dataset_plots_dir = dataset_dir / "plots"
+
+                if dataset_plots_dir.exists() and dataset_plots_dir.is_dir():
+                    # Create destination directory in foundation model folder
+                    foundation_dataset_plots_dir = (
+                        Path(foundation_model_path) / "dataset_plots"
+                    )
+                    foundation_dataset_plots_dir.mkdir(parents=True, exist_ok=True)
+
+                    # Copy all files from dataset plots directory
+                    for plot_file in dataset_plots_dir.iterdir():
+                        if plot_file.is_file():
+                            destination = foundation_dataset_plots_dir / plot_file.name
+                            shutil.copy2(plot_file, destination)
+                            self.logger.info(f"Copied dataset plot: {plot_file.name}")
+
+                    self.logger.info(
+                        f"Dataset plots copied to: {foundation_dataset_plots_dir}"
+                    )
+                else:
+                    self.logger.info("No dataset plots directory found to copy")
+
+            except Exception as e:
+                self.logger.warning(f"Failed to copy dataset plots: {str(e)}")
+                # Don't fail the entire pipeline for plot copying issues
+
             # Final summary
             self.logger.info("=" * 100)
             self.logger.info("FULL PIPELINE COMPLETED SUCCESSFULLY")
             self.logger.info("=" * 100)
             self.logger.info(f"Foundation model: {foundation_model_path}")
+            self.logger.info(
+                f"Dataset plots copied to: {Path(foundation_model_path) / 'dataset_plots'}"
+            )
             self.logger.info(
                 "All four processes (train → anomaly → regression → signal classification) completed successfully"
             )
@@ -345,12 +386,12 @@ class FoundationModelPipeline:
         training_config: TrainingConfig,
         task_config: TaskConfig,
         delete_catalogs: bool = True,
-    ) -> Union[str, None]:
+    ) -> Union[tuple[str, str], None]:
         """
         Train a foundation model using provided configurations.
 
         Returns:
-            str: Path to the trained foundation model directory, or None if training failed
+            tuple[str, str]: Tuple containing (foundation_model_path, dataset_path), or None if training failed
         """
 
         try:
@@ -663,10 +704,12 @@ class FoundationModelPipeline:
 
             self.logger.info("Foundation model training completed successfully")
 
-            # Return the path to the trained model for use in subsequent evaluations
+            # Return the path to the trained model and dataset for use in subsequent evaluations
             foundation_model_path = str(self.experiments_output_dir / experiment_id)
+            dataset_path = str(data_manager.get_current_dataset_path())
             self.logger.info(f"Foundation model saved at: {foundation_model_path}")
-            return foundation_model_path
+            self.logger.info(f"Dataset saved at: {dataset_path}")
+            return foundation_model_path, dataset_path
 
         except Exception as e:
             self.logger.error(
