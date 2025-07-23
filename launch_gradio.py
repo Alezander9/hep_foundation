@@ -124,7 +124,6 @@ html, body {
     max-width: none !important;
     width: 100% !important;
     background-color: #ffffff !important;
-    color: #0a122a !important;
     font-family: 'Crimson Text', serif !important;
     font-size: 16px !important;
 }
@@ -132,13 +131,11 @@ html, body {
 /* Fix loading screen and background */
 .dark, .loading, .loading-wrap, #root {
     background-color: #ffffff !important;
-    color: #0a122a !important;
 }
 
 /* Gradio app container */
 .app, .gradio-app {
     background-color: #ffffff !important;
-    color: #0a122a !important;
     width: 100% !important;
     max-width: none !important;
 }
@@ -173,7 +170,7 @@ button:hover {
 
 /* Headers and typography */
 h1, h2, h3, h4, h5, h6 {
-    color: #0a122a;
+    color: #0a122a !important;
     font-family: 'Crimson Text', serif !important;
     font-weight: 600 !important;
 }
@@ -189,10 +186,24 @@ h1 {
     color: #0a122a !important;
 }
 
-/* Gallery styling */
-.gallery {
-    background-color: #ffffff !important;
+/* Image grid styling */
+.image-grid {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)) !important;
+    gap: 1rem !important;
     padding: 1rem !important;
+    background-color: #ffffff !important;
+}
+
+.image-grid .gr-image {
+    width: 100% !important;
+    height: auto !important;
+}
+
+/* Sidebar styling */
+.sidebar {
+    border-right: 1px solid #e2e1e0 !important;
+    padding-right: 1rem !important;
 }
 
 /* Sidebar experiment button styling */
@@ -203,9 +214,8 @@ h1 {
 }
 
 /* Force override any dark mode classes */
-.dark, .dark *:not(h1), [data-theme="dark"], [data-theme="dark"] *:not(h1) {
+.dark, [data-theme="dark"] {
     background-color: #ffffff !important;
-    color: #0a122a !important;
 }
 
 """
@@ -216,15 +226,10 @@ demo = gr.Blocks(
 )
 
 with demo:
-    # Persistent expand button (positioned absolutely via CSS)
-    expand_btn = gr.Button("▶", elem_classes=["expand-btn"], visible=False)
-
     with gr.Row():
-        # Collapsible sidebar
-        with gr.Column(scale=1, visible=True) as sidebar:
-            with gr.Row():
-                gr.Markdown("## Select Experiment")
-                collapse_btn = gr.Button("◀", elem_id="sidebar-toggle", size="sm")
+        # Sidebar - always visible, smaller width
+        with gr.Column(scale=1, elem_classes=["sidebar"]) as sidebar:
+            gr.Markdown("## Select Experiment")
 
             # Get experiment folders
             experiment_folders = get_experiment_folders()
@@ -246,7 +251,7 @@ with demo:
                     experiment_buttons.append((btn, folder_path))
 
         # Main content area
-        with gr.Column(scale=4) as main_content:
+        with gr.Column(scale=5) as main_content:
             gr.Markdown("# HEP Foundation Results Viewer")
 
             # Plot sections
@@ -266,31 +271,23 @@ with demo:
                             f"## {section_name}",
                             visible=False,
                         )
-                        section_gallery = gr.Gallery(
-                            label=f"{section_name} Plots",
-                            show_label=False,
-                            elem_id=f"gallery-{section_name.lower().replace(' ', '-')}",
-                            columns=2,
-                            rows=2,
-                            height="auto",
-                            visible=False,
-                        )
+                        with gr.Column(elem_classes=["image-grid"]):
+                            # Create multiple image components for each section
+                            section_images = []
+                            for i in range(8):  # Max 8 images per section
+                                img = gr.Image(
+                                    label=f"{section_name} Plot {i + 1}",
+                                    show_label=False,
+                                    visible=False,
+                                    container=False,
+                                    height=None,  # Maintain aspect ratio
+                                )
+                                section_images.append(img)
+
                         plot_sections[section_name] = {
                             "header": section_header,
-                            "gallery": section_gallery,
+                            "images": section_images,
                         }
-
-    # Toggle sidebar visibility
-    def toggle_sidebar_collapse():
-        return gr.update(visible=False), gr.update(visible=True)
-
-    def toggle_sidebar_expand():
-        return gr.update(visible=True), gr.update(visible=False)
-
-    # Connect toggle buttons
-    collapse_btn.click(toggle_sidebar_collapse, outputs=[sidebar, expand_btn])
-
-    expand_btn.click(toggle_sidebar_expand, outputs=[sidebar, expand_btn])
 
     # Handle experiment button clicks
     def select_experiment(folder_path, current_selected):
@@ -314,21 +311,26 @@ with demo:
         for section_name in section_names:
             section_plots = plots_by_section.get(section_name, [])
             if section_plots:
-                # Show section with plots
-                outputs.extend(
-                    [
-                        gr.update(visible=True),  # header
-                        gr.update(value=section_plots, visible=True),  # gallery
-                    ]
-                )
+                # Show section header
+                outputs.append(gr.update(visible=True))
+
+                # Update individual images - show as many as we have plots, hide the rest
+                section_images = plot_sections[section_name]["images"]
+                for i, img in enumerate(section_images):
+                    if i < len(section_plots):
+                        # Show image with plot
+                        outputs.append(gr.update(value=section_plots[i], visible=True))
+                    else:
+                        # Hide unused image slots
+                        outputs.append(gr.update(visible=False))
             else:
-                # Hide empty sections
-                outputs.extend(
-                    [
-                        gr.update(visible=False),  # header
-                        gr.update(value=[], visible=False),  # gallery
-                    ]
-                )
+                # Hide empty section header
+                outputs.append(gr.update(visible=False))
+
+                # Hide all images in this section
+                section_images = plot_sections[section_name]["images"]
+                for img in section_images:
+                    outputs.append(gr.update(visible=False))
 
         return outputs
 
@@ -341,12 +343,11 @@ with demo:
 
     # Add all section components
     for section_name in section_names:
-        output_components.extend(
-            [
-                plot_sections[section_name]["header"],
-                plot_sections[section_name]["gallery"],
-            ]
-        )
+        # Add section header
+        output_components.append(plot_sections[section_name]["header"])
+
+        # Add all individual images for this section
+        output_components.extend(plot_sections[section_name]["images"])
 
     # Connect all experiment buttons
     for btn, folder_path in experiment_buttons:
