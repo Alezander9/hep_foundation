@@ -73,10 +73,10 @@ models:
       name: "test_vae"
     hyperparameters:
       beta_schedule:
-        start: 0.01
-        warmup: 1
+        start: 0.001
+        warmup: 2
         cycle_low: 0.01
-        cycle_high: 0.1
+        cycle_high: 0.05
         cycle_period: 2
 
   dnn:

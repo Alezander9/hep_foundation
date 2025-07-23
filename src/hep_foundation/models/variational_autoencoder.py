@@ -216,16 +216,24 @@ class BetaSchedule(keras.callbacks.Callback):
             # Sinusoidal oscillation between cycle_low and cycle_high
             cycle_position = (epoch - self.warmup) % self.cycle_period
             cycle_ratio = cycle_position / self.cycle_period
+            # Use cosine wave so that cycle_ratio=0 gives cycle_low, cycle_ratio=0.5 gives cycle_high
             beta = (
                 self.cycle_low
                 + (self.cycle_high - self.cycle_low)
-                * (np.sin(cycle_ratio * 2 * np.pi) + 1)
+                * (-np.cos(cycle_ratio * 2 * np.pi) + 1)
                 / 2
             )
 
         self.logger.info(f"Epoch {epoch + 1}: beta = {beta:.4f}")
         self.model.beta.assign(beta)
         self.model.get_layer("vae_layer").beta.assign(beta)
+
+    def on_epoch_end(self, epoch: int, logs: Optional[dict] = None):
+        """Record the current beta value in the training logs"""
+        if logs is not None:
+            # Get the current beta value from the model
+            current_beta = float(self.model.beta.numpy())
+            logs["beta"] = current_beta
 
 
 class VariationalAutoEncoder(BaseModel):
@@ -360,52 +368,25 @@ class VariationalAutoEncoder(BaseModel):
         plots_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            # First try to load history from provided JSON file path
-            if training_history_json_path and training_history_json_path.exists():
-                self.logger.info(
-                    f"Loading training history from: {training_history_json_path}"
-                )
-                with open(training_history_json_path) as f:
-                    training_data = json.load(f)
-                    self._history = training_data.get("history", {})
-            # Fallback to searching for training history JSON files in the plots_dir parent
-            elif training_history_json_path is None:
-                # Look for training history JSON files in the training directory
-                training_dir = plots_dir.parent
-                if training_dir.name != "training":
-                    training_dir = plots_dir.parent / "training"
-
-                if training_dir.exists():
-                    json_files = list(training_dir.glob("training_history_*.json"))
-                    if json_files:
-                        # Use the most recent training history file
-                        latest_json = max(json_files, key=lambda x: x.stat().st_mtime)
-                        self.logger.info(
-                            f"Found training history JSON file: {latest_json}"
-                        )
-                        with open(latest_json) as f:
-                            training_data = json.load(f)
-                            self._history = training_data.get("history", {})
-                    else:
-                        self.logger.warning(
-                            f"No training history JSON files found in {training_dir}"
-                        )
-                        self._history = {}
-                else:
-                    self.logger.warning(f"Training directory not found: {training_dir}")
-                    self._history = {}
-            # Fallback to in-memory history (legacy support)
-            elif hasattr(self.model, "history") and self.model.history is not None:
-                self.logger.info("Using in-memory training history (legacy mode)")
-                self._history = self.model.history.history
-            elif hasattr(self, "_history") and self._history:
-                self.logger.info("Using existing _history attribute")
-                # _history is already set, use it as-is
-            else:
+            # Require training_history_json_path to be provided and valid
+            if not training_history_json_path:
                 self.logger.warning(
-                    "No training history found in JSON file, model, or _history attribute"
+                    "training_history_json_path not provided. Cannot create training history plots."
                 )
                 return
+
+            if not training_history_json_path.exists():
+                self.logger.warning(
+                    f"Training history file not found at: {training_history_json_path}. Cannot create training history plots."
+                )
+                return
+
+            self.logger.info(
+                f"Loading training history from: {training_history_json_path}"
+            )
+            with open(training_history_json_path) as f:
+                training_data = json.load(f)
+                self._history = training_data.get("history", {})
 
             if not self._history:
                 self.logger.warning("Training history is empty")
@@ -423,100 +404,100 @@ class VariationalAutoEncoder(BaseModel):
 
             set_science_style(use_tex=False)
 
-            if self._history:
-                colors = get_color_cycle("high_contrast", 3)
+            # Create training history plot with 4 vertically stacked subplots
+            colors = get_color_cycle("high_contrast", 4)
 
-                plt.figure(figsize=get_figure_size("single", ratio=1.2))
-                ax1 = plt.gca()
-                ax1.set_yscale("log")
-                ax2 = ax1.twinx()
+            # Create figure with 4 vertically stacked subplots (ratio < 1 makes it taller than wide)
+            fig, axes = plt.subplots(
+                4, 1, figsize=get_figure_size("single", ratio=0.7), sharex=True
+            )
+            fig.suptitle(
+                "Training Losses and Annealing Schedule", fontsize=FONT_SIZES["xlarge"]
+            )
 
-                epochs = range(1, len(self._history["reconstruction_loss"]) + 1)
+            epochs = range(1, len(self._history["reconstruction_loss"]) + 1)
 
-                ax1.plot(
-                    epochs,
-                    self._history["reconstruction_loss"],
-                    color=colors[0],
-                    label="Reconstruction Loss",
-                    linewidth=LINE_WIDTHS["thick"],
+            # Use recorded beta values from training history
+            if "beta" in self._history:
+                betas = self._history["beta"]
+                self.logger.info("Using recorded beta values from training history")
+            else:
+                self.logger.error(
+                    "Beta values not found in training history. This should not happen with current training setup."
                 )
-                ax1.plot(
-                    epochs,
-                    self._history["kl_loss"],
-                    color=colors[1],
-                    label="KL Loss",
-                    linewidth=LINE_WIDTHS["thick"],
+                return  # Skip plotting beta if not available
+
+            # Debug: Print some loss values to help diagnose the overlap issue
+            if len(self._history["reconstruction_loss"]) > 0:
+                self.logger.debug(
+                    f"Sample reconstruction loss values: {self._history['reconstruction_loss'][:3]}..."
                 )
                 if "total_loss" in self._history:
-                    # Fix: Use a color from the available high_contrast palette instead of invalid "bright" palette
-                    # Get a fourth color by extending the high_contrast palette
-                    extended_colors = get_color_cycle("high_contrast", 4)
-                    ax1.plot(
-                        epochs,
-                        self._history["total_loss"],
-                        color=extended_colors[3],
-                        label="Total Loss",
-                        linewidth=LINE_WIDTHS["thick"],
-                    )
-
-                # Debug: Print some loss values to help diagnose the overlap issue
-                if len(self._history["reconstruction_loss"]) > 0:
                     self.logger.debug(
-                        f"Sample reconstruction loss values: {self._history['reconstruction_loss'][:3]}..."
+                        f"Sample total loss values: {self._history['total_loss'][:3]}..."
                     )
-                    if "total_loss" in self._history:
-                        self.logger.debug(
-                            f"Sample total loss values: {self._history['total_loss'][:3]}..."
-                        )
-                    if "kl_loss" in self._history:
-                        self.logger.debug(
-                            f"Sample KL loss values: {self._history['kl_loss'][:3]}..."
-                        )
+                if "kl_loss" in self._history:
+                    self.logger.debug(
+                        f"Sample KL loss values: {self._history['kl_loss'][:3]}..."
+                    )
 
-                betas = self._calculate_beta_schedule(len(epochs))
-                ax2.plot(
+            # Subplot 1: Reconstruction Loss
+            axes[0].plot(
+                epochs,
+                self._history["reconstruction_loss"],
+                color=colors[0],
+                linewidth=LINE_WIDTHS["thick"],
+            )
+            axes[0].set_ylabel("Reconstruction\nLoss", fontsize=FONT_SIZES["normal"])
+            axes[0].grid(True, alpha=0.3)
+            axes[0].set_yscale("log")
+
+            # Subplot 2: KL Loss
+            axes[1].plot(
+                epochs,
+                self._history["kl_loss"],
+                color=colors[1],
+                linewidth=LINE_WIDTHS["thick"],
+            )
+            axes[1].set_ylabel("KL Loss", fontsize=FONT_SIZES["normal"])
+            axes[1].grid(True, alpha=0.3)
+            axes[1].set_yscale("log")
+
+            # Subplot 3: Total Loss (if available)
+            if "total_loss" in self._history:
+                axes[2].plot(
                     epochs,
-                    betas,
+                    self._history["total_loss"],
                     color=colors[2],
-                    linestyle="--",
-                    label="Beta",
                     linewidth=LINE_WIDTHS["thick"],
                 )
-
-                # Debug: Print some beta values to help diagnose if beta is always 0
-                self.logger.debug(f"Sample beta values: {betas[:5]}...")
-
-                ax1.set_xlabel("Epoch", fontsize=FONT_SIZES["large"])
-                ax1.set_ylabel(
-                    "Loss Components (log scale)", fontsize=FONT_SIZES["large"]
-                )
-                ax2.set_ylabel(
-                    "Beta (linear scale)", fontsize=FONT_SIZES["large"], color=colors[2]
-                )
-
-                lines1, labels1 = ax1.get_legend_handles_labels()
-                lines2, labels2 = ax2.get_legend_handles_labels()
-                ax1.legend(
-                    lines1 + lines2,
-                    labels1 + labels2,
-                    loc="upper right",
-                    fontsize=FONT_SIZES["normal"],
-                )
-
-                ax1.grid(True, alpha=0.3)
-                plt.title(
-                    "Training Losses and Annealing Schedule",
-                    fontsize=FONT_SIZES["xlarge"],
-                )
-
-                plt.savefig(
-                    plots_dir / "training_history.png", dpi=300, bbox_inches="tight"
-                )
-                plt.close()
-                self.logger.info("Created training history plot")
-
+                axes[2].set_ylabel("Total Loss", fontsize=FONT_SIZES["normal"])
+                axes[2].grid(True, alpha=0.3)
+                axes[2].set_yscale("log")
             else:
-                self.logger.warning("No history data available for plotting")
+                # Hide this subplot if total_loss is not available
+                axes[2].set_visible(False)
+
+            # Subplot 4: Beta
+            axes[3].plot(
+                epochs,
+                betas,
+                color=colors[3],
+                linestyle="--",
+                linewidth=LINE_WIDTHS["thick"],
+            )
+            axes[3].set_ylabel("Beta", fontsize=FONT_SIZES["normal"])
+            axes[3].set_xlabel("Epoch", fontsize=FONT_SIZES["large"])
+            axes[3].grid(True, alpha=0.3)
+
+            # Adjust subplot spacing with reduced vertical gaps
+            plt.subplots_adjust(hspace=0.15, top=0.93, bottom=0.08)
+
+            plt.savefig(
+                plots_dir / "training_history.png", dpi=300, bbox_inches="tight"
+            )
+            plt.close()
+            self.logger.info("Created training history plot")
 
         except Exception as e:
             self.logger.error(f"Error creating VAE plots: {str(e)}")
@@ -574,46 +555,3 @@ class VariationalAutoEncoder(BaseModel):
                 self.logger.info("Created 2D latent space projection plot")
 
         self.logger.info(f"VAE plots saved to: {plots_dir}")
-
-    def _calculate_beta_schedule(self, num_epochs):
-        """
-        Calculate beta values for each epoch based on the beta schedule configuration.
-
-        Args:
-            num_epochs: Number of epochs to calculate beta values for
-
-        Returns:
-            List of beta values for each epoch
-        """
-        if not hasattr(self, "beta_schedule") or not self.beta_schedule:
-            # Default constant beta if no schedule is provided
-            return [0.0] * num_epochs
-
-        start = self.beta_schedule.get("start", 0.0)
-        warmup = self.beta_schedule.get("warmup", 0)
-        cycle_low = self.beta_schedule.get("cycle_low", 0.0)
-        cycle_high = self.beta_schedule.get("cycle_high", 1.0)
-        cycle_period = self.beta_schedule.get("cycle_period", 20)
-
-        betas = []
-        for epoch in range(num_epochs):
-            if epoch < warmup:
-                # Linear transition from start to cycle_low during warmup
-                if warmup > 0:
-                    beta = start + (cycle_low - start) * (epoch / warmup)
-                else:
-                    beta = cycle_low
-            else:
-                # Sinusoidal oscillation between cycle_low and cycle_high
-                cycle_position = (epoch - warmup) % cycle_period
-                cycle_ratio = cycle_position / cycle_period
-                beta = (
-                    cycle_low
-                    + (cycle_high - cycle_low)
-                    * (np.sin(cycle_ratio * 2 * np.pi) + 1)
-                    / 2
-                )
-
-            betas.append(beta)
-
-        return betas
