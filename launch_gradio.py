@@ -126,6 +126,13 @@ html, body {
     background-color: #ffffff !important;
     font-family: 'Crimson Text', serif !important;
     font-size: 16px !important;
+    min-width: 0 !important;
+}
+
+/* Ensure columns can flex properly */
+.gr-column {
+    min-width: 0 !important;
+    flex-shrink: 1 !important;
 }
 
 /* Fix loading screen and background */
@@ -203,14 +210,17 @@ h1 {
 /* Sidebar styling */
 .sidebar {
     border-right: 1px solid #e2e1e0 !important;
-    padding-right: 1rem !important;
+    padding-right: 0.5rem !important;
+    min-width: 0 !important;
+    flex-shrink: 1 !important;
 }
 
 /* Sidebar experiment button styling */
 .sidebar-experiment-btn {
     text-align: left !important;
-    margin-bottom: 0.25rem !important;
-    width: calc(100% - 1.5rem) !important;
+    margin-bottom: 0.1rem !important;
+    min-width: 0 !important;
+    width: 100% !important;
 }
 
 /* Force override any dark mode classes */
@@ -226,32 +236,38 @@ demo = gr.Blocks(
 )
 
 with demo:
+    # State management
+    selected_experiment_state = gr.State(value=None)
+    sidebar_expanded_state = gr.State(value=True)
+
     with gr.Row():
-        # Sidebar - always visible, smaller width
-        with gr.Column(scale=1, elem_classes=["sidebar"]) as sidebar:
-            gr.Markdown("## Select Experiment")
+        # Sidebar - conditionally sized
+        with gr.Column(scale=4, elem_classes=["sidebar"]) as sidebar:
+            # Sidebar toggle button
+            sidebar_toggle_btn = gr.Button("↔", elem_classes=["sidebar-experiment-btn"])
 
-            # Get experiment folders
-            experiment_folders = get_experiment_folders()
-            experiment_buttons = []
+            # Sidebar content (conditionally visible)
+            with gr.Column(visible=True) as sidebar_content:
+                gr.Markdown("## Select Experiment")
 
-            # State to track selected experiment
-            selected_experiment_state = gr.State(value=None)
+                # Get experiment folders
+                experiment_folders = get_experiment_folders()
+                experiment_buttons = []
 
-            # Create buttons for each category
-            for category, folders in experiment_folders.items():
-                gr.Markdown(f"### {category}")
-                for folder in folders:
-                    folder_name = folder.name
-                    folder_path = str(folder)
-                    btn = gr.Button(
-                        folder_name,
-                        elem_classes=["sidebar-experiment-btn"],
-                    )
-                    experiment_buttons.append((btn, folder_path))
+                # Create buttons for each category
+                for category, folders in experiment_folders.items():
+                    gr.Markdown(f"### {category}")
+                    for folder in folders:
+                        folder_name = folder.name
+                        folder_path = str(folder)
+                        btn = gr.Button(
+                            folder_name,
+                            elem_classes=["sidebar-experiment-btn"],
+                        )
+                        experiment_buttons.append((btn, folder_path))
 
         # Main content area
-        with gr.Column(scale=5) as main_content:
+        with gr.Column(scale=20) as main_content:
             gr.Markdown("# HEP Foundation Results Viewer")
 
             # Plot sections
@@ -314,12 +330,17 @@ with demo:
                 # Show section header
                 outputs.append(gr.update(visible=True))
 
-                # Update individual images - show as many as we have plots, hide the rest
+                # Update individual images - ensure minimum of 2 are visible
                 section_images = plot_sections[section_name]["images"]
+                min_visible = max(2, len(section_plots))  # At least 2 images visible
+
                 for i, img in enumerate(section_images):
                     if i < len(section_plots):
                         # Show image with plot
                         outputs.append(gr.update(value=section_plots[i], visible=True))
+                    elif i < min_visible:
+                        # Show empty image slot to maintain minimum layout
+                        outputs.append(gr.update(value=None, visible=True))
                     else:
                         # Hide unused image slots
                         outputs.append(gr.update(visible=False))
@@ -358,6 +379,59 @@ with demo:
             inputs=[selected_experiment_state],
             outputs=output_components,
         )
+
+    # Auto-select "001_Foundation_VAE_Model" from Test Results if it exists
+    def auto_select_default():
+        """Auto-select the default experiment on load."""
+        target_name = "001_Foundation_VAE_Model"
+
+        # Look for the target experiment in Test Results
+        for btn, folder_path in experiment_buttons:
+            folder = Path(folder_path)
+            # Check if this is in test results and matches target name
+            if (
+                "test_foundation_experiments" in folder_path
+                and folder.name == target_name
+            ):
+                # Trigger the selection
+                return select_experiment(folder_path, None)
+
+        # If not found, return empty updates
+        return [None] + [gr.update() for _ in range(len(output_components) - 1)]
+
+    # Set up auto-selection on load
+    demo.load(
+        fn=auto_select_default,
+        inputs=[],
+        outputs=output_components,
+    )
+
+    # Sidebar toggle functionality
+    def toggle_sidebar(is_expanded):
+        """Toggle sidebar between expanded and collapsed states."""
+        new_expanded = not is_expanded
+
+        if new_expanded:
+            # Expanded state: scale=4, content visible
+            return [
+                new_expanded,  # Update state
+                gr.update(scale=4),  # Sidebar column scale
+                gr.update(visible=True),  # Sidebar content visibility
+            ]
+        else:
+            # Collapsed state: scale=1, content hidden
+            return [
+                new_expanded,  # Update state
+                gr.update(scale=1),  # Sidebar column scale
+                gr.update(visible=False),  # Sidebar content visibility
+            ]
+
+    # Connect sidebar toggle button
+    sidebar_toggle_btn.click(
+        fn=toggle_sidebar,
+        inputs=[sidebar_expanded_state],
+        outputs=[sidebar_expanded_state, sidebar, sidebar_content],
+    )
 
 
 def main():
