@@ -97,6 +97,14 @@ def get_experiment_plots(folder_path):
 custom_css = """
 @import url('https://fonts.googleapis.com/css2?family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap');
 
+/* Color Palette:
+background (white): #ffffff
+hover (blue-gray): #e2e1e0
+text (dark): #0a122a
+primary (orange): #d36135
+
+ */
+
 /* Force light mode everywhere and remove all shadows/outlines */
 * {
     box-shadow: none !important;
@@ -106,7 +114,7 @@ custom_css = """
 /* Global light mode styling */
 html, body {
     background-color: #ffffff !important;
-    color: #2d3748 !important;
+    color: #0a122a !important;
     margin: 0 !important;
     padding: 0 !important;
 }
@@ -116,21 +124,25 @@ html, body {
     max-width: none !important;
     width: 100% !important;
     background-color: #ffffff !important;
-    color: #2d3748 !important;
     font-family: 'Crimson Text', serif !important;
     font-size: 16px !important;
+    min-width: 0 !important;
+}
+
+/* Ensure columns can flex properly */
+.gr-column {
+    min-width: 0 !important;
+    flex-shrink: 1 !important;
 }
 
 /* Fix loading screen and background */
 .dark, .loading, .loading-wrap, #root {
     background-color: #ffffff !important;
-    color: #2d3748 !important;
 }
 
 /* Gradio app container */
 .app, .gradio-app {
     background-color: #ffffff !important;
-    color: #2d3748 !important;
     width: 100% !important;
     max-width: none !important;
 }
@@ -138,138 +150,82 @@ html, body {
 /* Blocks and containers */
 .block {
     background-color: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
-    border-radius: 8px !important;
 }
 
-/* Input fields and text areas */
-input, textarea, select {
-    background-color: #ffffff !important;
-    color: #2d3748 !important;
-    border: 1px solid #cbd5e0 !important;
-    border-radius: 4px !important;
-}
-
-input:focus, textarea:focus, select:focus {
-    border-color: #d36135 !important;
-}
-
-/* Buttons */
+/* Unified button styling - white background, black content */
 button {
+    background-color: #ffffff !important;
+    border-color: #ffffff !important;
+    color: #0a122a !important;
     font-family: 'Crimson Text', serif !important;
     font-weight: 600 !important;
     border-radius: 6px !important;
     transition: all 0.2s !important;
 }
 
-/* Primary buttons (orange) */
-button.primary, .primary button {
-    background-color: #d36135 !important;
-    border-color: #d36135 !important;
-    color: #ffffff !important;
+/* Button hover state - blue-gray background, keep black content */
+button:hover {
+    background-color: #e2e1e0 !important;
+    border-color: #e2e1e0 !important;
+    color: #0a122a !important;
 }
 
-button.primary:hover, .primary button:hover {
-    background-color: #b8542d !important;
-    border-color: #b8542d !important;
-}
-
-/* Secondary buttons */
-button.secondary, .secondary button {
-    background-color: #ffffff !important;
-    border-color: #cbd5e0 !important;
-    color: #4a5568 !important;
-}
-
-button.secondary:hover, .secondary button:hover {
-    background-color: #f7fafc !important;
-    border-color: #d36135 !important;
+/* Selected experiment button - orange content */
+.selected-experiment {
     color: #d36135 !important;
 }
 
 /* Headers and typography */
 h1, h2, h3, h4, h5, h6 {
-    color: #2d3748 !important;
+    color: #0a122a !important;
     font-family: 'Crimson Text', serif !important;
     font-weight: 600 !important;
 }
 
+/* Special styling for H1 - centered and orange */
 h1 {
-    color: #d36135 !important;
-    font-size: 2.5rem !important;
     text-align: center !important;
-    margin-bottom: 2rem !important;
+    color: #d36135 !important;
 }
 
 /* Markdown content */
 .markdown {
-    color: #2d3748 !important;
-}
-#markdown-no-border {
---block-border-width: 0 !important;
-border: none !important;
+    color: #0a122a !important;
 }
 
-/* Gallery styling */
-.gallery {
-    background-color: #f8f9fa !important;
-    border-radius: 8px !important;
+/* Image grid styling */
+.image-grid {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)) !important;
+    gap: 1rem !important;
     padding: 1rem !important;
+    background-color: #ffffff !important;
 }
 
-.gallery img {
-    border-radius: 6px !important;
+.image-grid .gr-image {
+    width: 100% !important;
+    height: auto !important;
 }
 
 /* Sidebar styling */
-.sidebar-section-title h4 {
-    text-align: left !important;
-    padding-left: 0.5rem !important;
-    margin-bottom: 0.5rem !important;
-    color: #4a5568 !important;
-    font-weight: 600 !important;
+.sidebar {
+    border-right: 1px solid #e2e1e0 !important;
+    padding-right: 0.5rem !important;
+    min-width: 0 !important;
+    flex-shrink: 1 !important;
 }
 
+/* Sidebar experiment button styling */
 .sidebar-experiment-btn {
     text-align: left !important;
-    margin-left: 1.5rem !important;
-    margin-bottom: 0.25rem !important;
-    width: calc(100% - 1.5rem) !important;
-}
-
-/* Expand button styling */
-.expand-btn {
-    position: fixed !important;
-    left: 10px !important;
-    top: 120px !important;
-    z-index: 1000 !important;
-    border-radius: 50% !important;
-    width: 40px !important;
-    height: 40px !important;
-    font-size: 16px !important;
-    min-width: 40px !important;
-    background-color: #d36135 !important;
-    color: #ffffff !important;
-    border: none !important;
-}
-
-.expand-btn:hover {
-    background-color: #b8542d !important;
-}
-
-/* Section headers */
-.section-header h2 {
-    text-align: center !important;
-    margin: 2rem 0 1rem 0 !important;
-    border-bottom: 2px solid #d36135 !important;
-    padding-bottom: 0.5rem !important;
-    color: #d36135 !important;
+    margin-bottom: 0.1rem !important;
+    min-width: 0 !important;
+    width: 100% !important;
 }
 
 /* Force override any dark mode classes */
-.dark, .dark *, [data-theme="dark"], [data-theme="dark"] * {
+.dark, [data-theme="dark"] {
     background-color: #ffffff !important;
-    color: #2d3748 !important;
 }
 
 """
@@ -280,46 +236,39 @@ demo = gr.Blocks(
 )
 
 with demo:
-    gr.Markdown(
-        "# HEP Foundation Experiment Results Viewer",
-        elem_classes=["markdown-no-border"],
-    )
-
-    # Persistent expand button (positioned absolutely via CSS)
-    expand_btn = gr.Button("▶", elem_classes=["expand-btn"], visible=False)
+    # State management
+    selected_experiment_state = gr.State(value=None)
+    sidebar_expanded_state = gr.State(value=True)
 
     with gr.Row():
-        # Collapsible sidebar
-        with gr.Column(scale=1, visible=True) as sidebar:
-            with gr.Row():
-                gr.Markdown("### Experiment Selector")
-                collapse_btn = gr.Button("◀", elem_id="sidebar-toggle", size="sm")
+        # Sidebar - conditionally sized
+        with gr.Column(scale=4, elem_classes=["sidebar"]) as sidebar:
+            # Sidebar toggle button
+            sidebar_toggle_btn = gr.Button("↔", elem_classes=["sidebar-experiment-btn"])
 
-            # Get experiment folders
-            experiment_folders = get_experiment_folders()
-            experiment_buttons = []
+            # Sidebar content (conditionally visible)
+            with gr.Column(visible=True) as sidebar_content:
+                gr.Markdown("## Select Experiment")
 
-            # Create buttons for each category
-            for category, folders in experiment_folders.items():
-                gr.Markdown(f"#### {category}", elem_classes=["sidebar-section-title"])
-                for folder in folders:
-                    folder_name = folder.name
-                    folder_path = str(folder)
-                    btn = gr.Button(
-                        folder_name,
-                        variant="secondary",
-                        elem_classes=["sidebar-experiment-btn"],
-                    )
-                    experiment_buttons.append((btn, folder_path))
+                # Get experiment folders
+                experiment_folders = get_experiment_folders()
+                experiment_buttons = []
+
+                # Create buttons for each category
+                for category, folders in experiment_folders.items():
+                    gr.Markdown(f"### {category}")
+                    for folder in folders:
+                        folder_name = folder.name
+                        folder_path = str(folder)
+                        btn = gr.Button(
+                            folder_name,
+                            elem_classes=["sidebar-experiment-btn"],
+                        )
+                        experiment_buttons.append((btn, folder_path))
 
         # Main content area
-        with gr.Column(scale=4) as main_content:
-            gr.Markdown("### Results Display")
-            selected_experiment = gr.Textbox(
-                label="Selected Experiment",
-                value="No experiment selected",
-                interactive=False,
-            )
+        with gr.Column(scale=20) as main_content:
+            gr.Markdown("# HEP Foundation Results Viewer")
 
             # Plot sections
             plot_sections = {}
@@ -337,77 +286,152 @@ with demo:
                         section_header = gr.Markdown(
                             f"## {section_name}",
                             visible=False,
-                            elem_classes=["section-header"],
                         )
-                        section_gallery = gr.Gallery(
-                            label=f"{section_name} Plots",
-                            show_label=False,
-                            elem_id=f"gallery-{section_name.lower().replace(' ', '-')}",
-                            columns=2,
-                            rows=2,
-                            height="auto",
-                            visible=False,
-                        )
+                        with gr.Column(elem_classes=["image-grid"]):
+                            # Create multiple image components for each section
+                            section_images = []
+                            for i in range(8):  # Max 8 images per section
+                                img = gr.Image(
+                                    label=f"{section_name} Plot {i + 1}",
+                                    show_label=False,
+                                    visible=False,
+                                    container=False,
+                                    height=None,  # Maintain aspect ratio
+                                )
+                                section_images.append(img)
+
                         plot_sections[section_name] = {
                             "header": section_header,
-                            "gallery": section_gallery,
+                            "images": section_images,
                         }
 
-    # Toggle sidebar visibility
-    def toggle_sidebar_collapse():
-        return gr.update(visible=False), gr.update(visible=True)
-
-    def toggle_sidebar_expand():
-        return gr.update(visible=True), gr.update(visible=False)
-
-    # Connect toggle buttons
-    collapse_btn.click(toggle_sidebar_collapse, outputs=[sidebar, expand_btn])
-
-    expand_btn.click(toggle_sidebar_expand, outputs=[sidebar, expand_btn])
-
     # Handle experiment button clicks
-    def select_experiment(folder_path):
+    def select_experiment(folder_path, current_selected):
         plots_by_section = get_experiment_plots(folder_path)
 
-        # Prepare outputs: experiment name + visibility and content for each section
-        outputs = [folder_path]
+        # Prepare outputs: new selected state + button updates + section visibility/content
+        outputs = [folder_path]  # Update selected state
 
+        # Update all experiment buttons - selected one gets orange class, others don't
+        for btn, btn_folder_path in experiment_buttons:
+            if btn_folder_path == folder_path:
+                outputs.append(
+                    gr.update(
+                        elem_classes=["sidebar-experiment-btn", "selected-experiment"]
+                    )
+                )
+            else:
+                outputs.append(gr.update(elem_classes=["sidebar-experiment-btn"]))
+
+        # Handle section visibility and content
         for section_name in section_names:
             section_plots = plots_by_section.get(section_name, [])
             if section_plots:
-                # Show section with plots
-                outputs.extend(
-                    [
-                        gr.update(visible=True),  # header
-                        gr.update(value=section_plots, visible=True),  # gallery
-                    ]
-                )
+                # Show section header
+                outputs.append(gr.update(visible=True))
+
+                # Update individual images - ensure minimum of 2 are visible
+                section_images = plot_sections[section_name]["images"]
+                min_visible = max(2, len(section_plots))  # At least 2 images visible
+
+                for i, img in enumerate(section_images):
+                    if i < len(section_plots):
+                        # Show image with plot
+                        outputs.append(gr.update(value=section_plots[i], visible=True))
+                    elif i < min_visible:
+                        # Show empty image slot to maintain minimum layout
+                        outputs.append(gr.update(value=None, visible=True))
+                    else:
+                        # Hide unused image slots
+                        outputs.append(gr.update(visible=False))
             else:
-                # Hide empty sections
-                outputs.extend(
-                    [
-                        gr.update(visible=False),  # header
-                        gr.update(value=[], visible=False),  # gallery
-                    ]
-                )
+                # Hide empty section header
+                outputs.append(gr.update(visible=False))
+
+                # Hide all images in this section
+                section_images = plot_sections[section_name]["images"]
+                for img in section_images:
+                    outputs.append(gr.update(visible=False))
 
         return outputs
 
-    # Prepare output components for all sections
-    output_components = [selected_experiment]
+    # Prepare output components: state + all buttons + all sections
+    output_components = [selected_experiment_state]
+
+    # Add all experiment buttons to outputs
+    for btn, _ in experiment_buttons:
+        output_components.append(btn)
+
+    # Add all section components
     for section_name in section_names:
-        output_components.extend(
-            [
-                plot_sections[section_name]["header"],
-                plot_sections[section_name]["gallery"],
-            ]
-        )
+        # Add section header
+        output_components.append(plot_sections[section_name]["header"])
+
+        # Add all individual images for this section
+        output_components.extend(plot_sections[section_name]["images"])
 
     # Connect all experiment buttons
     for btn, folder_path in experiment_buttons:
         btn.click(
-            lambda path=folder_path: select_experiment(path), outputs=output_components
+            fn=lambda current_selected, path=folder_path: select_experiment(
+                path, current_selected
+            ),
+            inputs=[selected_experiment_state],
+            outputs=output_components,
         )
+
+    # Auto-select "001_Foundation_VAE_Model" from Test Results if it exists
+    def auto_select_default():
+        """Auto-select the default experiment on load."""
+        target_name = "001_Foundation_VAE_Model"
+
+        # Look for the target experiment in Test Results
+        for btn, folder_path in experiment_buttons:
+            folder = Path(folder_path)
+            # Check if this is in test results and matches target name
+            if (
+                "test_foundation_experiments" in folder_path
+                and folder.name == target_name
+            ):
+                # Trigger the selection
+                return select_experiment(folder_path, None)
+
+        # If not found, return empty updates
+        return [None] + [gr.update() for _ in range(len(output_components) - 1)]
+
+    # Set up auto-selection on load
+    demo.load(
+        fn=auto_select_default,
+        inputs=[],
+        outputs=output_components,
+    )
+
+    # Sidebar toggle functionality
+    def toggle_sidebar(is_expanded):
+        """Toggle sidebar between expanded and collapsed states."""
+        new_expanded = not is_expanded
+
+        if new_expanded:
+            # Expanded state: scale=4, content visible
+            return [
+                new_expanded,  # Update state
+                gr.update(scale=4),  # Sidebar column scale
+                gr.update(visible=True),  # Sidebar content visibility
+            ]
+        else:
+            # Collapsed state: scale=1, content hidden
+            return [
+                new_expanded,  # Update state
+                gr.update(scale=1),  # Sidebar column scale
+                gr.update(visible=False),  # Sidebar content visibility
+            ]
+
+    # Connect sidebar toggle button
+    sidebar_toggle_btn.click(
+        fn=toggle_sidebar,
+        inputs=[sidebar_expanded_state],
+        outputs=[sidebar_expanded_state, sidebar, sidebar_content],
+    )
 
 
 def main():
