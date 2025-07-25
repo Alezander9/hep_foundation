@@ -3,7 +3,7 @@ description: "Rules for coding agent and explanation of hep_foundation Project"
 alwaysApply: true
 ---
 
-<role>
+<rules>
 You are an expert coding assistant agent. You write elegant and clear code when requested by the user.
 When the user requests the implementation of a feature, you carefully read provided code and read additional files to understand the project context first, then implement the feature in code.
 When the user requests the planning of a hypothetical new feature, you respond with details and possible code snippets, but do not make edits until requested.
@@ -11,15 +11,13 @@ When the user requests fixing a bug, you review relevant logs, locate the source
 You avoid creating fallback cases and legacy support. Each piece of code should have clear purpose and function.
 Malformed arguments, inputs, or bad data should be raised as an error and prevented rather than fixed with fallback cases.
 After creating a new feature, or finishing the last step of a multi-step implementation, run `source .venv/bin/activate && python run_pytest.py` in the terminal. You must activate the venv for the test to work
-</role>
-
-<rules>
-- IMPORTANT: avoid `uv pip install <package>` in favor of `uv add [--dev] <package>`
-- IMPORTANT: try to use `uv` commands instead of directly editing `pyproject.toml` to ensure the .venv does not desync
-- IMPORTANT: Do not ever write one-off custom tests for functionality, always default to running pytest instead
+Avoid `uv pip install <package>` in favor of `uv add [--dev] <package>`
+Use `uv` commands instead of directly editing `pyproject.toml` to ensure the .venv does not desync
 - **Linting & Formatting**: Uses` for linting and formatting. Run `uv run ruff check .` to check for issues and `uv run ruff format .` to format code after making significant changes.
-- **Testing**: Our project is tested with pytest. We have a comprehensive test for the foundation model pipeline, run it with: `python run_pytest.py`. This is a wrapper for our pytest tests. It will log all warnings and errors to the console, for complete logs read the `_test_results/pytest.log` file after the test is complete.
+- **Testing**: Our project is tested with pytest. We have a comprehensive test for the foundation model pipeline, run it with: `source .venv/bin/activate && python run_pytest.py`. This is a wrapper for our pytest tests. It will log all warnings and errors to the console, for complete logs read the `_test_results/pytest.log` file after the test is complete.
 - **Logging**: logger.templog() should be used for temporary logging to understand an issue. These logs will appear only when running run_pytest.py and should be deleted after the bug is fixed.
+
+DO NOT FORGET: Only use `source .venv/bin/activate && python run_pytest.py` to test code. Never write custom tests for functionality. Never create new files for tests. Never write import commands to test code compilation. The run_pytest script is necessary and sufficient for testing; if it completes without error you are done.
 </rules>
 
 <project_overview>
@@ -40,15 +38,11 @@ We are building a foundation model for particle physics. This project analyzes H
 ## Computational Requirements & Workflow
 - Typically use O(1M) events per dataset
 - Training: ~15 seconds per epoch on NERSC A100 GPU
-- GPU recommended for training
 - Pipeline bottlenecked by downloading ROOT files from CERN OpenData
-- Recommend running data creation locally (not cluster job)
-- `scripts/create_datasets.py` - Creates datasets for configs in stack (doesn't delete configs)
-- Transfer utilities for remote work:
-  - `scripts/transfer_configs.py` - Transfer configs
-  - `scripts/transfer_datasets.py` - Transfer datasets
-  - Requires env variables and SSH key setup
-- NSERC cluster jobs: `sbatch jobs/submit_pipeline_simple.sh`
+- Recommend running file download locally:
+- `scripts/download_catalogs.py`
+- Recommend run training as NSERC cluster job:
+- `sbatch jobs/submit_pipeline_simple.sh`
 
 ## High-Level Structure
 - `src/` - Package source code
@@ -58,7 +52,6 @@ We are building a foundation model for particle physics. This project analyzes H
 - `logs/` - Log outputs
 - `atlas_data/` - ATLAS physics data
 - `_*` directories - Experiment configs, processed datasets, test results
-- `pyproject.toml` - Dependencies and project config
 
 ## Pipeline & Config System
 - Create YAML config files → place in `_experiment_config_stack/`
@@ -70,7 +63,7 @@ We are building a foundation model for particle physics. This project analyzes H
 - Each config produces experiment folder in `_foundation_experiments/` (main results)
 - Config copy saved in experiment folder for reproducibility
 - Pipeline logs saved to `logs/`
-- `atlas_data/` holds temp downloaded ROOT files (auto-cleaned, can ignore)
+- `atlas_data/` holds temp downloaded ROOT files
 
 ## Experiment Results Structure
 Each experiment folder in `_foundation_experiments/` contains:
@@ -85,16 +78,17 @@ Each experiment folder in `_foundation_experiments/` contains:
 
 ## Testing
 - Install dev dependencies: `uv sync --group dev`
-- Run pipeline test: `pytest tests/test_pipeline.py`
+- Run pipeline test: (concise) `source .venv/bin/activate && python run_pytest.py`
+- For verbose output run directly `pytest tests/test_pipeline.py`
 - Test outputs to `_test_results/` (deletes folder fresh each run)
 - Check for no errors and verify results/plots look good
 - Copy `tests/_test_pipeline_config.yaml` to `_experiment_config_stack/`
 - Run real pipeline: `python scripts/run_pipelines.py`
 
 ## Misc Utilities
-- `.devcontainer/` - Docker container for development
+- `.devcontainer/` - Docker container for development (not needed in NERSC)
 - `scripts/test_gpu.py` - Test if TensorFlow can see GPU
-- `src/hep_foundation/utils/plot_utils.py` - Standardized plotting colors/labels
+- `src/hep_foundation/plots/plot_utils.py` - Standards and rules for plot colors/labels
 - `.pre-commit-config.yaml` - Pre-commit hooks for code quality
 - `src/hep_foundation/config/logging_config.py`- Centralized logging configuration
 - `src/hep_foundation/__init__.py` - Auto-initializes logging on package import
@@ -105,13 +99,12 @@ Each experiment folder in `_foundation_experiments/` contains:
 - Handles experiment folder creation and management
 
 ## Main Pipeline - Data Loading/Creation
-- Pipeline first tries to load existing datasets, creates new if none match config
-- Downloads ROOT files from CERN OpenData, unpacks and extracts quantities
+- load/create datasets
+- On create: downloads ROOT files
 - Uses feature/aggregator system for PhysLite data - can specify any PhysLite branch names in config
 - Derived features calculated from real branches (defined in `physlite_derived_features.py`)
   - Examples: eta from theta, pt from qOverP+theta, reduced chi-squared
-  - Convention: derived features start with "derived."
-- Data management uses indexes of available files/branches (may not be completely accurate)
+- Data management uses homemade indexes of available files/branches (may not be completely accurate)
 - Separates ATLAS background and signal datasets into different files (same config settings)
 - Signal keys hard-coded in `data/atlas_index.json`
 - DatasetManager samples data into histogram data with consistent bin edges
@@ -121,187 +114,40 @@ Each experiment folder in `_foundation_experiments/` contains:
 
 ### Event Processing Details
 Each event goes through `physlite_feature_processor.py` which:
-- **Reads real PhysLite branches** from ROOT files (e.g., track d0, z0, phi, theta, qOverP)
-- **Calculates derived features** (e.g., eta from theta, pt from qOverP+theta) using `physlite_derived_features.py`
-- **Applies event-level filters** (reject whole events that don't meet criteria)
-- **Processes array aggregators** from config:
+- Reads branches from ROOT files
+- Calculates derived features
+- Applies event-level filters (reject whole events that don't meet criteria)
+- Processes array aggregators from config:
   - Filters individual tracks/objects (e.g., d0 between -5 and 5 mm)
   - Sorts by specified branch (e.g., by qOverP for highest pt tracks)
-  - Enforces length requirements (min_length=10, max_length=30)
-  - Zero-pads shorter sequences, truncates longer ones
+  - Enforces length requirements (Zero-pads shorter sequences, truncates longer ones)
   - Stacks multiple track features horizontally into final arrays
-- **Example**: Config takes top 30 highest-pt tracks, requires ≥10 tracks, zero-pads to exactly 30×N_features array
 
 ## Main Pipeline - Model Creation
 - Uses dynamic ModelFactory class to create different model types/architectures
 - Foundation models: autoencoder and VAE (variational autoencoder)
 - Prediction tasks: DNN predictor
-- Model-specific classes contain utility functions for model-specific functionality
-- Extensible system for adding new model types
+- Model-specific classes contain utility functions for model-specific functionality and result plots
 
 ## Main Pipeline - Model Training
-- ModelTrainer class handles all model training (in training/ folder)
+- ModelTrainer class handles all model training and training plots
 - Uses TensorFlow for training
-- Optionally creates training and result plots
-- Unified training interface used for every model type
-- Simple but consistent training workflow
 
 ## Main Pipeline - Testing (3 Evaluation Processes)
-Pipeline order: Training → Regression → Signal Classification → Anomaly Detection
 
-### Regression Evaluation (`testing/regression_evaluation/`)
+### Anomaly Detection
+- Runs foundation model on ATLAS background and signal data
+- Compares MSE and KLD between background and signal, creates plots
+
+### Regression Evaluation
 - Compares 3 model types predicting label quantities from ATLAS data:
   - Fine-tuned: foundation encoder + new head (both trainable)
   - Fixed: foundation encoder (frozen) + new head (trainable)
   - From scratch: same architecture but uninitialized weights
 - Trains all models over various data amounts to compare data efficiency
 
-### Signal Classification (`testing/signal_classification/`)
+### Signal Classification
 - Same 3 model comparison as regression but for binary classification
 - Mixes ATLAS background and signal data with labels (0=background, 1=signal)
 - Trains over various data amounts to show foundation model benefits for limited signal data
-
-### Anomaly Detection (`testing/anomaly_detection/`)
-- Runs foundation model on ATLAS background and signal data
-- Compares MSE and KLD between background and signal
-- Uses foundation model backbone for anomaly scoring
-# HEP Foundation Model Project Notes
-
-## Setup
-- Uses uv + pyproject.toml for .venv management
-- Uses old TensorFlow 2.13.1 + qkeras 0.9.0 for compatibility (legacy quantization dependency, no longer used)
-- Uses ruff for code formatting and linting
-- Standard Python package structure with src layout
-- First-time setup: `uv venv --python 3.9` to create venv
-- Install package in editable mode: `uv pip install -e .` (installs all dependencies)
-- Install dev dependencies: `uv sync --group dev`
-- Setup pre-commit hooks: `pre-commit install` (requires dev dependencies)
-
-## Computational Requirements & Workflow
-- Typically use O(1M) events per dataset
-- Training: ~15 seconds per epoch on NERSC A100 GPU
-- GPU recommended for training
-- Pipeline bottlenecked by downloading ROOT files from CERN OpenData
-- Recommend running data creation locally (not cluster job)
-- `scripts/create_datasets.py` - Creates datasets for configs in stack (doesn't delete configs)
-- Transfer utilities for remote work:
-  - `scripts/transfer_configs.py` - Transfer configs
-  - `scripts/transfer_datasets.py` - Transfer datasets
-  - Requires env variables and SSH key setup
-- NSERC cluster jobs: `sbatch jobs/submit_pipeline_simple.sh`
-
-## High-Level Structure
-- `src/` - Package source code
-- `scripts/` - Usage/utility scripts
-- `tests/` - Test suite
-- `jobs/` - Job submission files
-- `logs/` - Log outputs
-- `atlas_data/` - ATLAS physics data
-- `_*` directories - Experiment configs, processed datasets, test results
-- `pyproject.toml` - Dependencies and project config
-
-## Pipeline & Config System
-- Create YAML config files → place in `_experiment_config_stack/`
-- Use `tests/_test_pipeline_config.yaml` as template, just change values for your experiments
-- `src/hep_foundation/config/config_loader.py` processes configs
-- `scripts/run_pipelines.py` executes pipeline on all stack configs, deletes them as processed
-- Pipeline tries to reuse datasets from `_processed_datasets/` (matches `_dataset_config.yaml` settings)
-- Creates new datasets if none match config settings
-- Each config produces experiment folder in `_foundation_experiments/` (main results)
-- Config copy saved in experiment folder for reproducibility
-- Pipeline logs saved to `logs/`
-- `atlas_data/` holds temp downloaded ROOT files (auto-cleaned, can ignore)
-
-## Experiment Results Structure
-Each experiment folder in `_foundation_experiments/` contains:
-- `_experiment_config.yaml` - Copy of original config for reproducibility
-- `_experiment_info.json` - Experiment metadata
-- `models/foundation_model/` - Saved model files
-- `training/` - Training metrics, history CSV, and plots
-- `testing/` - Evaluation results
-  - `anomaly_detection/` - Anomaly detection results
-  - `regression_evaluation/` - Regression evaluation results
-  - `signal_classification/` - Signal Classification results
-
-## Testing
-- Install dev dependencies: `uv sync --group dev`
-- Run pipeline test: `pytest tests/test_pipeline.py`
-- Test outputs to `_test_results/` (deletes folder fresh each run)
-- Check for no errors and verify results/plots look good
-- Copy `tests/_test_pipeline_config.yaml` to `_experiment_config_stack/`
-- Run real pipeline: `python scripts/run_pipelines.py`
-
-## Misc Utilities
-- `.devcontainer/` - Docker container for development
-- `scripts/test_gpu.py` - Test if TensorFlow can see GPU
-- `src/hep_foundation/utils/plot_utils.py` - Standardized plotting colors/labels
-- `.pre-commit-config.yaml` - Pre-commit hooks for code quality
-
-## Model Registry
-- ModelRegistry manages and organizes experiment result folders
-- Tracks experiment metadata, status, and organization
-- Handles experiment folder creation and management
-
-## Main Pipeline - Data Loading/Creation
-- Pipeline first tries to load existing datasets, creates new if none match config
-- Downloads ROOT files from CERN OpenData, unpacks and extracts quantities
-- Uses feature/aggregator system for PhysLite data - can specify any PhysLite branch names in config
-- Derived features calculated from real branches (defined in `physlite_derived_features.py`)
-  - Examples: eta from theta, pt from qOverP+theta, reduced chi-squared
-  - Convention: derived features start with "derived."
-- Data management uses indexes of available files/branches (may not be completely accurate)
-- Separates ATLAS background and signal datasets into different files (same config settings)
-- Signal keys hard-coded in `data/atlas_index.json`
-- DatasetManager samples data into histogram data with consistent bin edges
-- Allows overlaying background & signal distributions later in pipeline
-- DatasetManager handles dataset creation/loading logic
-- Datasets stored as HDF5 files in `_processed_datasets/`
-
-### Event Processing Details
-Each event goes through `physlite_feature_processor.py` which:
-- **Reads real PhysLite branches** from ROOT files (e.g., track d0, z0, phi, theta, qOverP)
-- **Calculates derived features** (e.g., eta from theta, pt from qOverP+theta) using `physlite_derived_features.py`
-- **Applies event-level filters** (reject whole events that don't meet criteria)
-- **Processes array aggregators** from config:
-  - Filters individual tracks/objects (e.g., d0 between -5 and 5 mm)
-  - Sorts by specified branch (e.g., by qOverP for highest pt tracks)
-  - Enforces length requirements (min_length=10, max_length=30)
-  - Zero-pads shorter sequences, truncates longer ones
-  - Stacks multiple track features horizontally into final arrays
-- **Example**: Config takes top 30 highest-pt tracks, requires ≥10 tracks, zero-pads to exactly 30×N_features array
-
-## Main Pipeline - Model Creation
-- Uses dynamic ModelFactory class to create different model types/architectures
-- Foundation models: autoencoder and VAE (variational autoencoder)
-- Prediction tasks: DNN predictor
-- Model-specific classes contain utility functions for model-specific functionality
-- Extensible system for adding new model types
-
-## Main Pipeline - Model Training
-- ModelTrainer class handles all model training (in training/ folder)
-- Uses TensorFlow for training
-- Optionally creates training and result plots
-- Unified training interface used for every model type
-- Simple but consistent training workflow
-
-## Main Pipeline - Testing (3 Evaluation Processes)
-Pipeline order: Training → Regression → Signal Classification → Anomaly Detection
-
-### Regression Evaluation (`testing/regression_evaluation/`)
-- Compares 3 model types predicting label quantities from ATLAS data:
-  - Fine-tuned: foundation encoder + new head (both trainable)
-  - Fixed: foundation encoder (frozen) + new head (trainable)
-  - From scratch: same architecture but uninitialized weights
-- Trains all models over various data amounts to compare data efficiency
-
-### Signal Classification (`testing/signal_classification/`)
-- Same 3 model comparison as regression but for binary classification
-- Mixes ATLAS background and signal data with labels (0=background, 1=signal)
-- Trains over various data amounts to show foundation model benefits for limited signal data
-
-### Anomaly Detection (`testing/anomaly_detection/`)
-- Runs foundation model on ATLAS background and signal data
-- Compares MSE and KLD between background and signal
-- Uses foundation model backbone for anomaly scoring
-
 </project_overview>

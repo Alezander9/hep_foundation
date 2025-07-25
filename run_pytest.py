@@ -83,7 +83,7 @@ def run_pytest_with_filtered_output():
         print(f"Duration: {duration:.1f}s")
 
         if return_code == 0:
-            print("✅ Test completed successfully!")
+            print("✅ Test completed successfully! - check _test_results/")
         else:
             print(
                 f"❌ Test failed with exit code: {return_code} - check _test_results/pytest.log for details"

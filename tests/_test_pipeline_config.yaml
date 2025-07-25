@@ -72,12 +72,12 @@ models:
       activation: "relu"
       name: "test_vae"
     hyperparameters:
-      quant_bits: 8
       beta_schedule:
-        start: 0.01
-        end: 0.1
-        warmup_epochs: 1
-        cycle_epochs: 2
+        start: 0.001
+        warmup: 2
+        cycle_low: 0.01
+        cycle_high: 0.05
+        cycle_period: 2
 
   dnn:
     model_type: "dnn_predictor"
@@ -88,7 +88,6 @@ models:
       output_activation: "linear"
       name: "test_dnn"
     hyperparameters:
-      quant_bits: 8
       dropout_rate: 0.1
       l2_regularization: 0.00001  # 1e-5
 
