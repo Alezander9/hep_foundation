@@ -783,11 +783,18 @@ class FoundationPlotManager:
             else:
                 counts, bin_edges = np.histogram(labels_clean, bins=num_bins)
 
+            # Normalize counts to get relative frequencies (density)
+            total_count = np.sum(counts)
+            if total_count > 0:
+                normalized_counts = counts / total_count
+            else:
+                normalized_counts = counts
+
             return {
                 label_name: {
-                    "counts": counts.tolist(),
+                    "counts": normalized_counts.tolist(),
                     "bin_edges": bin_edges.tolist(),
-                    "metadata": f"Histogram for {label_name} with {len(labels_clean)} samples",
+                    "metadata": f"Normalized histogram for {label_name} with {len(labels_clean)} samples",
                 }
             }
 
@@ -938,7 +945,7 @@ class FoundationPlotManager:
         self, task_config, num_variables: int
     ) -> list[str]:
         """
-        Extract variable names using multiple robust strategies with systematic fallbacks.
+        Extract variable names from task configuration.
 
         Args:
             task_config: TaskConfig object (may be None)
@@ -947,7 +954,6 @@ class FoundationPlotManager:
         Returns:
             List of variable names, always exactly num_variables long
         """
-        # Strategy 1: Try to convert task_config to dict and extract names
         try:
             if task_config and hasattr(task_config, "to_dict"):
                 task_dict = task_config.to_dict()
@@ -964,71 +970,19 @@ class FoundationPlotManager:
                             for branch_info in first_agg["input_branches"]:
                                 if (
                                     isinstance(branch_info, dict)
-                                    and "branch" in branch_info
+                                    and "branch_name" in branch_info
                                 ):
-                                    if (
-                                        isinstance(branch_info["branch"], dict)
-                                        and "name" in branch_info["branch"]
-                                    ):
-                                        branch_names.append(
-                                            branch_info["branch"]["name"]
-                                        )
-                                    elif hasattr(branch_info["branch"], "name"):
-                                        branch_names.append(branch_info["branch"].name)
-                                elif isinstance(branch_info, str):
-                                    branch_names.append(branch_info)
+                                    branch_names.append(branch_info["branch_name"])
 
                             if len(branch_names) == num_variables:
                                 return branch_names
-        except Exception:
-            pass
+        except Exception as e:
+            self.logger.warning(
+                f"Failed to extract variable names from task config: {e}"
+            )
 
-        # Strategy 2: Try direct object navigation (original approach)
-        try:
-            if task_config and hasattr(task_config, "labels") and task_config.labels:
-                first_label_config = task_config.labels[0]
-
-                if (
-                    hasattr(first_label_config, "feature_array_aggregators")
-                    and first_label_config.feature_array_aggregators
-                ):
-                    first_aggregator = first_label_config.feature_array_aggregators[0]
-
-                    if hasattr(first_aggregator, "input_branches"):
-                        branch_names = []
-                        for branch_selector in first_aggregator.input_branches:
-                            if hasattr(branch_selector, "branch") and hasattr(
-                                branch_selector.branch, "name"
-                            ):
-                                branch_names.append(branch_selector.branch.name)
-
-                        if len(branch_names) == num_variables:
-                            return branch_names
-        except Exception:
-            pass
-
-        # Strategy 3: Use intelligent fallback based on common patterns
-        # Common patterns for 3-variable cases (most common in HEP)
-        if num_variables == 3:
-            # Check if this looks like MET data (common case)
-            fallback_names = [
-                "MET_Core_AnalysisMETAuxDyn.mpx",
-                "MET_Core_AnalysisMETAuxDyn.mpy",
-                "MET_Core_AnalysisMETAuxDyn.sumet",
-            ]
-        elif num_variables == 4:
-            # Common 4-vector pattern
-            fallback_names = [
-                "variable_pt",
-                "variable_eta",
-                "variable_phi",
-                "variable_m",
-            ]
-        else:
-            # Generic pattern
-            fallback_names = [f"variable_{i}" for i in range(num_variables)]
-
-        return fallback_names
+        # Fallback to generic names if extraction fails
+        return [f"variable_{i}" for i in range(num_variables)]
 
     def create_label_distribution_analysis(
         self,
@@ -1133,11 +1087,11 @@ class FoundationPlotManager:
         data_size: int,
         label_distributions_dir: Path,
         bin_edges_metadata: Optional[dict] = None,
-        max_samples: int = 500,
+        max_samples: int = 1000,
         label_variable_names: Optional[list[str]] = None,
     ) -> bool:
         """
-        Save histogram data for model predictions.
+        Save normalized histogram data for model predictions.
 
         Args:
             predictions: Array of model predictions (1D for single variable, 2D for multiple variables)
@@ -1205,7 +1159,7 @@ class FoundationPlotManager:
                 )
 
                 self.logger.info(
-                    f"Saved {len(predictions_array)} predictions for {model_name} across {len(label_variable_names)} variables"
+                    f"Saved {len(predictions_array)} normalized predictions for {model_name} across {len(label_variable_names)} variables"
                 )
                 return True
             else:
@@ -1226,13 +1180,57 @@ class FoundationPlotManager:
         physlite_plot_labels: Optional[dict] = None,
     ) -> bool:
         """
-        Create a subplot-based comparison plot of label distributions with one subplot per variable.
+        Create both log scale and linear scale subplot-based comparison plots of label distributions.
 
         Args:
             evaluation_dir: Directory containing the evaluation results
             data_sizes: List of data sizes used in evaluation
             label_variable_names: List of label variable names
             physlite_plot_labels: Dictionary mapping branch names to display labels
+
+        Returns:
+            bool: True if both plots were created successfully, False otherwise
+        """
+        # Create both log scale and linear scale versions
+        log_success = self._create_single_scale_comparison_plot(
+            evaluation_dir,
+            data_sizes,
+            label_variable_names,
+            physlite_plot_labels,
+            scale_type="log",
+            title_suffix=" (Log Scale)",
+        )
+
+        linear_success = self._create_single_scale_comparison_plot(
+            evaluation_dir,
+            data_sizes,
+            label_variable_names,
+            physlite_plot_labels,
+            scale_type="linear",
+            title_suffix=" (Linear Scale)",
+        )
+
+        return log_success and linear_success
+
+    def _create_single_scale_comparison_plot(
+        self,
+        evaluation_dir: Path,
+        data_sizes: list[int],
+        label_variable_names: list[str],
+        physlite_plot_labels: Optional[dict],
+        scale_type: str = "log",
+        title_suffix: str = "",
+    ) -> bool:
+        """
+        Create a single comparison plot with specified y-axis scale.
+
+        Args:
+            evaluation_dir: Directory containing the evaluation results
+            data_sizes: List of data sizes used in evaluation
+            label_variable_names: List of label variable names
+            physlite_plot_labels: Dictionary mapping branch names to display labels
+            scale_type: "log" or "linear" for y-axis scale
+            title_suffix: Suffix to add to plot title
 
         Returns:
             bool: True if successful, False otherwise
@@ -1243,7 +1241,7 @@ class FoundationPlotManager:
             from matplotlib.lines import Line2D
 
             self.logger.info(
-                "Creating label distribution comparison plot with subplots..."
+                f"Creating label distribution comparison plot with {scale_type} scale..."
             )
 
             label_distributions_dir = evaluation_dir / "label_distributions"
@@ -1391,7 +1389,13 @@ class FoundationPlotManager:
 
                 # Set common subplot formatting
                 ax.grid(True, alpha=0.3, which="both")
-                ax.set_yscale("log")
+
+                # Set y-axis scale based on scale_type parameter
+                if scale_type == "log":
+                    ax.set_yscale("log")
+                else:
+                    ax.set_yscale("linear")
+
                 ax.tick_params(axis="both", which="major", labelsize=FONT_SIZES["tiny"])
 
                 plot_idx += 1
@@ -1411,7 +1415,7 @@ class FoundationPlotManager:
                     color="gray",
                     linewidth=LINE_WIDTHS["thick"],
                     alpha=0.8,
-                    label="Actual Test Labels",
+                    label="Actual Test Labels (Normalized)",
                 )
             )
 
@@ -1473,27 +1477,34 @@ class FoundationPlotManager:
                     line.set_visible(False)
 
             # Set overall labels and title
-            fig.supylabel("Density (log scale)", fontsize=FONT_SIZES["small"])
+            y_label = f"Normalized Frequency ({scale_type} scale)"
+            fig.supylabel(y_label, fontsize=FONT_SIZES["small"])
             fig.suptitle(
-                "Label Distribution Comparison: Actual vs. Predicted",
+                f"Label Distribution Comparison: Actual vs. Predicted{title_suffix}",
                 fontsize=FONT_SIZES["large"],
             )
 
             # Adjust layout and save
             plt.tight_layout(rect=[0.05, 0.08, 1, 0.95])
 
-            plot_path = evaluation_dir / "label_distribution_comparison.png"
+            # Create filename based on scale type
+            if scale_type == "log":
+                plot_filename = "label_distribution_comparison_log_scale.png"
+            else:
+                plot_filename = "label_distribution_comparison_linear_scale.png"
+
+            plot_path = evaluation_dir / plot_filename
             plot_path.parent.mkdir(parents=True, exist_ok=True)
             plt.savefig(plot_path, dpi=300, bbox_inches="tight")
             plt.close()
 
             self.logger.info(
-                f"Saved label distribution comparison plot to: {plot_path}"
+                f"Saved {scale_type} scale label distribution comparison plot to: {plot_path}"
             )
             return True
 
         except Exception as e:
             self.logger.error(
-                f"Failed to create label distribution comparison plot with subplots: {str(e)}"
+                f"Failed to create {scale_type} scale label distribution comparison plot: {str(e)}"
             )
             return False

@@ -1191,14 +1191,14 @@ class FoundationModelPipeline:
                     "test_loss", test_metrics.get("test_mse", 0.0)
                 )
 
-                # Generate predictions and save histogram data (500 samples)
+                # Generate predictions and save histogram data (1000 samples)
                 try:
                     self.logger.info(
                         f"Generating predictions for {model_name} model..."
                     )
                     predictions_list = []
                     samples_collected = 0
-                    max_prediction_samples = 500
+                    max_prediction_samples = 1000
 
                     for batch_idx, batch in enumerate(test_dataset):
                         if samples_collected >= max_prediction_samples:
