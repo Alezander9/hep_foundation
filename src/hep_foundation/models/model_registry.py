@@ -240,7 +240,7 @@ class ModelRegistry:
         exp_dir = self.base_path / experiment_id
 
         # Ensure metrics are serializable
-        metrics = self.ensure_serializable(final_metrics)
+        self.ensure_serializable(final_metrics)
 
         # Update experiment status in experiment_info.json
         exp_info_path = exp_dir / "_experiment_info.json"
@@ -253,44 +253,9 @@ class ModelRegistry:
                     experiment_info, f, indent=2, default=self.ensure_serializable
                 )
 
-        # Save training history to CSV
-        history_dir = exp_dir / "training"
-
-        # Save epoch-wise metrics (including all loss components)
-        if "history" in metrics:
-            history_df = []
-            for epoch, epoch_metrics in metrics["history"].items():
-                epoch_data = {"epoch": int(epoch)}
-                epoch_data.update(epoch_metrics)
-                history_df.append(epoch_data)
-
-            # Save using numpy to handle any remaining numpy types
-            import numpy as np
-
-            np.savetxt(
-                history_dir / "training_history.csv",
-                [list(d.values()) for d in history_df],
-                delimiter=",",
-                header=",".join(history_df[0].keys()),
-                comments="",
-            )
-
-        # Save final metrics summary
-        final_metrics_path = history_dir / "final_metrics.json"
-        final_metrics_data = {
-            "training_duration": metrics.get("training_duration", 0.0),
-            "epochs_completed": metrics.get("epochs_completed", 0),
-            "final_metrics": {
-                k: v
-                for k, v in metrics.items()
-                if k not in ["history", "training_duration", "epochs_completed"]
-            },
-        }
-
-        with open(final_metrics_path, "w") as f:
-            json.dump(final_metrics_data, f, indent=2)
-
-        self.logger.info(f"Training results saved to {history_dir}")
+        # Note: Training results are now saved by ModelTrainer.save_consolidated_training_history()
+        # This method now only updates the experiment status
+        self.logger.info(f"Training completed for experiment {experiment_id}")
 
     def save_model(
         self,
@@ -381,7 +346,7 @@ class ModelRegistry:
 
     def get_experiment_data(self, experiment_id: str) -> dict:
         """
-        Load experiment data from separate files (_experiment_info.json, _experiment_config.yaml, final_metrics.json)
+        Load experiment data from separate files (_experiment_info.json, _experiment_config.yaml, training_history.json)
 
         Args:
             experiment_id: The experiment directory name (e.g. '001_vae_test')
@@ -408,14 +373,14 @@ class ModelRegistry:
                 )
 
         # Load training results if available
-        metrics_path = exp_dir / "training" / "final_metrics.json"
-        if metrics_path.exists():
+        training_history_path = exp_dir / "training" / "training_history.json"
+        if training_history_path.exists():
             try:
-                with open(metrics_path) as f:
+                with open(training_history_path) as f:
                     experiment_data["training_results"] = json.load(f)
             except json.JSONDecodeError:
                 self.logger.warning(
-                    f"Invalid JSON format in training metrics file for {experiment_id}"
+                    f"Invalid JSON format in training history file for {experiment_id}"
                 )
 
         # Note: Configuration is available in _experiment_config.yaml for reproducibility

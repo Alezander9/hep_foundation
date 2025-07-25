@@ -4,8 +4,8 @@ from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
 import tensorflow as tf
+from matplotlib.ticker import ScalarFormatter
 from tensorflow import keras
 
 from hep_foundation.config.logging_config import get_logger
@@ -407,9 +407,9 @@ class VariationalAutoEncoder(BaseModel):
             # Create training history plot with 4 vertically stacked subplots
             colors = get_color_cycle("high_contrast", 4)
 
-            # Create figure with 4 vertically stacked subplots (ratio < 1 makes it taller than wide)
+            # Create figure with 4 vertically stacked subplots
             fig, axes = plt.subplots(
-                4, 1, figsize=get_figure_size("single", ratio=0.7), sharex=True
+                4, 1, figsize=get_figure_size("single", ratio=1), sharex=True
             )
             fig.suptitle(
                 "Training Losses and Annealing Schedule", fontsize=FONT_SIZES["xlarge"]
@@ -441,49 +441,148 @@ class VariationalAutoEncoder(BaseModel):
                         f"Sample KL loss values: {self._history['kl_loss'][:3]}..."
                     )
 
-            # Subplot 1: Reconstruction Loss
-            axes[0].plot(
-                epochs,
-                self._history["reconstruction_loss"],
-                color=colors[0],
-                linewidth=LINE_WIDTHS["thick"],
-            )
-            axes[0].set_ylabel("Reconstruction\nLoss", fontsize=FONT_SIZES["normal"])
-            axes[0].grid(True, alpha=0.3)
-            axes[0].set_yscale("log")
-
-            # Subplot 2: KL Loss
-            axes[1].plot(
-                epochs,
-                self._history["kl_loss"],
-                color=colors[1],
-                linewidth=LINE_WIDTHS["thick"],
-            )
-            axes[1].set_ylabel("KL Loss", fontsize=FONT_SIZES["normal"])
-            axes[1].grid(True, alpha=0.3)
-            axes[1].set_yscale("log")
-
-            # Subplot 3: Total Loss (if available)
+            # Subplot 1: Total Loss (if available)
             if "total_loss" in self._history:
-                axes[2].plot(
+                # Training data (solid line)
+                axes[0].plot(
                     epochs,
                     self._history["total_loss"],
-                    color=colors[2],
+                    color=colors[0],
                     linewidth=LINE_WIDTHS["thick"],
+                    linestyle="-",
+                    label="Train",
                 )
-                axes[2].set_ylabel("Total Loss", fontsize=FONT_SIZES["normal"])
-                axes[2].grid(True, alpha=0.3)
-                axes[2].set_yscale("log")
+                # Validation data (dashed line)
+                if "val_total_loss" in self._history:
+                    axes[0].plot(
+                        epochs,
+                        self._history["val_total_loss"],
+                        color=colors[0],
+                        linewidth=LINE_WIDTHS["thick"],
+                        linestyle="--",
+                        label="Validation",
+                    )
+                # Test data (single marker)
+                if "test_total_loss" in self._history:
+                    test_value = self._history["test_total_loss"]
+                    # Handle both single values and lists (in case test metric is a list)
+                    if isinstance(test_value, list):
+                        test_value = test_value[-1] if test_value else 0
+                    axes[0].plot(
+                        len(epochs),  # Plot at the last epoch
+                        test_value,
+                        color=colors[0],
+                        marker="*",
+                        markersize=MARKER_SIZES["normal"],
+                        linestyle="",
+                        label="Test",
+                    )
+                axes[0].set_ylabel("Total Loss", fontsize=FONT_SIZES["normal"])
+                axes[0].grid(True, alpha=0.3)
+                axes[0].set_yscale("log")
+                # Disable scientific notation for log scale when values are around O(1)
+                formatter = ScalarFormatter()
+                formatter.set_scientific(False)
+                axes[0].yaxis.set_major_formatter(formatter)
+                axes[0].legend(fontsize=FONT_SIZES["small"])
             else:
                 # Hide this subplot if total_loss is not available
-                axes[2].set_visible(False)
+                axes[0].set_visible(False)
+
+            # Subplot 2: Reconstruction Loss
+            # Training data (solid line)
+            axes[1].plot(
+                epochs,
+                self._history["reconstruction_loss"],
+                color=colors[1],
+                linewidth=LINE_WIDTHS["thick"],
+                linestyle="-",
+                label="Train",
+            )
+            # Validation data (dashed line)
+            if "val_reconstruction_loss" in self._history:
+                axes[1].plot(
+                    epochs,
+                    self._history["val_reconstruction_loss"],
+                    color=colors[1],
+                    linewidth=LINE_WIDTHS["thick"],
+                    linestyle="--",
+                    label="Validation",
+                )
+            # Test data (single marker)
+            if "test_reconstruction_loss" in self._history:
+                test_value = self._history["test_reconstruction_loss"]
+                # Handle both single values and lists (in case test metric is a list)
+                if isinstance(test_value, list):
+                    test_value = test_value[-1] if test_value else 0
+                axes[1].plot(
+                    len(epochs),  # Plot at the last epoch
+                    test_value,
+                    color=colors[1],
+                    marker="*",
+                    markersize=MARKER_SIZES["normal"],
+                    linestyle="",
+                    label="Test",
+                )
+            axes[1].set_ylabel("Recon. Loss", fontsize=FONT_SIZES["normal"])
+            axes[1].grid(True, alpha=0.3)
+            axes[1].set_yscale("log")
+            # Disable scientific notation for log scale when values are around O(1)
+            formatter = ScalarFormatter()
+            formatter.set_scientific(False)
+            axes[1].yaxis.set_major_formatter(formatter)
+            axes[1].legend(fontsize=FONT_SIZES["small"])
+
+            # Subplot 3: KL Loss
+            # Training data (solid line)
+            axes[2].plot(
+                epochs,
+                self._history["kl_loss"],
+                color=colors[2],
+                linewidth=LINE_WIDTHS["thick"],
+                linestyle="-",
+                label="Train",
+            )
+            # Validation data (dashed line)
+            if "val_kl_loss" in self._history:
+                axes[2].plot(
+                    epochs,
+                    self._history["val_kl_loss"],
+                    color=colors[2],
+                    linewidth=LINE_WIDTHS["thick"],
+                    linestyle="--",
+                    label="Validation",
+                )
+            # Test data (single marker)
+            if "test_kl_loss" in self._history:
+                test_value = self._history["test_kl_loss"]
+                # Handle both single values and lists (in case test metric is a list)
+                if isinstance(test_value, list):
+                    test_value = test_value[-1] if test_value else 0
+                axes[2].plot(
+                    len(epochs),  # Plot at the last epoch
+                    test_value,
+                    color=colors[2],
+                    marker="*",
+                    markersize=MARKER_SIZES["normal"],
+                    linestyle="",
+                    label="Test",
+                )
+            axes[2].set_ylabel("KL Loss", fontsize=FONT_SIZES["normal"])
+            axes[2].grid(True, alpha=0.3)
+            axes[2].set_yscale("log")
+            # Disable scientific notation for log scale when values are around O(1)
+            formatter = ScalarFormatter()
+            formatter.set_scientific(False)
+            axes[2].yaxis.set_major_formatter(formatter)
+            axes[2].legend(fontsize=FONT_SIZES["small"])
 
             # Subplot 4: Beta
             axes[3].plot(
                 epochs,
                 betas,
                 color=colors[3],
-                linestyle="--",
+                linestyle="-",
                 linewidth=LINE_WIDTHS["thick"],
             )
             axes[3].set_ylabel("Beta", fontsize=FONT_SIZES["normal"])
@@ -505,53 +604,53 @@ class VariationalAutoEncoder(BaseModel):
 
             traceback.print_exc()
 
-        # 3. Latent Space Visualization
-        if hasattr(self, "_encoded_data"):
-            plt.figure(figsize=get_figure_size("double", ratio=2.0))
+        # # 3. Latent Space Visualization
+        # if hasattr(self, "_encoded_data"):
+        #     plt.figure(figsize=get_figure_size("double", ratio=2.0))
 
-            # Plot z_mean distribution
-            plt.subplot(121)
-            sns.histplot(self._encoded_data[0].flatten(), bins=50)
-            plt.title("Latent Space Mean Distribution", fontsize=FONT_SIZES["large"])
-            plt.xlabel("Mean (z)", fontsize=FONT_SIZES["large"])
-            plt.ylabel("Count", fontsize=FONT_SIZES["large"])
+        #     # Plot z_mean distribution
+        #     plt.subplot(121)
+        #     sns.histplot(self._encoded_data[0].flatten(), bins=50)
+        #     plt.title("Latent Space Mean Distribution", fontsize=FONT_SIZES["large"])
+        #     plt.xlabel("Mean (z)", fontsize=FONT_SIZES["large"])
+        #     plt.ylabel("Count", fontsize=FONT_SIZES["large"])
 
-            # Plot z_log_var distribution
-            plt.subplot(122)
-            sns.histplot(self._encoded_data[1].flatten(), bins=50)
-            plt.title(
-                "Latent Space Log Variance Distribution", fontsize=FONT_SIZES["large"]
-            )
-            plt.xlabel("Log Variance (z)", fontsize=FONT_SIZES["large"])
-            plt.ylabel("Count", fontsize=FONT_SIZES["large"])
+        #     # Plot z_log_var distribution
+        #     plt.subplot(122)
+        #     sns.histplot(self._encoded_data[1].flatten(), bins=50)
+        #     plt.title(
+        #         "Latent Space Log Variance Distribution", fontsize=FONT_SIZES["large"]
+        #     )
+        #     plt.xlabel("Log Variance (z)", fontsize=FONT_SIZES["large"])
+        #     plt.ylabel("Count", fontsize=FONT_SIZES["large"])
 
-            plt.tight_layout()
-            plt.savefig(
-                plots_dir / "vae_latent_space_distributions.png",
-                dpi=300,
-                bbox_inches="tight",
-            )
-            plt.close()
-            self.logger.info("Created latent space distribution plots")
+        #     plt.tight_layout()
+        #     plt.savefig(
+        #         plots_dir / "vae_latent_space_distributions.png",
+        #         dpi=300,
+        #         bbox_inches="tight",
+        #     )
+        #     plt.close()
+        #     self.logger.info("Created latent space distribution plots")
 
-            # 4. 2D Latent Space Projection
-            if self.latent_dim >= 2:
-                plt.figure(figsize=get_figure_size("single", ratio=1.0))
-                plt.scatter(
-                    self._encoded_data[0][:, 0],
-                    self._encoded_data[0][:, 1],
-                    alpha=0.5,
-                    s=MARKER_SIZES["tiny"],
-                    c=get_color_cycle("aesthetic")[0],
-                )
-                plt.title("2D Latent Space Projection", fontsize=FONT_SIZES["xlarge"])
-                plt.xlabel("z1", fontsize=FONT_SIZES["large"])
-                plt.ylabel("z2", fontsize=FONT_SIZES["large"])
-                plt.tight_layout()
-                plt.savefig(
-                    plots_dir / "vae_latent_space_2d.png", dpi=300, bbox_inches="tight"
-                )
-                plt.close()
-                self.logger.info("Created 2D latent space projection plot")
+        #     # 4. 2D Latent Space Projection
+        #     if self.latent_dim >= 2:
+        #         plt.figure(figsize=get_figure_size("single", ratio=1.0))
+        #         plt.scatter(
+        #             self._encoded_data[0][:, 0],
+        #             self._encoded_data[0][:, 1],
+        #             alpha=0.5,
+        #             s=MARKER_SIZES["tiny"],
+        #             c=get_color_cycle("aesthetic")[0],
+        #         )
+        #         plt.title("2D Latent Space Projection", fontsize=FONT_SIZES["xlarge"])
+        #         plt.xlabel("z1", fontsize=FONT_SIZES["large"])
+        #         plt.ylabel("z2", fontsize=FONT_SIZES["large"])
+        #         plt.tight_layout()
+        #         plt.savefig(
+        #             plots_dir / "vae_latent_space_2d.png", dpi=300, bbox_inches="tight"
+        #         )
+        #         plt.close()
+        #         self.logger.info("Created 2D latent space projection plot")
 
         self.logger.info(f"VAE plots saved to: {plots_dir}")

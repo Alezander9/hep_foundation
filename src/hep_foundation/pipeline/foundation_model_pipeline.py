@@ -575,6 +575,10 @@ class FoundationModelPipeline:
                 self.logger.info("Evaluating model...")
                 test_results = trainer.evaluate(test_dataset)
 
+                # Save consolidated training history with all metrics (train/val/test)
+                self.logger.info("Saving consolidated training history...")
+                trainer.save_consolidated_training_history()
+
                 # Combine results
                 final_metrics = {
                     **training_results["final_metrics"],
@@ -623,23 +627,19 @@ class FoundationModelPipeline:
                 )
                 training_plots_dir.mkdir(parents=True, exist_ok=True)
 
-                # Find the training history JSON file that was saved by ModelTrainer
-                training_history_files = list(
-                    training_plots_dir.glob("training_history_*.json")
+                # Use the consolidated training history file
+                training_history_json_path = (
+                    training_plots_dir / "training_history.json"
                 )
-                training_history_json_path = None
-                if training_history_files:
-                    # Use the most recent training history file
-                    training_history_json_path = max(
-                        training_history_files, key=lambda x: x.stat().st_mtime
-                    )
+                if training_history_json_path.exists():
                     self.logger.info(
-                        f"Using training history from: {training_history_json_path}"
+                        f"Using consolidated training history from: {training_history_json_path}"
                     )
                 else:
                     self.logger.warning(
-                        "No training history JSON file found for plot generation"
+                        "Consolidated training_history.json file not found for plot generation"
                     )
+                    training_history_json_path = None
 
                 try:
                     model.create_plots(training_plots_dir, training_history_json_path)
@@ -1182,6 +1182,7 @@ class FoundationModelPipeline:
                     dataset_id=f"regression_eval_{data_size}",
                     experiment_id="regression_evaluation",
                     verbose_training="minimal",  # Reduce verbosity for evaluation models
+                    save_individual_history=True,  # Save individual files for comparison plots
                 )
 
                 # Evaluate on test set
@@ -1865,6 +1866,7 @@ class FoundationModelPipeline:
                     dataset_id=f"signal_classification_eval_{data_size}",
                     experiment_id="signal_classification_evaluation",
                     verbose_training="minimal",  # Reduce verbosity for evaluation models
+                    save_individual_history=True,  # Save individual files for comparison plots
                 )
 
                 # Evaluate on test set

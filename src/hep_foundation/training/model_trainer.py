@@ -121,6 +121,7 @@ class ModelTrainer:
 
         self.training_start_time = None
         self.training_end_time = None
+        self._pending_save_info = None  # For consolidated save after evaluation
 
     def compile_model(self):
         """Compile the model with optimizer and loss"""
@@ -350,20 +351,31 @@ class ModelTrainer:
             ).total_seconds()
 
         # Get the latest metrics for each metric type
-        final_metrics = {
-            metric: values[-1] for metric, values in self.metrics_history.items()
+        # Handle both list values (training metrics) and single values (test metrics)
+        final_metrics = {}
+        for metric, values in self.metrics_history.items():
+            if isinstance(values, list):
+                final_metrics[metric] = values[-1] if values else 0
+            else:
+                # Single value (e.g., test metrics)
+                final_metrics[metric] = values
+
+        # Convert history to epoch-based format (only for list-type metrics)
+        epoch_history = {}
+        list_metrics = {
+            k: v for k, v in self.metrics_history.items() if isinstance(v, list)
         }
 
-        # Convert history to epoch-based format
-        epoch_history = {}
-        for epoch in range(len(next(iter(self.metrics_history.values())))):
-            epoch_history[str(epoch)] = {
-                metric: values[epoch] for metric, values in self.metrics_history.items()
-            }
+        if list_metrics:
+            num_epochs = len(next(iter(list_metrics.values())))
+            for epoch in range(num_epochs):
+                epoch_history[str(epoch)] = {
+                    metric: values[epoch] for metric, values in list_metrics.items()
+                }
 
         return {
             "training_config": self.config,
-            "epochs_completed": len(epoch_history),
+            "epochs_completed": len(epoch_history) if epoch_history else 0,
             "training_duration": training_duration,
             "final_metrics": final_metrics,
             "history": epoch_history,
@@ -439,6 +451,80 @@ class ModelTrainer:
             json.dump(training_data, f, indent=2)
         return json_path
 
+    def save_consolidated_training_history(self) -> Optional[Path]:
+        """
+        Save consolidated training history including test metrics to a single training_history.json file.
+        This should be called after both training and evaluation are complete.
+
+        Returns:
+            Path to the saved JSON file, or None if no pending save info
+        """
+        if not self._pending_save_info:
+            self.logger.warning("No pending save info - call train() first")
+            return None
+
+        training_history_dir = self._pending_save_info["training_history_dir"]
+        model_name = self._pending_save_info["model_name"]
+        dataset_id = self._pending_save_info["dataset_id"]
+        experiment_id = self._pending_save_info["experiment_id"]
+
+        training_history_dir.mkdir(parents=True, exist_ok=True)
+
+        # Use simple filename without timestamp
+        json_path = training_history_dir / "training_history.json"
+
+        # Prepare consolidated training history data
+        training_summary = self.get_training_summary()
+
+        # Prepare consolidated data with ALL metrics
+        consolidated_data = {
+            "model_name": model_name,
+            "model_type": getattr(self.model, "model_type", "unknown"),
+            "training_config": training_summary["training_config"],
+            "epochs_completed": training_summary["epochs_completed"],
+            "training_duration": training_summary["training_duration"],
+            "history": self.metrics_history,  # Contains ALL metrics including test metrics
+            "final_metrics": training_summary[
+                "final_metrics"
+            ],  # Contains final values of all metrics
+            "metadata": {
+                "creation_date": str(datetime.now()),
+                "dataset_id": dataset_id,
+                "experiment_id": experiment_id,
+                "tensorflow_version": tf.__version__,
+                "total_parameters": self.model.model.count_params()
+                if self.model.model
+                else None,
+            },
+        }
+
+        # Convert numpy types for JSON serialization
+        def convert_numpy_types(obj):
+            if isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, dict):
+                return {key: convert_numpy_types(value) for key, value in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_numpy_types(item) for item in obj]
+            return obj
+
+        consolidated_data = convert_numpy_types(consolidated_data)
+
+        # Save to JSON
+        with open(json_path, "w") as f:
+            json.dump(consolidated_data, f, indent=2)
+
+        self.logger.info(f"Consolidated training history saved to: {json_path}")
+
+        # Clear pending save info
+        self._pending_save_info = None
+
+        return json_path
+
     def train(
         self,
         dataset: tf.data.Dataset,
@@ -449,6 +535,7 @@ class ModelTrainer:
         dataset_id: Optional[str] = None,
         experiment_id: Optional[str] = None,
         verbose_training: str = "full",
+        save_individual_history: bool = False,
     ) -> dict[str, Any]:
         """
         Train with enhanced metrics tracking and automatic history saving
@@ -466,6 +553,8 @@ class ModelTrainer:
                 - "summary": Log every 10th epoch and final epoch
                 - "minimal": Log only final epoch
                 - "silent": Log only start and end of training
+            save_individual_history: If True, save individual timestamped training history file immediately.
+                                   If False, defer saving for later consolidated save. Default False.
 
         Returns:
             Training summary dictionary
@@ -548,14 +637,22 @@ class ModelTrainer:
         )
         self.logger.info(f"Training completed. Final metrics: {final_metrics_str}")
 
-        # Save training history to JSON if directory provided
+        # Handle training history saving based on save_individual_history parameter
         if training_history_dir is not None:
-            self._save_training_history(
-                training_history_dir=training_history_dir,
-                model_name=model_name,
-                dataset_id=dataset_id,
-                experiment_id=experiment_id,
-            )
+            if save_individual_history:
+                # Save individual timestamped file immediately (for evaluation models)
+                saved_path = self._save_training_history(
+                    training_history_dir, model_name, dataset_id, experiment_id
+                )
+                self.logger.info(f"Individual training history saved to: {saved_path}")
+            else:
+                # Store directory for later consolidated save (for foundation models)
+                self._pending_save_info = {
+                    "training_history_dir": training_history_dir,
+                    "model_name": model_name,
+                    "dataset_id": dataset_id,
+                    "experiment_id": experiment_id,
+                }
 
         return self.get_training_summary()
 

@@ -63,25 +63,15 @@ EXPECTED_EXPERIMENT_STRUCTURE = {
         "required": True,
         "description": "Foundation model training artifacts",
         "contents": {
-            "training_history_*.json": {
-                "type": "pattern",
-                "required": True,
-                "description": "Training history JSON files",
-            },
-            "training_history.csv": {
+            "training_history.json": {
                 "type": "file",
                 "required": True,
-                "description": "Training history CSV file",
+                "description": "Consolidated training history with all metrics",
             },
             "training_history.png": {
                 "type": "file",
                 "required": True,
                 "description": "Training history plot",
-            },
-            "final_metrics.json": {
-                "type": "file",
-                "required": True,
-                "description": "Final training metrics",
             },
         },
     },
