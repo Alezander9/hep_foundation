@@ -24,8 +24,8 @@ from hep_foundation.models.variational_autoencoder import (
 from hep_foundation.pipeline.anomaly_detection_evaluator import (
     AnomalyDetectionEvaluator,
 )
+from hep_foundation.pipeline.foundation_pipeline_utils import log_evaluation_summary
 from hep_foundation.plots.foundation_plot_manager import FoundationPlotManager
-from hep_foundation.plots.result_plot_manager import ResultPlotManager
 from hep_foundation.training.model_trainer import ModelTrainer
 
 
@@ -72,7 +72,7 @@ class FoundationModelPipeline:
         self._source_config_file = None
 
         # Initialize plot managers
-        self.plot_manager = ResultPlotManager()
+
         self.foundation_plot_manager = FoundationPlotManager()
 
         self.logger.info("Foundation Model Pipeline initialized.")
@@ -1542,7 +1542,7 @@ class FoundationModelPipeline:
                         f"Could not load physlite plot labels: {str(e)}"
                     )
 
-                # Use the new subplot-based comparison plot
+                # Use the subplot-based comparison plot
                 self.foundation_plot_manager.create_label_distribution_comparison_plot_with_subplots(
                     regression_dir,
                     data_sizes,
@@ -1550,15 +1550,12 @@ class FoundationModelPipeline:
                     physlite_plot_labels,
                 )
             else:
-                # Fallback to old single-plot method
-                self.foundation_plot_manager.create_label_distribution_comparison_plot(
-                    regression_dir, data_sizes
+                self.logger.warning(
+                    "No label variable names found, skipping label distribution comparison plot"
                 )
 
             # 5. Display summary
-            self.foundation_plot_manager.log_evaluation_summary(
-                results, evaluation_type="regression"
-            )
+            log_evaluation_summary(results, evaluation_type="regression")
 
             return True
 
@@ -2092,7 +2089,7 @@ class FoundationModelPipeline:
             )
 
             # 7. Display summary
-            self.foundation_plot_manager.log_evaluation_summary(
+            log_evaluation_summary(
                 results, evaluation_type="signal_classification", signal_key=signal_key
             )
 

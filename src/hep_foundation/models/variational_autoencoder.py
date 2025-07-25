@@ -473,7 +473,7 @@ class VariationalAutoEncoder(BaseModel):
                         test_value,
                         color=colors[0],
                         marker="*",
-                        markersize=MARKER_SIZES["normal"],
+                        markersize=MARKER_SIZES["large"],
                         linestyle="",
                         label="Test",
                     )
@@ -520,7 +520,7 @@ class VariationalAutoEncoder(BaseModel):
                     test_value,
                     color=colors[1],
                     marker="*",
-                    markersize=MARKER_SIZES["normal"],
+                    markersize=MARKER_SIZES["large"],
                     linestyle="",
                     label="Test",
                 )
@@ -564,7 +564,7 @@ class VariationalAutoEncoder(BaseModel):
                     test_value,
                     color=colors[2],
                     marker="*",
-                    markersize=MARKER_SIZES["normal"],
+                    markersize=MARKER_SIZES["large"],
                     linestyle="",
                     label="Test",
                 )
