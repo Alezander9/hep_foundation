@@ -17,7 +17,7 @@ def get_experiment_folders():
     if test_results_path.exists():
         test_folders = [f for f in test_results_path.iterdir() if f.is_dir()]
         if test_folders:
-            folders["Test Results"] = test_folders
+            folders["Test Results"] = sorted(test_folders, key=lambda f: f.name)
 
     # Check foundation experiments
     foundation_path = Path("_foundation_experiments")
@@ -28,7 +28,9 @@ def get_experiment_folders():
             if f.is_dir() and not f.name.startswith(".")
         ]
         if foundation_folders:
-            folders["Foundation Experiments"] = foundation_folders
+            folders["Foundation Experiments"] = sorted(
+                foundation_folders, key=lambda f: f.name
+            )
 
     return folders
 
@@ -45,9 +47,9 @@ def get_experiment_plots(folder_path):
     plots = {
         "Dataset": [],
         "Backbone Model": [],
+        "Anomaly Detection": [],
         "Regression Evaluation": [],
         "Signal Classification": [],
-        "Anomaly Detection": [],
     }
 
     # Dataset plots
@@ -65,18 +67,6 @@ def get_experiment_plots(folder_path):
     # Testing plots
     testing_dir = folder / "testing"
     if testing_dir.exists():
-        # Regression evaluation
-        regression_dir = testing_dir / "regression_evaluation"
-        if regression_dir.exists():
-            for plot_file in regression_dir.glob("*.png"):
-                plots["Regression Evaluation"].append(str(plot_file))
-
-        # Signal classification
-        signal_dir = testing_dir / "signal_classification"
-        if signal_dir.exists():
-            for plot_file in signal_dir.glob("*.png"):
-                plots["Signal Classification"].append(str(plot_file))
-
         # Anomaly detection
         anomaly_dir = testing_dir / "anomaly_detection"
         if anomaly_dir.exists():
@@ -89,6 +79,22 @@ def get_experiment_plots(folder_path):
                 # Check direct files
                 for plot_file in anomaly_dir.glob("*.png"):
                     plots["Anomaly Detection"].append(str(plot_file))
+
+        # Regression evaluation
+        regression_dir = testing_dir / "regression_evaluation"
+        if regression_dir.exists():
+            for plot_file in regression_dir.glob("*.png"):
+                plots["Regression Evaluation"].append(str(plot_file))
+
+        # Signal classification
+        signal_dir = testing_dir / "signal_classification"
+        if signal_dir.exists():
+            for plot_file in signal_dir.glob("*.png"):
+                plots["Signal Classification"].append(str(plot_file))
+
+    # Sort all plot lists alphabetically by filename
+    for section in plots:
+        plots[section].sort(key=lambda path: Path(path).name)
 
     return plots
 
@@ -196,15 +202,10 @@ h1 {
 /* Image grid styling */
 .image-grid {
     display: grid !important;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)) !important;
+    grid-template-columns: repeat(2, 1fr) !important;
     gap: 1rem !important;
     padding: 1rem !important;
     background-color: #ffffff !important;
-}
-
-.image-grid .gr-image {
-    width: 100% !important;
-    height: auto !important;
 }
 
 /* Sidebar styling */
@@ -274,10 +275,10 @@ with demo:
             plot_sections = {}
             section_names = [
                 "Dataset",
+                "Anomaly Detection",
                 "Backbone Model",
                 "Regression Evaluation",
                 "Signal Classification",
-                "Anomaly Detection",
             ]
 
             for section_name in section_names:
@@ -330,17 +331,13 @@ with demo:
                 # Show section header
                 outputs.append(gr.update(visible=True))
 
-                # Update individual images - ensure minimum of 2 are visible
+                # Update individual images - show only images with plots
                 section_images = plot_sections[section_name]["images"]
-                min_visible = max(2, len(section_plots))  # At least 2 images visible
 
                 for i, img in enumerate(section_images):
                     if i < len(section_plots):
                         # Show image with plot
                         outputs.append(gr.update(value=section_plots[i], visible=True))
-                    elif i < min_visible:
-                        # Show empty image slot to maintain minimum layout
-                        outputs.append(gr.update(value=None, visible=True))
                     else:
                         # Hide unused image slots
                         outputs.append(gr.update(visible=False))
