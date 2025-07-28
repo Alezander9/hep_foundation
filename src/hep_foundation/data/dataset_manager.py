@@ -580,86 +580,21 @@ class DatasetManager:
                 # Determine compression setting
                 compression = "gzip" if dataset_config.hdf5_compression else None
 
-                # Create input features group
+                # Create input features group and save features using helper function
                 features_group = f.create_group("features")
-
-                # Save scalar features if any exist
-                scalar_features = {
-                    name: [] for name in all_inputs[0]["scalar_features"].keys()
-                }
-                for input_data in all_inputs:
-                    for name, value in input_data["scalar_features"].items():
-                        scalar_features[name].append(value)
-
-                for name, values in scalar_features.items():
-                    features_group.create_dataset(
-                        f"scalar/{name}", data=np.array(values), compression=compression
-                    )
-
-                    # Save aggregated features if any exist
-                for agg_name, agg_data in all_inputs[0]["aggregated_features"].items():
-                    stacked_data = np.stack(
-                        [
-                            input_data["aggregated_features"][agg_name]
-                            for input_data in all_inputs
-                        ]
-                    )
-
-                    features_group.create_dataset(
-                        f"aggregated/{agg_name}",
-                        data=stacked_data,
-                        compression=compression,
-                    )
+                self._save_features_to_hdf5_group(
+                    features_group, all_inputs, compression
+                )
 
                 # Create labels group if we have labels
                 if all_labels and dataset_config.task_config.labels:
                     labels_group = f.create_group("labels")
-
-                    self.logger.info(
-                        f"Generating labels datasets for {len(dataset_config.task_config.labels)} labels"
+                    self._save_labels_to_hdf5_group(
+                        labels_group,
+                        all_labels,
+                        dataset_config.task_config,
+                        compression,
                     )
-                    # Process each label configuration
-                    for label_idx, label_config in enumerate(
-                        dataset_config.task_config.labels
-                    ):
-                        label_subgroup = labels_group.create_group(
-                            f"config_{label_idx}"
-                        )
-
-                        # Get all label data for this configuration
-                        label_data = [label_set[label_idx] for label_set in all_labels]
-
-                        # Save scalar features
-                        scalar_features = {
-                            name: [] for name in label_data[0]["scalar_features"].keys()
-                        }
-                        for event_labels in label_data:
-                            for name, value in event_labels["scalar_features"].items():
-                                scalar_features[name].append(value)
-
-                        for name, values in scalar_features.items():
-                            label_subgroup.create_dataset(
-                                f"scalar/{name}",
-                                data=np.array(values),
-                                compression=compression,
-                            )
-
-                            # Save aggregated features if any exist
-                        for agg_name, agg_data in label_data[0][
-                            "aggregated_features"
-                        ].items():
-                            stacked_data = np.stack(
-                                [
-                                    event_labels["aggregated_features"][agg_name]
-                                    for event_labels in label_data
-                                ]
-                            )
-
-                            label_subgroup.create_dataset(
-                                f"aggregated/{agg_name}",
-                                data=stacked_data,
-                                compression=compression,
-                            )
 
                 # Compute and store normalization parameters
                 norm_params = self.feature_processor._compute_dataset_normalization(
@@ -827,99 +762,21 @@ class DatasetManager:
                     # Create signal-specific group
                     signal_group = f.create_group(signal_key)
 
-                    # Create features group
+                    # Create features group and save features using helper function
                     features_group = signal_group.create_group("features")
-
-                    # Save scalar features
-                    scalar_features = {
-                        name: [] for name in inputs[0]["scalar_features"].keys()
-                    }
-                    for input_data in inputs:
-                        for name, value in input_data["scalar_features"].items():
-                            scalar_features[name].append(value)
-
-                    for name, values in scalar_features.items():
-                        features_group.create_dataset(
-                            f"scalar/{name}",
-                            data=np.array(values),
-                            compression=compression,
-                        )
-
-                    # Save aggregated features
-                    for agg_name, agg_data_val in inputs[0][
-                        "aggregated_features"
-                    ].items():  # Renamed agg_data to agg_data_val
-                        stacked_data = np.stack(
-                            [
-                                input_data["aggregated_features"][agg_name]
-                                for input_data in inputs
-                            ]
-                        )
-                        features_group.create_dataset(
-                            f"aggregated/{agg_name}",
-                            data=stacked_data,
-                            compression=compression,
-                        )
+                    self._save_features_to_hdf5_group(
+                        features_group, inputs, compression
+                    )
 
                     # Create labels group if we have labels
                     if labels and dataset_config.task_config.labels:
                         labels_group = signal_group.create_group("labels")
-
-                        # Process each label configuration
-                        for label_idx, label_config in enumerate(
-                            dataset_config.task_config.labels
-                        ):
-                            label_subgroup = labels_group.create_group(
-                                f"config_{label_idx}"
-                            )
-
-                            # Get all label data for this configuration
-                            label_data = [label_set[label_idx] for label_set in labels]
-
-                            # Save scalar features
-                            scalar_features_label = {  # Use different var name
-                                name: []
-                                for name in label_data[0]["scalar_features"].keys()
-                            }
-                            for event_labels in label_data:
-                                for name, value in event_labels[
-                                    "scalar_features"
-                                ].items():
-                                    scalar_features_label[name].append(
-                                        value
-                                    )  # Use different var name
-
-                            for (
-                                name,
-                                values,
-                            ) in (
-                                scalar_features_label.items()
-                            ):  # Use different var name
-                                label_subgroup.create_dataset(
-                                    f"scalar/{name}",
-                                    data=np.array(values),
-                                    compression=compression,
-                                )
-
-                            # Save aggregated features if any exist
-                            for agg_name_label, agg_data_label_val in label_data[
-                                0
-                            ][  # Renamed vars
-                                "aggregated_features"
-                            ].items():
-                                stacked_data_label = np.stack(  # Renamed var
-                                    [
-                                        event_labels["aggregated_features"][
-                                            agg_name_label
-                                        ]
-                                        for event_labels in label_data
-                                    ]
-                                )
-                                label_subgroup.create_dataset(
-                                    f"aggregated/{agg_name_label}",
-                                    data=stacked_data_label,  # Renamed var
-                                    compression=compression,
-                                )
+                        self._save_labels_to_hdf5_group(
+                            labels_group,
+                            labels,
+                            dataset_config.task_config,
+                            compression,
+                        )
 
                     # Compute and store normalization parameters
                     norm_params = self.feature_processor._compute_dataset_normalization(
@@ -1112,6 +969,161 @@ class DatasetManager:
             # Consider cleaning up config_path and plots_dir contents if necessary
             raise Exception(f"Signal dataset creation failed: {str(e)}")
 
+    def _save_features_to_hdf5_group(
+        self,
+        features_group: h5py.Group,
+        inputs: list[dict[str, np.ndarray]],
+        compression: Optional[str] = None,
+    ) -> None:
+        """
+        Helper function to save scalar and aggregated features to an HDF5 group.
+
+        Args:
+            features_group: HDF5 group to save features to
+            inputs: List of input feature dictionaries
+            compression: Optional compression setting for datasets
+        """
+        # Save scalar features if any exist
+        if inputs and inputs[0]["scalar_features"]:
+            scalar_features = {name: [] for name in inputs[0]["scalar_features"].keys()}
+            for input_data in inputs:
+                for name, value in input_data["scalar_features"].items():
+                    scalar_features[name].append(value)
+
+            for name, values in scalar_features.items():
+                features_group.create_dataset(
+                    f"scalar/{name}", data=np.array(values), compression=compression
+                )
+
+        # Save aggregated features if any exist
+        if inputs and inputs[0]["aggregated_features"]:
+            for agg_name, agg_data in inputs[0]["aggregated_features"].items():
+                stacked_data = np.stack(
+                    [
+                        input_data["aggregated_features"][agg_name]
+                        for input_data in inputs
+                    ]
+                )
+
+                features_group.create_dataset(
+                    f"aggregated/{agg_name}",
+                    data=stacked_data,
+                    compression=compression,
+                )
+
+    def _save_labels_to_hdf5_group(
+        self,
+        labels_group: h5py.Group,
+        labels: list[list[dict[str, np.ndarray]]],
+        task_config,
+        compression: Optional[str] = None,
+    ) -> None:
+        """
+        Helper function to save labels to an HDF5 group.
+
+        Args:
+            labels_group: HDF5 group to save labels to
+            labels: List of label feature dictionaries
+            task_config: Task configuration with label definitions
+            compression: Optional compression setting for datasets
+        """
+        self.logger.info(
+            f"Generating labels datasets for {len(task_config.labels)} labels"
+        )
+        # Process each label configuration
+        for label_idx, label_config in enumerate(task_config.labels):
+            label_subgroup = labels_group.create_group(f"config_{label_idx}")
+
+            # Get all label data for this configuration
+            label_data = [label_set[label_idx] for label_set in labels]
+
+            # Save scalar features
+            if label_data and label_data[0]["scalar_features"]:
+                scalar_features = {
+                    name: [] for name in label_data[0]["scalar_features"].keys()
+                }
+                for event_labels in label_data:
+                    for name, value in event_labels["scalar_features"].items():
+                        scalar_features[name].append(value)
+
+                for name, values in scalar_features.items():
+                    label_subgroup.create_dataset(
+                        f"scalar/{name}",
+                        data=np.array(values),
+                        compression=compression,
+                    )
+
+            # Save aggregated features if any exist
+            if label_data and label_data[0]["aggregated_features"]:
+                for agg_name, agg_data in label_data[0]["aggregated_features"].items():
+                    stacked_data = np.stack(
+                        [
+                            event_labels["aggregated_features"][agg_name]
+                            for event_labels in label_data
+                        ]
+                    )
+
+                    label_subgroup.create_dataset(
+                        f"aggregated/{agg_name}",
+                        data=stacked_data,
+                        compression=compression,
+                    )
+
+    def _load_and_normalize_dataset_from_group(
+        self,
+        features_group: h5py.Group,
+        labels_group: Optional[h5py.Group] = None,
+        include_labels: bool = False,
+        batch_size: Optional[int] = 1000,
+        apply_batching: bool = True,
+    ) -> tf.data.Dataset:
+        """
+        Helper function to load features and labels from HDF5 groups and create normalized dataset.
+
+        Args:
+            features_group: HDF5 group containing features
+            labels_group: Optional HDF5 group containing labels
+            include_labels: Whether to include labels in the dataset
+            batch_size: Batch size for the resulting dataset (ignored if apply_batching=False)
+            apply_batching: Whether to apply batching and prefetching
+
+        Returns:
+            Normalized TensorFlow dataset
+        """
+        # Load features and labels
+        features_dict = self.feature_processor._load_features_from_group(features_group)
+        labels_dict = (
+            self.feature_processor._load_labels_from_group(labels_group)
+            if include_labels and labels_group is not None
+            else None
+        )
+
+        # Get normalization parameters
+        if (
+            hasattr(features_group, "attrs")
+            and "normalization_params" in features_group.attrs
+        ):
+            norm_params = json.loads(features_group.attrs["normalization_params"])
+        elif (
+            hasattr(features_group.parent, "attrs")
+            and "normalization_params" in features_group.parent.attrs
+        ):
+            norm_params = json.loads(
+                features_group.parent.attrs["normalization_params"]
+            )
+        else:
+            raise ValueError("Normalization parameters not found in HDF5 file")
+
+        # Create normalized dataset
+        dataset = self.feature_processor._create_normalized_dataset(
+            features_dict, norm_params, labels_dict
+        )
+
+        if apply_batching:
+            return dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+        else:
+            return dataset
+
     def _get_catalog_paths(
         self,
         run_number: Optional[str] = None,
@@ -1194,7 +1206,7 @@ class DatasetManager:
                 norm_params = json.loads(f.attrs["normalization_params"])
                 n_events = next(iter(features_dict.values())).shape[0]
 
-                # Create dataset
+                # Create dataset (unbatched for splitting)
                 dataset = self.feature_processor._create_normalized_dataset(
                     features_dict, norm_params, labels_dict
                 )
@@ -1261,32 +1273,20 @@ class DatasetManager:
                 for signal_key in f.keys():
                     signal_group = f[signal_key]
 
-                    # Load features and labels using helper functions
-                    features_dict = self.feature_processor._load_features_from_group(
-                        signal_group["features"]
-                    )
-                    labels_dict = None
-                    if (
-                        include_labels
-                        and "labels" in signal_group
-                        and signal_group.attrs.get("has_labels", False)
-                    ):
-                        labels_dict = self.feature_processor._load_labels_from_group(
-                            signal_group["labels"]
+                    # Use helper function to load and normalize dataset
+                    dataset = self._load_and_normalize_dataset_from_group(
+                        features_group=signal_group["features"],
+                        labels_group=signal_group.get("labels")
+                        if (
+                            include_labels
+                            and "labels" in signal_group
+                            and signal_group.attrs.get("has_labels", False)
                         )
-
-                    # Get normalization parameters
-                    norm_params = json.loads(signal_group.attrs["normalization_params"])
-
-                    # Create normalized dataset
-                    dataset = self.feature_processor._create_normalized_dataset(
-                        features_dict=features_dict,
-                        norm_params=norm_params,
-                        labels_dict=labels_dict,
+                        else None,
+                        include_labels=include_labels,
+                        batch_size=batch_size,
                     )
 
-                    # Batch and prefetch
-                    dataset = dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
                     signal_datasets[signal_key] = dataset
 
             self.logger.info(
