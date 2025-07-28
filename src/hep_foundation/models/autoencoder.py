@@ -98,7 +98,6 @@ class AutoEncoder(BaseModel):
         self.decoder_layers = config.architecture["decoder_layers"]
         self.activation = config.architecture.get("activation", "relu")
         self.normalize_latent = config.architecture.get("normalize_latent", False)
-        self.quant_bits = config.hyperparameters.get("quant_bits")
         self.name = config.architecture.get("name", "track_autoencoder")
 
     def build(self, input_shape: tuple = None) -> None:
@@ -145,19 +144,6 @@ class AutoEncoder(BaseModel):
         x = keras.layers.Activation(self.activation, name=f"{prefix}_activation")(x)
 
         return keras.layers.BatchNormalization(name=f"{prefix}_bn")(x)
-
-    def get_config(self) -> dict:
-        return {
-            "model_type": "autoencoder",
-            "input_shape": self.input_shape,
-            "latent_dim": self.latent_dim,
-            "encoder_layers": self.encoder_layers,
-            "decoder_layers": self.decoder_layers,
-            "quant_bits": self.quant_bits,
-            "activation": self.activation,
-            "normalize_latent": self.normalize_latent,
-            "name": self.name,
-        }
 
     def create_plots(
         self, plots_dir: Path, training_history_json_path: Optional[Path] = None

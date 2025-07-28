@@ -27,6 +27,7 @@ from hep_foundation.pipeline.anomaly_detection_evaluator import (
 from hep_foundation.pipeline.foundation_pipeline_utils import log_evaluation_summary
 from hep_foundation.plots.foundation_plot_manager import FoundationPlotManager
 from hep_foundation.training.model_trainer import ModelTrainer
+from hep_foundation.utils.utils import print_system_usage
 
 
 class FoundationModelPipeline:
@@ -239,6 +240,9 @@ class FoundationModelPipeline:
             self.logger.progress("STEP 1/4: TRAINING FOUNDATION MODEL")
             self.logger.info("=" * 50)
 
+            # Print system usage before training
+            print_system_usage("Before Training - ")
+
             training_result = self.run_process(
                 process_name="train",
                 dataset_config=dataset_config,
@@ -247,6 +251,9 @@ class FoundationModelPipeline:
                 vae_training_config=vae_training_config,
                 delete_catalogs=delete_catalogs,
             )
+
+            # Print system usage after training
+            print_system_usage("After Training - ")
 
             if (
                 not training_result
@@ -269,6 +276,9 @@ class FoundationModelPipeline:
             self.logger.progress("STEP 2/4: ANOMALY DETECTION EVALUATION")
             self.logger.info("=" * 50)
 
+            # Print system usage before anomaly detection
+            print_system_usage("Before Anomaly Detection - ")
+
             anomaly_success = self.run_process(
                 process_name="anomaly",
                 dataset_config=dataset_config,
@@ -278,6 +288,9 @@ class FoundationModelPipeline:
                 delete_catalogs=delete_catalogs,
             )
 
+            # Print system usage after anomaly detection
+            print_system_usage("After Anomaly Detection - ")
+
             if not anomaly_success:
                 self.logger.error("Anomaly detection evaluation failed")
                 return False
@@ -286,6 +299,9 @@ class FoundationModelPipeline:
             self.logger.info("=" * 50)
             self.logger.progress("STEP 3/4: REGRESSION EVALUATION")
             self.logger.info("=" * 50)
+
+            # Print system usage before regression evaluation
+            print_system_usage("Before Regression Evaluation - ")
 
             regression_success = self.run_process(
                 process_name="regression",
@@ -299,6 +315,9 @@ class FoundationModelPipeline:
                 delete_catalogs=delete_catalogs,
             )
 
+            # Print system usage after regression evaluation
+            print_system_usage("After Regression Evaluation - ")
+
             if not regression_success:
                 self.logger.error("Regression evaluation failed")
                 return False
@@ -307,6 +326,9 @@ class FoundationModelPipeline:
             self.logger.info("=" * 50)
             self.logger.progress("STEP 4/4: SIGNAL CLASSIFICATION EVALUATION")
             self.logger.info("=" * 50)
+
+            # Print system usage before signal classification
+            print_system_usage("Before Signal Classification - ")
 
             signal_classification_success = self.run_process(
                 process_name="signal_classification",
@@ -319,6 +341,9 @@ class FoundationModelPipeline:
                 fixed_epochs=fixed_epochs,
                 delete_catalogs=delete_catalogs,
             )
+
+            # Print system usage after signal classification
+            print_system_usage("After Signal Classification - ")
 
             if not signal_classification_success:
                 self.logger.error("Signal classification evaluation failed")
@@ -372,11 +397,17 @@ class FoundationModelPipeline:
                 "Full foundation model pipeline completed successfully!"
             )
 
+            # Print final system usage
+            print_system_usage("Full Pipeline Complete - ")
+
             return True
 
         except Exception as e:
             self.logger.error(f"Full pipeline failed: {type(e).__name__}: {str(e)}")
             self.logger.exception("Detailed traceback:")
+
+            # Print system usage on failure
+            print_system_usage("Full Pipeline Failed - ")
             return False
 
     def train_foundation_model(
@@ -1200,12 +1231,12 @@ class FoundationModelPipeline:
                     samples_collected = 0
                     max_prediction_samples = 1000
 
-                    for batch_idx, batch in enumerate(test_dataset):
+                    for batch in test_dataset:
                         if samples_collected >= max_prediction_samples:
                             break
 
                         if isinstance(batch, tuple) and len(batch) == 2:
-                            features_batch, labels_batch = batch
+                            features_batch, _labels_batch = batch
 
                             predictions_batch = combined_keras_model.predict(
                                 features_batch, verbose=0
@@ -1669,7 +1700,7 @@ class FoundationModelPipeline:
             # 4. Create balanced labeled datasets
             self.logger.info("Creating balanced labeled datasets...")
 
-            def create_balanced_labeled_dataset(bg_dataset, sig_dataset, split_name):
+            def create_balanced_labeled_dataset(bg_dataset, sig_dataset):
                 """Create a balanced dataset with binary labels"""
                 # Convert to unbatched datasets for easier manipulation
                 bg_unbatched = bg_dataset.unbatch()
@@ -1692,13 +1723,13 @@ class FoundationModelPipeline:
 
             # Create balanced train, validation, and test datasets
             labeled_train_dataset = create_balanced_labeled_dataset(
-                background_train, signal_dataset, "train"
+                background_train, signal_dataset
             )
             labeled_val_dataset = create_balanced_labeled_dataset(
-                background_val, signal_dataset, "validation"
+                background_val, signal_dataset
             )
             labeled_test_dataset = create_balanced_labeled_dataset(
-                background_test, signal_dataset, "test"
+                background_test, signal_dataset
             )
 
             # Count total training events

@@ -269,12 +269,10 @@ class DatasetCreationProcessor:
                             / "atlas_dataset_features.png"
                         )
 
-                    created_atlas_id, created_atlas_path = (
-                        self.data_manager._create_atlas_dataset(
-                            dataset_config=dataset_config,
-                            delete_catalogs=delete_catalogs,  # Use value from config
-                            plot_output=plot_output,
-                        )
+                    _, created_atlas_path = self.data_manager._create_atlas_dataset(
+                        dataset_config=dataset_config,
+                        delete_catalogs=delete_catalogs,  # Use value from config
+                        plot_output=plot_output,
                     )
                     self.logger.info(
                         f"Successfully created ATLAS dataset at: {created_atlas_path}"
@@ -309,7 +307,7 @@ class DatasetCreationProcessor:
                             if potential_bg_hist_path.exists():
                                 background_hist_data_path = potential_bg_hist_path
 
-                        created_signal_id, created_signal_path = (
+                        _, created_signal_path = (
                             self.data_manager._create_signal_dataset(
                                 dataset_config=dataset_config,
                                 background_hist_data_path=background_hist_data_path,

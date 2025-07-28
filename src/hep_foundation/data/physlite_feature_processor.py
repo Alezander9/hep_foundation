@@ -14,7 +14,6 @@ import uproot
 from hep_foundation.config.logging_config import get_logger
 from hep_foundation.config.task_config import (
     PhysliteFeatureArrayAggregator,
-    PhysliteFeatureArrayFilter,
     PhysliteFeatureFilter,
     PhysliteFeatureSelector,
     PhysliteSelectionConfig,
@@ -169,287 +168,6 @@ class PhysliteFeatureProcessor:
                 return False
 
         return True
-
-    def _apply_feature_filters(
-        self,
-        feature_values: dict[str, np.ndarray],
-        filters: list[PhysliteFeatureFilter],
-    ) -> bool:
-        """
-        Apply scalar feature filters to event-level features.
-
-        Args:
-            feature_values: Dictionary mapping feature names to their values
-            filters: List of PhysliteFeatureFilter objects to apply
-
-        Returns:
-            bool: True if all filters pass, False otherwise
-        """
-        if not filters:
-            return True
-
-        for filter in filters:
-            # Get the feature value using the branch name
-            value = feature_values.get(filter.branch.name)
-            if value is None:
-                return False
-
-            # Apply min/max filters if they exist
-            if filter.min_value is not None and value < filter.min_value:
-                return False
-            if filter.max_value is not None and value > filter.max_value:
-                return False
-
-        return True
-
-    def _apply_feature_array_filters(
-        self,
-        feature_arrays: dict[str, np.ndarray],
-        filters: list[PhysliteFeatureArrayFilter],
-    ) -> np.ndarray:
-        """
-        Apply array feature filters to track-level features.
-        Assumes filters list is not empty when called.
-
-        Args:
-            feature_arrays: Dictionary mapping feature names (for filtering) to their array values.
-                            Must contain arrays corresponding to filters.
-            filters: List of PhysliteFeatureArrayFilter objects to apply (non-empty).
-
-        Returns:
-            np.ndarray: Boolean mask indicating which array elements pass all filters.
-        """
-        # This function now assumes 'filters' is not empty.
-        # The case of no filters is handled by the caller (_process_selection_config).
-
-        # Determine the length from the first filter array provided
-        # This assumes all arrays in feature_arrays for filtering have the same length
-        if not feature_arrays:
-            # This case should ideally not be reached if filters are present and data was fetched
-            self.logger.warning(
-                "_apply_feature_array_filters called with empty feature_arrays dictionary despite non-empty filters. Returning empty mask."
-            )
-            return np.array(
-                [], dtype=bool
-            )  # Return empty mask if feature_arrays is empty
-
-        try:
-            first_array_key = filters[0].branch.name  # Use first filter's branch name
-            initial_length = len(feature_arrays[first_array_key])
-        except KeyError:
-            self.logger.error(
-                f"Filter branch '{filters[0].branch.name}' not found in feature_arrays passed to _apply_feature_array_filters. Returning empty mask."
-            )
-            return np.array(
-                [], dtype=bool
-            )  # Return empty if the first filter's array is missing
-        except Exception as e:
-            self.logger.error(
-                f"Error determining length in _apply_feature_array_filters: {e}. Returning empty mask."
-            )
-            return np.array([], dtype=bool)
-
-        # Start with all True mask of the correct length
-        mask = np.ones(initial_length, dtype=bool)
-
-        for filter_item in filters:
-            # Get the feature array using the branch name
-            values = feature_arrays.get(filter_item.branch.name)
-            if values is None:
-                # If a required filter feature is missing, reject all elements
-                self.logger.warning(
-                    f"Filter branch '{filter_item.branch.name}' missing in _apply_feature_array_filters. Rejecting all elements."
-                )
-                mask[:] = False
-                break
-            if len(values) != initial_length:
-                # If lengths mismatch, something is wrong
-                self.logger.warning(
-                    f"Length mismatch for filter branch '{filter_item.branch.name}' ({len(values)}) vs expected ({initial_length}). Rejecting all elements."
-                )
-                mask[:] = False
-                break
-
-            # Apply min filter if it exists
-            if filter_item.min_value is not None:
-                mask &= values >= filter_item.min_value
-
-            # Apply max filter if it exists
-            if filter_item.max_value is not None:
-                mask &= values <= filter_item.max_value
-
-        return mask
-
-    def _apply_feature_array_aggregator(
-        self,
-        feature_arrays: dict[str, np.ndarray],
-        aggregator: PhysliteFeatureArrayAggregator,
-        valid_mask: np.ndarray,
-        sort_indices: np.ndarray,
-    ) -> Optional[
-        tuple[Optional[np.ndarray], Optional[list[int]], Optional[int], Optional[dict]]
-    ]:
-        """
-        Apply feature array aggregator to combine and sort multiple array features.
-
-        Args:
-            feature_arrays: Dictionary mapping feature names to their array values
-            aggregator: PhysliteFeatureArrayAggregator configuration
-            valid_mask: Boolean mask indicating which array elements passed filters
-            sort_indices: Indices to use for sorting the filtered arrays
-
-        Returns:
-            Tuple[Optional[np.ndarray], Optional[list[int]], Optional[int], Optional[dict]]:
-                - Aggregated and sorted array of shape (max_length, n_features) or None
-                - List of integers representing num_cols per input branch or None
-                - Number of valid elements (tracks) before padding/truncation by aggregator
-                - Dictionary with clipped-but-not-padded features for histogram collection or None
-        """
-        # Get the number of valid elements after filtering
-        n_valid = np.sum(valid_mask)
-
-        # Check if we meet minimum length requirement
-        if n_valid < aggregator.min_length:
-            self.logger.debug(
-                f"Skipping aggregator: n_valid ({n_valid}) < min_length ({aggregator.min_length})"
-            )
-            return None, None, None, None
-
-        # Extract arrays for each input branch, applying mask but NO reshape yet
-        processed_feature_segments = []
-        expected_rows = n_valid  # Number of rows should match valid tracks
-
-        for selector in aggregator.input_branches:
-            branch_name = selector.branch.name
-            values = feature_arrays.get(branch_name)
-            if values is None:
-                self.logger.warning(
-                    f"Input branch '{branch_name}' not found in feature_arrays for aggregator. Skipping event."
-                )
-                return None, None, None, None
-
-            # Apply mask to select valid track data
-            filtered_values = values[valid_mask]
-
-            # Ensure the first dimension matches n_valid
-            if filtered_values.shape[0] != expected_rows:
-                # This check might be redundant if the raw length check passed, but good sanity check
-                self.logger.warning(
-                    f"Filtered array shape mismatch for '{branch_name}'. Expected {expected_rows} rows, got {filtered_values.shape[0]}. Skipping."
-                )
-                return None, None, None, None
-
-            # If it's a 1D array (scalar per track), reshape to (n_valid, 1) for hstack
-            if filtered_values.ndim == 1:
-                filtered_values = filtered_values.reshape(-1, 1)
-            elif filtered_values.ndim != 2:
-                # We expect either (n_valid,) or (n_valid, k) after filtering
-                self.logger.warning(
-                    f"Unexpected array dimension ({filtered_values.ndim}) for '{branch_name}' after filtering. Expected 1 or 2. Skipping."
-                )
-                return None, None, None, None
-            # If it's 2D, shape is already (n_valid, k) - leave as is
-
-            processed_feature_segments.append(filtered_values)
-
-        # Check if we collected any features
-        if not processed_feature_segments:
-            self.logger.warning(
-                "No feature segments collected for aggregator. Skipping."
-            )
-            return None, None, None, None
-
-        # Get num_cols per segment *before* hstack
-        num_cols_per_segment = [
-            seg.shape[1] if seg.ndim == 2 else 1 for seg in processed_feature_segments
-        ]
-
-        # Stack features horizontally - now shapes should be compatible
-        # e.g., [(n_valid, 1), (n_valid, 1), ..., (n_valid, 5), (n_valid, 10)]
-        try:
-            features = np.hstack(processed_feature_segments)
-            # Expected shape: (n_valid, total_num_features) e.g., (n_valid, 21)
-            self.logger.debug(f"Aggregator: Hstacked features shape: {features.shape}")
-        except ValueError as e:
-            self.logger.error(f"Error during np.hstack in aggregator: {e}")
-            # Log shapes for debugging
-            for i, seg in enumerate(processed_feature_segments):
-                self.logger.error(
-                    f"  Segment {i} shape: {seg.shape}, dtype: {seg.dtype}"
-                )
-            return None, None, None, None  # Cannot proceed if hstack fails
-
-        # Apply sorting using provided indices (indices are relative to the n_valid tracks)
-        if len(sort_indices) != n_valid:
-            self.logger.warning(
-                f"Length of sort_indices ({len(sort_indices)}) does not match n_valid ({n_valid}). Skipping."
-            )
-            return None, None, None, None
-        # Apply sorting safely
-        try:
-            # Ensure sort_indices are integers if they aren't already
-            sort_indices = np.asarray(sort_indices, dtype=int)
-            sorted_features = features[sort_indices]
-        except IndexError as e:
-            self.logger.error(
-                f"Error applying sort_indices: {e}. sort_indices length: {len(sort_indices)}, max index: {np.max(sort_indices) if len(sort_indices) > 0 else 'N/A'}, features rows: {features.shape[0]}"
-            )
-            return None, None, None, None
-        except Exception as e:
-            self.logger.error(f"Unexpected error during sorting: {e}")
-            return None, None, None, None
-
-        # Handle length requirements (padding/truncation based on number of TRACKS)
-        num_selected_tracks = sorted_features.shape[0]  # This is n_valid
-        num_features_per_track = sorted_features.shape[
-            1
-        ]  # This should be 21 in your example
-
-        # NEW: Capture clipped-but-not-padded features for histogram collection
-        clipped_features_for_hist = None
-        clipped_num_tracks = num_selected_tracks  # Before any clipping
-
-        if num_selected_tracks > aggregator.max_length:
-            # Truncate tracks
-            clipped_features_for_hist = sorted_features[: aggregator.max_length, :]
-            clipped_num_tracks = aggregator.max_length
-            final_features = clipped_features_for_hist.copy()
-            self.logger.debug(
-                f"Aggregator: Truncated tracks from {num_selected_tracks} to {aggregator.max_length}"
-            )
-        elif num_selected_tracks < aggregator.max_length:
-            # No clipping needed, but we'll pad for the final features
-            clipped_features_for_hist = sorted_features.copy()
-            clipped_num_tracks = num_selected_tracks
-
-            # Pad tracks with zeros for final features
-            num_padding_tracks = aggregator.max_length - num_selected_tracks
-            padding = np.zeros(
-                (num_padding_tracks, num_features_per_track), dtype=features.dtype
-            )
-            final_features = np.vstack([sorted_features, padding])
-            self.logger.debug(
-                f"Aggregator: Padded tracks from {num_selected_tracks} to {aggregator.max_length}"
-            )
-        else:
-            # Length is already correct
-            clipped_features_for_hist = sorted_features.copy()
-            clipped_num_tracks = num_selected_tracks
-            final_features = sorted_features
-            self.logger.debug(
-                f"Aggregator: Final track length {num_selected_tracks} matches max_length {aggregator.max_length}"
-            )
-
-        # Prepare histogram data (clipped but not padded)
-        hist_data = {
-            "clipped_features": clipped_features_for_hist,
-            "clipped_num_tracks": clipped_num_tracks,
-            "num_cols_per_segment": num_cols_per_segment,
-        }
-
-        # Final shape should be (max_length, total_num_features)
-        self.logger.debug(f"Aggregator: Final output shape: {final_features.shape}")
-        return final_features, num_cols_per_segment, n_valid, hist_data
 
     def _extract_selected_features(
         self,
@@ -1843,10 +1561,8 @@ class PhysliteFeatureProcessor:
                         stored_edges = np.array(
                             existing_bin_edges["N_Tracks_per_Event"]
                         )
-                        filtered_data, n_low, n_high = (
-                            self._check_data_range_compatibility(
-                                counts_arr, stored_edges, "N_Tracks_per_Event"
-                            )
+                        filtered_data = self._check_data_range_compatibility(
+                            counts_arr, stored_edges, "N_Tracks_per_Event"
                         )
                         counts, bin_edges = np.histogram(
                             filtered_data, bins=stored_edges, density=True
@@ -1879,10 +1595,8 @@ class PhysliteFeatureProcessor:
                     if existing_bin_edges and name in existing_bin_edges:
                         # Use existing bin edges, filter out-of-range data
                         stored_edges = np.array(existing_bin_edges[name])
-                        filtered_data, n_low, n_high = (
-                            self._check_data_range_compatibility(
-                                values_arr, stored_edges, name
-                            )
+                        filtered_data = self._check_data_range_compatibility(
+                            values_arr, stored_edges, name
                         )
                         counts, bin_edges = np.histogram(
                             filtered_data, bins=stored_edges, density=True
@@ -1919,7 +1633,7 @@ class PhysliteFeatureProcessor:
 
                     if not actual_arrays_to_stack:
                         # If no arrays, store empty for all expected features
-                        for k_idx, feature_name_val in enumerate(plot_feature_names):
+                        for feature_name_val in plot_feature_names:
                             histogram_data[feature_name_val] = {
                                 "counts": [],
                                 "bin_edges": [],
@@ -1970,7 +1684,7 @@ class PhysliteFeatureProcessor:
                                         stored_edges = np.array(
                                             existing_bin_edges[feature_name]
                                         )
-                                        filtered_data, n_low, n_high = (
+                                        filtered_data = (
                                             self._check_data_range_compatibility(
                                                 valid_data, stored_edges, feature_name
                                             )
@@ -2068,7 +1782,7 @@ class PhysliteFeatureProcessor:
                                         stored_edges = np.array(
                                             existing_bin_edges[feature_name]
                                         )
-                                        filtered_data, n_low, n_high = (
+                                        filtered_data = (
                                             self._check_data_range_compatibility(
                                                 valid_data, stored_edges, feature_name
                                             )
@@ -2109,7 +1823,7 @@ class PhysliteFeatureProcessor:
                             f"Error generating histogram data for aggregated feature in {agg_key}: {e_agg_hist}"
                         )
                         # Store empty for all features of this problematic aggregator
-                        for k_idx, feature_name_val in enumerate(plot_feature_names):
+                        for feature_name_val in plot_feature_names:
                             histogram_data[feature_name_val] = {
                                 "counts": [],
                                 "bin_edges": [],
@@ -2656,7 +2370,7 @@ class PhysliteFeatureProcessor:
         mask = (values >= edges_min) & (values <= edges_max)
         filtered_values = values[mask]
 
-        return filtered_values, n_below, n_above
+        return filtered_values
 
     def _process_event_zero_bias(
         self,

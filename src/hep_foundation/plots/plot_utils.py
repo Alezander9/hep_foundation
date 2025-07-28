@@ -75,18 +75,6 @@ FONT_SIZES = {
 # Line widths and marker sizes
 LINE_WIDTHS = {"thin": 0.5, "normal": 1.0, "thick": 2.0, "heavy": 3.0}
 
-# Line styles for systematic model type differentiation
-LINE_STYLES = {
-    "solid": "-",
-    "dashed": "--",
-    "dotted": ":",
-    "dashdot": "-.",
-    "densely_dashed": (0, (5, 2)),
-    "densely_dotted": (0, (1, 1)),
-    "loosely_dashed": (0, (5, 10)),
-    "loosely_dotted": (0, (1, 10)),
-}
-
 # Model type to line style mapping for systematic plotting
 MODEL_LINE_STYLES = {
     "from_scratch": "-",  # Solid line
@@ -96,8 +84,7 @@ MODEL_LINE_STYLES = {
 }
 
 # Additional distinguishable line styles for reference
-# These provide more options if you need to distinguish more model types
-EXTENDED_LINE_STYLES = {
+LINE_STYLES = {
     "solid": "-",
     "dashed": "--",
     "dotted": ":",
@@ -129,35 +116,7 @@ def get_available_line_styles() -> dict:
     Returns:
         Dictionary of line style names and their matplotlib codes
     """
-    return EXTENDED_LINE_STYLES.copy()
-
-
-def print_line_style_reference():
-    """
-    Print a reference of all available line styles.
-    Useful for choosing additional line styles for new model types.
-    """
-    print("Available Line Styles:")
-    print("=" * 40)
-    print("Currently used in MODEL_LINE_STYLES:")
-    for model, style in MODEL_LINE_STYLES.items():
-        style_name = next(
-            (name for name, code in EXTENDED_LINE_STYLES.items() if code == style),
-            "unknown",
-        )
-        print(f"  {model:<15} : {style:<10} ({style_name})")
-
-    print("\nAll available line styles:")
-    for name, code in EXTENDED_LINE_STYLES.items():
-        print(f"  {name:<15} : {code}")
-
-    print("\nNote: The most distinguishable line styles are:")
-    print("  - Solid line (-)")
-    print("  - Dashed line (--)")
-    print("  - Dotted line (:)")
-    print("  - Dash-dot line (-.) - alternating dash and dot")
-    print("  - Densely dashed - tightly spaced dashes")
-    print("  - Loosely dashed - widely spaced dashes")
+    return LINE_STYLES.copy()
 
 
 MARKER_SIZES = {"tiny": 2, "small": 4, "normal": 6, "large": 8, "xlarge": 10}

@@ -37,7 +37,6 @@ class DatasetManager:
         # Add state tracking
         self.current_dataset_id = None
         self.current_dataset_path = None
-        self.current_dataset_info = None
 
     @staticmethod
     def _convert_numpy_types(obj):
@@ -283,12 +282,6 @@ class DatasetManager:
         if self.current_dataset_id is None:
             raise ValueError("No dataset currently loaded")
         return self.current_dataset_id
-
-    def get_current_dataset_info(self) -> dict:
-        """Get information about the currently loaded dataset"""
-        if self.current_dataset_info is None:
-            raise ValueError("No dataset currently loaded")
-        return self.current_dataset_info
 
     def get_current_dataset_path(self) -> Path:
         """Get path of currently loaded dataset"""

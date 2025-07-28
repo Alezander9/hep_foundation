@@ -50,26 +50,3 @@ class ModelFactory:
 
         # 4. Create model with validated config object
         return model_class(config=model_config)
-
-    @staticmethod
-    def get_config_template(model_type: str) -> dict:
-        """
-        Get template configuration for a model type
-
-        Args:
-            model_type: Type of model to get configuration for
-
-        Returns:
-            Dictionary containing template configuration structure
-
-        Raises:
-            ValueError: If model type is unsupported
-        """
-        if model_type not in ModelFactory.CONFIG_CLASSES:
-            raise ValueError(
-                f"Unsupported model type: '{model_type}'. "
-                f"Supported types are: {list(ModelFactory.CONFIG_CLASSES.keys())}"
-            )
-
-        config_class = ModelFactory.CONFIG_CLASSES[model_type]
-        return config_class.get_template()

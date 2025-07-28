@@ -239,38 +239,6 @@ class PipelineConfigLoader:
             hyperparameters=dnn_dict["hyperparameters"],
         )
 
-    def save_config_to_registry(
-        self, config_file_path: Path, registry_dir: Path
-    ) -> Path:
-        """
-        Copy the configuration file directly to the registry directory.
-
-        This eliminates the desync problem by storing the exact config file
-        used for the experiment.
-
-        Args:
-            config_file_path: Path to the original config file
-            registry_dir: Directory in the registry where config should be stored
-
-        Returns:
-            Path to the saved config file in the registry
-        """
-        import shutil
-
-        registry_dir.mkdir(parents=True, exist_ok=True)
-
-        # Save with timestamp for uniqueness
-        from datetime import datetime
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        config_name = f"pipeline_config_{timestamp}.yaml"
-
-        registry_config_path = registry_dir / config_name
-        shutil.copy2(config_file_path, registry_config_path)
-
-        self.logger.info(f"Configuration saved to registry: {registry_config_path}")
-        return registry_config_path
-
 
 def load_pipeline_config(config_path: Union[str, Path]) -> dict[str, Any]:
     """

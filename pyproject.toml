@@ -37,6 +37,8 @@ packages = ["src/hep_foundation"]
 [tool.ruff]
 # Same as Black.
 line-length = 88
+# Exclude vulture whitelist file (not part of actual codebase)
+exclude = ["vulture_whitelist.py"]
 
 [tool.ruff.lint]
 # Enable Pyflakes (F) and pycodestyle (E) and isort (I) and pyupgrade (UP) codes by default.
@@ -57,8 +59,8 @@ indent-style = "space"
 line-ending = "auto"
 
 [tool.vulture]
-# Only check the source code directory
-paths = ["src/"]
+# Check both source code and scripts to understand usage patterns, plus whitelist
+paths = ["src/", "scripts/", "vulture_whitelist.py"]
 # Set minimum confidence to 50%
 min_confidence = 50
 # Sort results by size to prioritize larger chunks of dead code
