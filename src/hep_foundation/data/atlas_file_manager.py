@@ -25,14 +25,8 @@ class ATLASFileManager:
         self.logger = get_logger(__name__)
 
         self.base_dir = Path(base_dir)
-        self.base_url = "https://opendata.cern.ch/record/80001/files"
-        self.signal_base_url = "https://opendata.cern.ch/record/80011/files"
         self.max_workers = max_workers
         self._setup_directories()
-
-        # Cache for catalog counts
-        self.catalog_counts = {}  # For ATLAS data
-        self.signal_catalog_counts = {}  # For signal data
 
         # Signal types mapping - get from atlas_data module
         self.signal_types = {
@@ -210,55 +204,6 @@ class ATLASFileManager:
                 output_path.unlink()
             return None
 
-    def download_multiple_runs_parallel(
-        self, run_numbers: list[str], catalog_limit: Optional[int] = None
-    ) -> dict[str, list[Path]]:
-        """
-        Download catalogs for multiple runs in parallel.
-
-        Args:
-            run_numbers: List of ATLAS run numbers
-            catalog_limit: Maximum number of catalogs per run (None for all)
-
-        Returns:
-            Dictionary mapping run numbers to lists of downloaded catalog paths
-        """
-        self.logger.info(
-            f"Downloading catalogs for {len(run_numbers)} runs in parallel"
-        )
-
-        results = {}
-
-        # Process each run's catalogs in parallel
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            future_to_run = {
-                executor.submit(
-                    self.download_run_catalogs_parallel, run_number, catalog_limit
-                ): run_number
-                for run_number in run_numbers
-            }
-
-            for future in as_completed(future_to_run):
-                run_number = future_to_run[future]
-                try:
-                    catalog_paths = future.result()
-                    results[run_number] = catalog_paths
-                    self.logger.info(
-                        f"Completed downloading {len(catalog_paths)} catalogs for run {run_number}"
-                    )
-                except Exception as e:
-                    self.logger.error(
-                        f"Failed to download catalogs for run {run_number}: {str(e)}"
-                    )
-                    results[run_number] = []
-
-        total_catalogs = sum(len(paths) for paths in results.values())
-        self.logger.info(
-            f"Downloaded {total_catalogs} total catalogs across {len(run_numbers)} runs"
-        )
-
-        return results
-
     def _setup_directories(self):
         """Create necessary directory structure"""
         self.base_dir.mkdir(exist_ok=True)
@@ -327,31 +272,6 @@ class ATLASFileManager:
     def get_signal_catalog_path(self, signal_key: str, index: int = 0) -> Path:
         """Get path to a signal catalog file"""
         return self.base_dir / "signal_catalogs" / f"{signal_key}_catalog_{index}.root"
-
-    def get_signal_catalog_count(self, signal_key: str) -> int:
-        """Discover how many catalog files exist for a signal type"""
-        if signal_key not in self.signal_types:
-            raise ValueError(
-                f"Unknown signal key: {signal_key}. Available keys: {list(self.signal_types.keys())}"
-            )
-
-        if signal_key in self.signal_catalog_counts:
-            return self.signal_catalog_counts[signal_key]
-
-        signal_name = self.signal_types[signal_key]
-        index = 0
-
-        while True:
-            url = f"/record/80011/files/{signal_name}_file_index.json_{index}"
-            response = requests.head(f"https://opendata.cern.ch{url}")
-
-            if response.status_code != 200:
-                break
-
-            index += 1
-
-        self.signal_catalog_counts[signal_key] = index
-        return index
 
     def download_signal_catalog(
         self, signal_key: str, index: int = 0

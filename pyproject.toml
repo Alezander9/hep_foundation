@@ -37,6 +37,8 @@ packages = ["src/hep_foundation"]
 [tool.ruff]
 # Same as Black.
 line-length = 88
+# Exclude vulture whitelist file (not part of actual codebase)
+exclude = ["vulture_whitelist.py"]
 
 [tool.ruff.lint]
 # Enable Pyflakes (F) and pycodestyle (E) and isort (I) and pyupgrade (UP) codes by default.
@@ -56,12 +58,25 @@ indent-style = "space"
 # Like Black, automatically detect the appropriate line ending.
 line-ending = "auto"
 
+[tool.vulture]
+# Check both source code and scripts to understand usage patterns, plus whitelist
+paths = ["src/", "scripts/", "vulture_whitelist.py"]
+# Set minimum confidence to 50%
+min_confidence = 50
+# Sort results by size to prioritize larger chunks of dead code
+sort_by_size = true
+# Exclude test files and certain patterns that might have false positives
+exclude = ["*/test_*.py", "*/.venv/*"]
+# Ignore common decorator patterns that might cause false positives
+ignore_decorators = ["@*"]
+
 [dependency-groups]
 dev = [
     "pytest>=8.3.5",
     "ruff>=0.11.6",
     "pytest-cov>=6.1.1",
     "pre-commit>=4.2.0",
+    "vulture>=2.14",
 ]
 transfer = [
     # Minimal dependencies for file transfer scripts

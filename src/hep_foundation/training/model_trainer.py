@@ -325,13 +325,6 @@ class ModelTrainer:
 
         return dataset
 
-    def _update_metrics_history(self, epoch_metrics: dict) -> None:
-        """Update metrics history with new epoch results"""
-        for metric_name, value in epoch_metrics.items():
-            if metric_name not in self.metrics_history:
-                self.metrics_history[metric_name] = []
-            self.metrics_history[metric_name].append(float(value))
-
     def get_training_summary(self) -> dict[str, Any]:
         """Get comprehensive training summary with all metrics and history"""
         if not self.metrics_history:

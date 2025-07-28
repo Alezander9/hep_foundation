@@ -145,7 +145,6 @@ class DNNPredictor(BaseModel):
         self.name = config.architecture.get("name", "dnn_predictor")
 
         # Hyperparameters
-        self.quant_bits = config.hyperparameters.get("quant_bits")
         self.dropout_rate = config.hyperparameters.get("dropout_rate")
         self.l2_regularization = config.hyperparameters.get("l2_regularization")
 
@@ -191,21 +190,6 @@ class DNNPredictor(BaseModel):
 
         # Create model
         self.model = keras.Model(inputs=inputs, outputs=outputs, name=self.name)
-
-    def get_config(self) -> dict:
-        return {
-            "model_type": "dnn_predictor",
-            "input_shape": self.input_shape,
-            "output_shape": self.output_shape,
-            "hidden_layers": self.hidden_layers,
-            "label_index": self.label_index,
-            "activation": self.activation,
-            "output_activation": self.output_activation,
-            "quant_bits": self.quant_bits,
-            "dropout_rate": self.dropout_rate,
-            "l2_regularization": self.l2_regularization,
-            "name": self.name,
-        }
 
     def create_plots(
         self, plots_dir: Path, training_history_json_path: Optional[Path] = None

@@ -59,11 +59,6 @@ class BaseModel(ABC):
         """Build the model architecture"""
         pass
 
-    @abstractmethod
-    def get_config(self) -> dict:
-        """Get model configuration"""
-        pass
-
     def compile(self, *args, **kwargs):
         """Compile the underlying Keras model"""
         if self.model is None:
@@ -292,19 +287,6 @@ class CustomKerasModelWrapper:
             workers=workers,
             use_multiprocessing=use_multiprocessing,
         )
-
-    def get_metrics(self) -> dict:
-        """Retrieves the final metrics from the training history."""
-        if self.history and self.history.history:
-            return {
-                metric: values[-1]
-                for metric, values in self.history.history.items()
-                if values  # Ensure values is not empty
-            }
-        self.logger.warning(
-            f"No history or empty history found for model '{self.name}' when calling get_metrics."
-        )
-        return {}
 
     def summary(self, print_fn=None):
         """Prints the summary of the internal Keras model."""

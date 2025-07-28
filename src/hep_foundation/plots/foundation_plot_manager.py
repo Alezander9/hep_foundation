@@ -401,7 +401,7 @@ class FoundationPlotManager:
                 if validation_only:
                     # Plot only validation metrics with clean labels (no "- validation" suffix)
                     val_metrics = [m for m in metrics_to_plot if m.startswith("val_")]
-                    for metric_idx, metric in enumerate(val_metrics):
+                    for metric in val_metrics:
                         if metric in history:
                             values = history[metric]
                             epochs = list(range(1, len(values) + 1))
@@ -424,7 +424,7 @@ class FoundationPlotManager:
                         for m in metrics_to_plot
                         if not m.startswith(("val_", "test_"))
                     ]
-                    for metric_idx, metric in enumerate(train_metrics):
+                    for metric in train_metrics:
                         if metric in history:
                             values = history[metric]
                             epochs = list(range(1, len(values) + 1))
@@ -447,7 +447,7 @@ class FoundationPlotManager:
 
                     # Plot validation metrics (using base line style - systematic approach)
                     val_metrics = [m for m in metrics_to_plot if m.startswith("val_")]
-                    for metric_idx, metric in enumerate(val_metrics):
+                    for metric in val_metrics:
                         if metric in history:
                             values = history[metric]
                             epochs = list(range(1, len(values) + 1))
@@ -835,7 +835,7 @@ class FoundationPlotManager:
             labels_list = []
             samples_collected = 0
 
-            for batch_idx, batch in enumerate(dataset):
+            for batch in dataset:
                 if samples_collected >= max_samples:
                     break
 

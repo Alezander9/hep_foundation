@@ -135,13 +135,6 @@ class VAELayer(keras.layers.Layer):
         self.decoder = decoder
         self.beta = tf.Variable(0.0, dtype=tf.float32, trainable=False)
 
-        # Loss trackers
-        self.total_loss_tracker = keras.metrics.Mean(name="total_loss")
-        self.reconstruction_loss_tracker = keras.metrics.Mean(
-            name="reconstruction_loss"
-        )
-        self.kl_loss_tracker = keras.metrics.Mean(name="kl_loss")
-
     def call(self, inputs):
         # Handle both (features, _) and features-only cases
         if isinstance(inputs, tuple):
@@ -255,7 +248,6 @@ class VariationalAutoEncoder(BaseModel):
         self.encoder_layers = config.architecture["encoder_layers"]
         self.decoder_layers = config.architecture["decoder_layers"]
         self.activation = config.architecture.get("activation", "relu")
-        self.quant_bits = config.hyperparameters.get("quant_bits")
         self.beta_schedule = config.hyperparameters.get(
             "beta_schedule",
             {
@@ -345,20 +337,6 @@ class VariationalAutoEncoder(BaseModel):
         self.model.beta = self.beta
 
         self.logger.info("Completed VAE architecture build")
-
-    def get_config(self) -> dict:
-        """Get model configuration"""
-        return {
-            "model_type": "variational_autoencoder",
-            "input_shape": self.input_shape,
-            "latent_dim": self.latent_dim,
-            "encoder_layers": self.encoder_layers,
-            "decoder_layers": self.decoder_layers,
-            "quant_bits": self.quant_bits,
-            "activation": self.activation,
-            "beta_schedule": self.beta_schedule,
-            "name": self.name,
-        }
 
     def create_plots(
         self, plots_dir: Path, training_history_json_path: Optional[Path] = None

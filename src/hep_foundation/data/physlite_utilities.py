@@ -223,12 +223,6 @@ class PhysliteBranch:
 
         return shape
 
-    def get_dtype(self) -> Optional[str]:
-        """Get the data type of this branch if available."""
-        if not self.info or "dtype" not in self.info:
-            return None
-        return self.info["dtype"]
-
 
 class PhysliteFeatureSelector:
     """
