@@ -180,6 +180,7 @@ class PipelineConfigLoader:
             signal_keys=dataset_dict.get("signal_keys"),
             catalog_limit=dataset_dict["catalog_limit"],
             event_limit=dataset_dict.get("event_limit"),
+            signal_event_limit=dataset_dict.get("signal_event_limit"),
             validation_fraction=dataset_dict["validation_fraction"],
             test_fraction=dataset_dict["test_fraction"],
             shuffle_buffer=dataset_dict["shuffle_buffer"],

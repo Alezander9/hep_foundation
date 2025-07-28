@@ -16,6 +16,7 @@ class DatasetConfig:
     shuffle_buffer: int
     plot_distributions: bool
     event_limit: Optional[int] = None
+    signal_event_limit: Optional[int] = None  # Separate event limit for signal data
     include_labels: bool = True
     hdf5_compression: bool = True  # Whether to compress HDF5 datasets (True for production, False for fast tests)
     task_config: Optional[TaskConfig] = None
@@ -28,6 +29,8 @@ class DatasetConfig:
             raise ValueError("catalog_limit must be positive")
         if self.event_limit is not None and self.event_limit < 1:
             raise ValueError("event_limit must be positive when specified")
+        if self.signal_event_limit is not None and self.signal_event_limit < 1:
+            raise ValueError("signal_event_limit must be positive when specified")
         if not 0 <= self.validation_fraction + self.test_fraction < 1:
             raise ValueError("Sum of validation and test fractions must be less than 1")
         if self.task_config is None:
@@ -40,6 +43,7 @@ class DatasetConfig:
             "signal_keys": self.signal_keys,
             "catalog_limit": self.catalog_limit,
             "event_limit": self.event_limit,
+            "signal_event_limit": self.signal_event_limit,
             "validation_fraction": self.validation_fraction,
             "test_fraction": self.test_fraction,
             "shuffle_buffer": self.shuffle_buffer,

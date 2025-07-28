@@ -1171,6 +1171,7 @@ class PhysliteFeatureProcessor:
         first_event_logged: bool = True,
         bin_edges_metadata_path: Optional[Path] = None,
         return_histogram_data: bool = False,
+        total_catalogs_across_all_runs: Optional[int] = None,
     ) -> tuple[
         list[dict[str, np.ndarray]], list[dict[str, np.ndarray]], dict, Optional[dict]
     ]:
@@ -1189,6 +1190,7 @@ class PhysliteFeatureProcessor:
             first_event_logged: Whether the first event has been logged
             bin_edges_metadata_path: Optional path to save/load bin edges metadata for coordinated histogram binning
             return_histogram_data: If True, return histogram data instead of saving it to file
+            total_catalogs_across_all_runs: Total number of catalogs across all runs for proper sample calculation
 
         Returns:
             Tuple containing:
@@ -1197,6 +1199,14 @@ class PhysliteFeatureProcessor:
             - Processing statistics
             - Optional histogram data dictionary (if return_histogram_data=True)
         """
+        # Add logging to identify data type being processed
+        data_type_label = (
+            f"BACKGROUND(run={run_number})"
+            if run_number
+            else f"SIGNAL(key={signal_key})"
+        )
+        self.logger.templog(f"[SAMPLE_TRACKING] Starting {data_type_label} processing")
+
         if signal_key:
             self.logger.info(f"Processing signal data for {signal_key}")
         elif run_number:
@@ -1291,11 +1301,18 @@ class PhysliteFeatureProcessor:
 
         if plotting_enabled and num_catalogs_to_process > 0:
             # Calculate target samples per catalog, ensuring at least 1
+            # Use total catalogs across all runs if provided, otherwise use catalogs for this run only
+            total_catalogs_for_calculation = (
+                total_catalogs_across_all_runs or num_catalogs_to_process
+            )
             samples_per_catalog = max(
-                1, max_plot_samples_total // num_catalogs_to_process
+                1, max_plot_samples_total // total_catalogs_for_calculation
             )
             self.logger.info(
                 f"Plotting enabled. Aiming for ~{samples_per_catalog} samples per catalog for both zero-bias and post-selection (total target: {max_plot_samples_total} each)."
+            )
+            self.logger.templog(
+                f"[SAMPLE_TRACKING] {data_type_label} - Target: {samples_per_catalog} samples/catalog × {total_catalogs_for_calculation} total catalogs = {max_plot_samples_total} total samples each (zero-bias + post-selection)"
             )
         elif plotting_enabled:
             self.logger.warning("Plotting enabled, but no catalog paths found.")
@@ -1732,6 +1749,14 @@ class PhysliteFeatureProcessor:
                     f"{catalog_duration:.2f}s ({rate:.1f} events/s)"
                 )
 
+                # Add sample collection tracking per catalog
+                if plotting_enabled:
+                    self.logger.templog(
+                        f"[SAMPLE_TRACKING] {data_type_label} - Catalog {catalog_idx + 1}: "
+                        f"Zero-bias samples: {current_catalog_zero_bias_count}/{samples_per_catalog}, "
+                        f"Post-selection samples: {current_catalog_samples_count}/{samples_per_catalog}"
+                    )
+
                 if catalog_limit and catalog_idx >= catalog_limit - 1:
                     break
 
@@ -1757,6 +1782,14 @@ class PhysliteFeatureProcessor:
                             f"Error deleting catalog file {catalog_path}: {delete_e}"
                         )
 
+        # Add final sample collection summary
+        if plotting_enabled:
+            self.logger.templog(
+                f"[SAMPLE_TRACKING] {data_type_label} - FINAL TOTALS: "
+                f"Zero-bias samples: {zero_bias_samples_count}, "
+                f"Post-selection samples: {overall_plot_samples_count}"
+            )
+
         # --- Generate and Save Dual Histogram Data (Zero-bias + Post-selection) ---
         # Helper function to generate histogram data for a dataset
         def generate_histogram_data(
@@ -1766,7 +1799,13 @@ class PhysliteFeatureProcessor:
             overall_samples_count,
             data_type_name,
         ):
+            self.logger.templog(
+                f"[HISTOGRAM_GEN] {data_type_label} - Generating {data_type_name} histogram data from {overall_samples_count} samples"
+            )
             if overall_samples_count == 0:
+                self.logger.templog(
+                    f"[HISTOGRAM_GEN] {data_type_label} - No samples for {data_type_name} histogram generation"
+                )
                 return None
 
             histogram_data = {}

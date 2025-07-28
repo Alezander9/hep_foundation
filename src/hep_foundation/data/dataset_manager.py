@@ -75,7 +75,18 @@ class DatasetManager:
             new_data: New histogram data to add
         """
         if not new_data:
+            self.logger.templog("[HISTOGRAM_ACCUM] No new data to accumulate")
             return
+
+        # Log accumulation details
+        new_sample_count = new_data.get("_metadata", {}).get(
+            "total_sampled_events", "unknown"
+        )
+        data_type = new_data.get("_metadata", {}).get("data_type", "unknown")
+        signal_key = new_data.get("_metadata", {}).get("signal_key", "unknown")
+        self.logger.templog(
+            f"[HISTOGRAM_ACCUM] Accumulating {data_type} data from {signal_key} with {new_sample_count} samples"
+        )
 
         # Skip metadata for now - we'll handle it separately
         for feature_name, feature_data in new_data.items():
@@ -100,7 +111,6 @@ class DatasetManager:
                 }
             else:
                 # Accumulate counts - handle potential bin edge mismatches
-                accumulated_data[feature_name]["counts"]
                 new_counts = np.array(counts)
                 existing_edges = accumulated_data[feature_name]["bin_edges"]
                 new_edges = np.array(bin_edges)
@@ -118,15 +128,24 @@ class DatasetManager:
                         f"Bin edges mismatch for feature {feature_name} (shapes: {len(existing_edges)} vs {len(new_edges)}) - using first run's binning"
                     )
 
-                    # Try to rebin the new data to match the existing bin edges
+                    # For bin edge mismatches, we need to rebin the new data to match existing edges
+                    # This ensures we don't lose data from subsequent runs
                     try:
-                        # This is a simplified approach - in practice, we'd want to re-histogram the raw data
-                        # For now, we'll just use the first run's binning and skip subsequent runs with different binning
-                        # This preserves the first run's data and logs the issue
-                        accumulated_data[feature_name]["total_samples"] += 1
-                        self.logger.info(
-                            f"Keeping first run's histogram data for feature {feature_name}"
-                        )
+                        # Simple rebinning: use existing bin edges but interpolate new counts
+                        # This is approximate but preserves the data contribution
+                        if len(new_counts) == len(existing_edges) - 1:
+                            # Same number of bins, just slightly different edges - can add directly
+                            accumulated_data[feature_name]["counts"] += new_counts
+                            accumulated_data[feature_name]["total_samples"] += 1
+                            self.logger.info(
+                                f"Added rebinned histogram data for feature {feature_name}"
+                            )
+                        else:
+                            # Different number of bins - skip this run but log the issue
+                            self.logger.warning(
+                                f"Cannot rebin feature {feature_name} - different bin count ({len(new_counts)} vs {len(accumulated_data[feature_name]['counts'])}). Skipping this run's data."
+                            )
+                            # Note: Don't increment total_samples if we're not adding the data
                     except Exception as e:
                         self.logger.warning(
                             f"Failed to handle bin edge mismatch for feature {feature_name}: {e}"
@@ -173,12 +192,32 @@ class DatasetManager:
                 if feature_name.startswith("_"):
                     continue
 
-                # Normalize counts by total number of samples (runs) - do this only once at the end
-                normalized_counts = feature_data["counts"]
+                # Get the accumulated counts (sum of density-normalized counts from multiple runs)
+                accumulated_counts = feature_data["counts"]
+
+                # If we have multiple samples (runs), we need to renormalize properly
                 if feature_data["total_samples"] > 1:
-                    normalized_counts = (
-                        normalized_counts / feature_data["total_samples"]
-                    )
+                    # Average the accumulated counts across runs
+                    averaged_counts = accumulated_counts / feature_data["total_samples"]
+                else:
+                    averaged_counts = accumulated_counts
+
+                # Ensure proper normalization: the counts should integrate to 1
+                # For density histograms, integral = sum(counts) * bin_width
+                bin_edges = feature_data["bin_edges"]
+                if len(bin_edges) > 1 and len(averaged_counts) > 0:
+                    # Calculate bin widths
+                    bin_widths = np.diff(bin_edges)
+                    # Calculate current integral
+                    current_integral = np.sum(averaged_counts * bin_widths)
+
+                    # Renormalize to ensure integral equals 1
+                    if current_integral > 0:
+                        normalized_counts = averaged_counts / current_integral
+                    else:
+                        normalized_counts = averaged_counts
+                else:
+                    normalized_counts = averaged_counts
 
                 final_histogram_data[feature_name] = {
                     "counts": normalized_counts.tolist(),
@@ -429,6 +468,14 @@ class DatasetManager:
             accumulated_sampled_events = 0
             accumulated_zero_bias_sampled_events = 0
 
+            # Calculate total catalogs across all runs for proper sample targeting
+            total_catalogs_all_runs = (
+                len(dataset_config.run_numbers) * dataset_config.catalog_limit
+            )
+            self.logger.templog(
+                f"[ATLAS_DATASET] Total catalogs across {len(dataset_config.run_numbers)} runs: {total_catalogs_all_runs}"
+            )
+
             first_event_logged = False
             for run_number in dataset_config.run_numbers:
                 self.logger.info(f"Processing run {run_number}")
@@ -444,6 +491,7 @@ class DatasetManager:
                         first_event_logged=first_event_logged,
                         bin_edges_metadata_path=bin_edges_metadata_path,
                         return_histogram_data=dataset_config.plot_distributions,
+                        total_catalogs_across_all_runs=total_catalogs_all_runs,
                     )
                     first_event_logged = True
                     inputs, labels, stats, histogram_data = result
@@ -750,15 +798,24 @@ class DatasetManager:
                     # Process data for this signal type
                     # IMPORTANT: Ensure plot_distributions=dataset_config.plot_distributions
                     # so that _process_data generates the _hist_data.json files.
+                    # Use signal_event_limit if specified, otherwise fall back to event_limit
+                    signal_event_limit_to_use = (
+                        dataset_config.signal_event_limit or dataset_config.event_limit
+                    )
+                    self.logger.info(
+                        f"[SIGNAL_EVENT_LIMIT_DEBUG] signal_event_limit={dataset_config.signal_event_limit}, "
+                        f"event_limit={dataset_config.event_limit}, using={signal_event_limit_to_use}"
+                    )
                     inputs, labels, stats, _ = self.feature_processor._process_data(
                         task_config=dataset_config.task_config,
                         signal_key=signal_key,
-                        event_limit=dataset_config.event_limit,
+                        event_limit=signal_event_limit_to_use,
                         delete_catalogs=False,  # Always keep signal catalogs
                         plot_distributions=dataset_config.plot_distributions,
                         plot_output=plot_output_for_signal_json,  # Pass path for JSON saving
                         first_event_logged=first_event_logged,
                         bin_edges_metadata_path=bin_edges_metadata_path,
+                        total_catalogs_across_all_runs=1,  # Each signal has exactly 1 catalog
                     )
                     first_event_logged = True
                     if not inputs:
@@ -1239,122 +1296,3 @@ class DatasetManager:
 
         except Exception as e:
             raise Exception(f"Failed to load signal datasets: {str(e)}")
-
-    def load_and_encode_atlas_datasets(
-        self,
-        dataset_config: DatasetConfig,
-        encoder: tf.keras.Model,
-        validation_fraction: float = 0.15,
-        test_fraction: float = 0.15,
-        batch_size: int = 1000,
-        shuffle_buffer: int = 10000,
-        include_labels: bool = False,
-        delete_catalogs: bool = True,
-    ) -> tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
-        """
-        Load and split dataset into train/val/test and encode the input features using the given encoder model.
-
-        Args:
-            dataset_config: Configuration for dataset processing
-            encoder: Keras model to use for encoding the input features
-            validation_fraction: Fraction of data to use for validation
-            test_fraction: Fraction of data to use for testing
-            batch_size: Size of batches in returned dataset
-            shuffle_buffer: Size of buffer for shuffling training data
-            include_labels: Whether to include labels in the dataset
-            delete_catalogs: Whether to delete catalogs after processing
-
-        Returns:
-            Tuple containing:
-            - Training dataset with encoded features
-            - Validation dataset with encoded features
-            - Test dataset with encoded features
-        """
-        self.logger.info("Loading and encoding datasets")
-        try:
-            # Generate dataset ID and load dataset file
-            self.current_dataset_id = self.generate_dataset_id(dataset_config)
-            self.current_dataset_path = (
-                self.get_dataset_dir(self.current_dataset_id) / "dataset.h5"
-            )
-
-            if not self.current_dataset_path.exists():
-                raise Exception(f"Dataset {self.current_dataset_id} does not exist")
-
-            # Load and process dataset
-            with h5py.File(self.current_dataset_path, "r") as f:
-                # Load features and labels
-                features_dict = self.feature_processor._load_features_from_group(
-                    f["features"]
-                )
-                labels_dict = (
-                    self.feature_processor._load_labels_from_group(f["labels"])
-                    if include_labels and "labels" in f
-                    else None
-                )
-
-                # Get normalization parameters and number of events
-                norm_params = json.loads(f.attrs["normalization_params"])
-                n_events = next(iter(features_dict.values())).shape[0]
-
-                # Create normalized dataset
-                dataset = self.feature_processor._create_normalized_dataset(
-                    features_dict, norm_params, labels_dict
-                )
-
-                # Create splits
-                train_size = n_events - int(
-                    (validation_fraction + test_fraction) * n_events
-                )
-                val_size = int(validation_fraction * n_events)
-
-                # Apply splits and batching
-                train_dataset = (
-                    dataset.take(train_size)
-                    .shuffle(buffer_size=shuffle_buffer, reshuffle_each_iteration=True)
-                    .batch(batch_size)
-                    .prefetch(tf.data.AUTOTUNE)
-                )
-
-                remaining = dataset.skip(train_size)
-                val_dataset = (
-                    remaining.take(val_size)
-                    .batch(batch_size)
-                    .prefetch(tf.data.AUTOTUNE)
-                )
-                test_dataset = (
-                    remaining.skip(val_size)
-                    .batch(batch_size)
-                    .prefetch(tf.data.AUTOTUNE)
-                )
-
-                # Apply encoder to each dataset
-                def encode_features(features, labels=None):
-                    # Encode the features using the encoder model
-                    encoded_features = encoder(features, training=False)
-
-                    # Return encoded features with original labels if they exist
-                    if labels is not None:
-                        return encoded_features, labels
-                    return encoded_features
-
-                # Map the encoding function to each dataset
-                encoded_train_dataset = train_dataset.map(
-                    lambda x, y=None: encode_features(x, y),
-                    num_parallel_calls=tf.data.AUTOTUNE,
-                )
-
-                encoded_val_dataset = val_dataset.map(
-                    lambda x, y=None: encode_features(x, y),
-                    num_parallel_calls=tf.data.AUTOTUNE,
-                )
-
-                encoded_test_dataset = test_dataset.map(
-                    lambda x, y=None: encode_features(x, y),
-                    num_parallel_calls=tf.data.AUTOTUNE,
-                )
-
-                return encoded_train_dataset, encoded_val_dataset, encoded_test_dataset
-
-        except Exception as e:
-            raise Exception(f"Failed to load and encode dataset: {str(e)}")
