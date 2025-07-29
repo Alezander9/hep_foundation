@@ -193,10 +193,10 @@ EXPECTED_EXPERIMENT_STRUCTURE = {
                         "required": True,
                         "description": "Label distribution comparison plot (log scale)",
                     },
-                    "label_distribution_comparison_linear_scale.png": {
+                    "label_distribution_differences_log_scale.png": {
                         "type": "file",
                         "required": True,
-                        "description": "Label distribution comparison plot (linear scale)",
+                        "description": "Label distribution differences plot (log scale)",
                     },
                     "training_histories": {
                         "type": "directory",

@@ -1228,6 +1228,7 @@ class FoundationModelPipeline:
                         f"Generating predictions for {model_name} model..."
                     )
                     predictions_list = []
+                    actual_labels_list = []  # New: collect actual labels
                     samples_collected = 0
                     max_prediction_samples = 1000
 
@@ -1236,11 +1237,44 @@ class FoundationModelPipeline:
                             break
 
                         if isinstance(batch, tuple) and len(batch) == 2:
-                            features_batch, _labels_batch = batch
+                            features_batch, labels_batch = batch
 
                             predictions_batch = combined_keras_model.predict(
                                 features_batch, verbose=0
                             )
+
+                            # Process actual labels to match prediction format
+                            # Handle different label structures
+                            if isinstance(labels_batch, tuple):
+                                # Extract actual label data from tuple structure
+                                actual_labels_batch = None
+                                for item in labels_batch:
+                                    if hasattr(item, "shape") and hasattr(
+                                        item, "numpy"
+                                    ):
+                                        actual_labels_batch = item.numpy()
+                                        break
+                                if (
+                                    actual_labels_batch is None
+                                    and len(labels_batch) > 0
+                                ):
+                                    actual_labels_batch = labels_batch[0]
+                            else:
+                                actual_labels_batch = (
+                                    labels_batch.numpy()
+                                    if hasattr(labels_batch, "numpy")
+                                    else labels_batch
+                                )
+
+                            # Ensure labels have the right shape
+                            if (
+                                hasattr(actual_labels_batch, "ndim")
+                                and actual_labels_batch.ndim == 3
+                                and actual_labels_batch.shape[0] == 1
+                            ):
+                                actual_labels_batch = actual_labels_batch.squeeze(
+                                    axis=0
+                                )
 
                             # Don't flatten for multi-variable predictions!
                             # Keep the original shape to preserve multiple variables
@@ -1250,12 +1284,18 @@ class FoundationModelPipeline:
                             ):
                                 # Multi-variable predictions: shape (batch_size, num_variables)
                                 predictions_np = predictions_batch
+                                actual_labels_np = actual_labels_batch
                             else:
                                 # Single variable: flatten if needed
                                 predictions_np = (
                                     predictions_batch.flatten()
                                     if predictions_batch.ndim > 1
                                     else predictions_batch
+                                )
+                                actual_labels_np = (
+                                    actual_labels_batch.flatten()
+                                    if actual_labels_batch.ndim > 1
+                                    else actual_labels_batch
                                 )
 
                             # Calculate how many to take from this batch
@@ -1266,15 +1306,19 @@ class FoundationModelPipeline:
 
                             # Take the samples (preserving all dimensions)
                             batch_predictions = predictions_np[:samples_to_take]
+                            batch_actual_labels = actual_labels_np[:samples_to_take]
 
-                            # Extend predictions_list properly
+                            # Extend predictions_list and actual_labels_list properly
                             if predictions_np.ndim == 2:
                                 # Multi-variable case: append each sample as a row
                                 for sample in batch_predictions:
                                     predictions_list.append(sample)
+                                for sample in batch_actual_labels:
+                                    actual_labels_list.append(sample)
                             else:
                                 # Single variable case: extend with individual values
                                 predictions_list.extend(batch_predictions)
+                                actual_labels_list.extend(batch_actual_labels)
 
                             samples_collected += samples_to_take
 
@@ -1282,7 +1326,7 @@ class FoundationModelPipeline:
                                 break
 
                     # Save histogram data using foundation plot manager
-                    if predictions_list:
+                    if predictions_list and actual_labels_list:
                         # Create predictions array properly handling multi-dimensional data
                         if (
                             len(predictions_list) > 0
@@ -1293,10 +1337,16 @@ class FoundationModelPipeline:
                             predictions_array = np.array(
                                 predictions_list[:max_prediction_samples]
                             )
+                            actual_labels_array = np.array(
+                                actual_labels_list[:max_prediction_samples]
+                            )
                         else:
                             # Single variable predictions: convert to 1D array
                             predictions_array = np.array(
                                 predictions_list[:max_prediction_samples]
+                            )
+                            actual_labels_array = np.array(
+                                actual_labels_list[:max_prediction_samples]
                             )
 
                         # Use the parameter passed to the function, or create a default path
@@ -1304,6 +1354,7 @@ class FoundationModelPipeline:
                             regression_dir / "label_distributions"
                         )
 
+                        # Save regular predictions histogram
                         self.foundation_plot_manager.save_model_predictions_histogram(
                             predictions_array,
                             model_name,
@@ -1313,9 +1364,28 @@ class FoundationModelPipeline:
                             max_samples=max_prediction_samples,
                             label_variable_names=label_variable_names,
                         )
+
+                        # Compute event-level differences and save difference histogram
+                        if predictions_array.shape == actual_labels_array.shape:
+                            differences_array = predictions_array - actual_labels_array
+
+                            # Save difference histogram with special naming
+                            self.foundation_plot_manager.save_model_predictions_histogram(
+                                differences_array,
+                                f"{model_name}_diff",  # Add "_diff" suffix to distinguish
+                                data_size,
+                                hist_save_dir,
+                                bin_edges_metadata,
+                                max_samples=max_prediction_samples,
+                                label_variable_names=label_variable_names,
+                            )
+                        else:
+                            self.logger.warning(
+                                f"Shape mismatch between predictions {predictions_array.shape} and labels {actual_labels_array.shape} for {model_name}"
+                            )
                     else:
                         self.logger.warning(
-                            f"No predictions generated for {model_name}"
+                            f"No predictions or labels generated for {model_name}"
                         )
 
                 except Exception as e:

@@ -923,7 +923,6 @@ class PhysliteFeatureProcessor:
             if run_number
             else f"SIGNAL(key={signal_key})"
         )
-        self.logger.templog(f"[SAMPLE_TRACKING] Starting {data_type_label} processing")
 
         if signal_key:
             self.logger.info(f"Processing signal data for {signal_key}")
@@ -1029,9 +1028,7 @@ class PhysliteFeatureProcessor:
             self.logger.info(
                 f"Plotting enabled. Aiming for ~{samples_per_catalog} samples per catalog for both zero-bias and post-selection (total target: {max_plot_samples_total} each)."
             )
-            self.logger.templog(
-                f"[SAMPLE_TRACKING] {data_type_label} - Target: {samples_per_catalog} samples/catalog × {total_catalogs_for_calculation} total catalogs = {max_plot_samples_total} total samples each (zero-bias + post-selection)"
-            )
+
         elif plotting_enabled:
             self.logger.warning("Plotting enabled, but no catalog paths found.")
             plotting_enabled = False  # Disable if no catalogs
@@ -1517,13 +1514,7 @@ class PhysliteFeatureProcessor:
             overall_samples_count,
             data_type_name,
         ):
-            self.logger.templog(
-                f"[HISTOGRAM_GEN] {data_type_label} - Generating {data_type_name} histogram data from {overall_samples_count} samples"
-            )
             if overall_samples_count == 0:
-                self.logger.templog(
-                    f"[HISTOGRAM_GEN] {data_type_label} - No samples for {data_type_name} histogram generation"
-                )
                 return None
 
             histogram_data = {}
