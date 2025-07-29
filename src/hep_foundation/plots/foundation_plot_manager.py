@@ -1098,7 +1098,7 @@ class FoundationPlotManager:
             model_name: Name of the model
             data_size: Size of training data used
             label_distributions_dir: Directory to save histogram data
-            bin_edges_metadata: Metadata for coordinated binning
+            bin_edges_metadata: Metadata for coordinated binning (only used for non-difference data)
             max_samples: Maximum number of samples to include
             label_variable_names: Names of label variables (for multi-variable predictions)
 
@@ -1112,6 +1112,9 @@ class FoundationPlotManager:
 
             # Limit samples if needed
             predictions_array = np.array(predictions[:max_samples])
+
+            # Check if this is difference data (model name contains "_diff")
+            is_difference_data = "_diff" in model_name
 
             # Check if we have multiple variables (2D array with multiple columns)
             if predictions_array.ndim == 2 and predictions_array.shape[1] > 1:
@@ -1128,15 +1131,35 @@ class FoundationPlotManager:
                     if i < predictions_array.shape[1]:
                         var_predictions = predictions_array[:, i]
 
-                        # Use predefined bin edges if available for coordinated binning
+                        # Use predefined bin edges for regular predictions, but generate new ones for differences
                         predefined_bin_edges = None
-                        if bin_edges_metadata and var_name in bin_edges_metadata:
+                        if (
+                            not is_difference_data
+                            and bin_edges_metadata
+                            and var_name in bin_edges_metadata
+                        ):
                             predefined_bin_edges = np.array(
                                 bin_edges_metadata[var_name]
                             )
                             self.logger.info(
                                 f"Using coordinated binning for {model_name} predictions on variable {var_name}"
                             )
+                        elif is_difference_data:
+                            # For difference data, create symmetric bins around zero
+                            self.logger.info(
+                                f"Creating custom bin edges for difference data {model_name} on variable {var_name}"
+                            )
+                            # Remove NaN/inf values for range calculation
+                            valid_data = var_predictions[np.isfinite(var_predictions)]
+                            if len(valid_data) > 0:
+                                data_range = np.max(np.abs(valid_data))
+                                # Create symmetric bins around zero
+                                predefined_bin_edges = np.linspace(
+                                    -data_range * 1.1, data_range * 1.1, 51
+                                )  # 50 bins
+                            else:
+                                # Fallback if no valid data
+                                predefined_bin_edges = np.linspace(-1, 1, 51)
 
                         var_hist_data = self._create_label_histogram_data(
                             var_predictions,
@@ -1152,10 +1175,14 @@ class FoundationPlotManager:
                 pred_hist_filename = f"{model_name}_predictions_hist.json"
                 label_distributions_dir.mkdir(parents=True, exist_ok=True)
 
+                description = f"Predictions from {model_name} model trained with {data_size} samples (multiple variables)"
+                if is_difference_data:
+                    description = f"Event-level differences (predicted - actual) from {model_name.replace('_diff', '')} model trained with {data_size} samples (multiple variables)"
+
                 self._save_label_histogram_data(
                     all_hist_data,
                     label_distributions_dir / pred_hist_filename,
-                    f"Predictions from {model_name} model trained with {data_size} samples (multiple variables)",
+                    description,
                 )
 
                 self.logger.info(
@@ -1178,6 +1205,8 @@ class FoundationPlotManager:
         data_sizes: list[int],
         label_variable_names: list[str],
         physlite_plot_labels: Optional[dict] = None,
+        create_linear_plot: bool = False,
+        create_difference_plots: bool = True,
     ) -> bool:
         """
         Create both log scale and linear scale subplot-based comparison plots of label distributions.
@@ -1187,11 +1216,15 @@ class FoundationPlotManager:
             data_sizes: List of data sizes used in evaluation
             label_variable_names: List of label variable names
             physlite_plot_labels: Dictionary mapping branch names to display labels
+            create_linear_plot: Whether to create the linear scale plot (default: False)
+            create_difference_plots: Whether to create difference plots (predicted - actual) (default: True)
 
         Returns:
-            bool: True if both plots were created successfully, False otherwise
+            bool: True if all plots were created successfully, False otherwise
         """
-        # Create both log scale and linear scale versions
+        all_success = True
+
+        # Create log scale comparison version (always created)
         log_success = self._create_single_scale_comparison_plot(
             evaluation_dir,
             data_sizes,
@@ -1199,18 +1232,51 @@ class FoundationPlotManager:
             physlite_plot_labels,
             scale_type="log",
             title_suffix=" (Log Scale)",
+            plot_mode="comparison",
         )
+        all_success = all_success and log_success
 
-        linear_success = self._create_single_scale_comparison_plot(
-            evaluation_dir,
-            data_sizes,
-            label_variable_names,
-            physlite_plot_labels,
-            scale_type="linear",
-            title_suffix=" (Linear Scale)",
-        )
+        # Create linear scale comparison version only if requested
+        if create_linear_plot:
+            linear_success = self._create_single_scale_comparison_plot(
+                evaluation_dir,
+                data_sizes,
+                label_variable_names,
+                physlite_plot_labels,
+                scale_type="linear",
+                title_suffix=" (Linear Scale)",
+                plot_mode="comparison",
+            )
+            all_success = all_success and linear_success
 
-        return log_success and linear_success
+        # Create difference plots if requested
+        if create_difference_plots:
+            # Create log scale difference version
+            log_diff_success = self._create_single_scale_comparison_plot(
+                evaluation_dir,
+                data_sizes,
+                label_variable_names,
+                physlite_plot_labels,
+                scale_type="log",
+                title_suffix=" (Log Scale)",
+                plot_mode="difference",
+            )
+            all_success = all_success and log_diff_success
+
+            # Create linear scale difference version only if also creating linear comparison plots
+            if create_linear_plot:
+                linear_diff_success = self._create_single_scale_comparison_plot(
+                    evaluation_dir,
+                    data_sizes,
+                    label_variable_names,
+                    physlite_plot_labels,
+                    scale_type="linear",
+                    title_suffix=" (Linear Scale)",
+                    plot_mode="difference",
+                )
+                all_success = all_success and linear_diff_success
+
+        return all_success
 
     def _create_single_scale_comparison_plot(
         self,
@@ -1220,9 +1286,10 @@ class FoundationPlotManager:
         physlite_plot_labels: Optional[dict],
         scale_type: str = "log",
         title_suffix: str = "",
+        plot_mode: str = "comparison",
     ) -> bool:
         """
-        Create a single comparison plot with specified y-axis scale.
+        Create a single comparison plot with specified y-axis scale and plot mode.
 
         Args:
             evaluation_dir: Directory containing the evaluation results
@@ -1231,6 +1298,7 @@ class FoundationPlotManager:
             physlite_plot_labels: Dictionary mapping branch names to display labels
             scale_type: "log" or "linear" for y-axis scale
             title_suffix: Suffix to add to plot title
+            plot_mode: "comparison" (actual vs predicted) or "difference" (predicted - actual)
 
         Returns:
             bool: True if successful, False otherwise
@@ -1304,69 +1372,139 @@ class FoundationPlotManager:
                 ax = axes[plot_idx]
                 has_data_for_variable = False
 
-                # Plot actual labels as a gray, filled histogram
-                if var_name in actual_hist_data:
-                    actual_data = actual_hist_data[var_name]
-                    actual_bin_edges = np.array(actual_data["bin_edges"])
-                    actual_counts = np.array(actual_data["counts"])
+                if plot_mode == "comparison":
+                    # Comparison mode: plot actual labels as a gray, filled histogram
+                    if var_name in actual_hist_data:
+                        actual_data = actual_hist_data[var_name]
+                        actual_bin_edges = np.array(actual_data["bin_edges"])
+                        actual_counts = np.array(actual_data["counts"])
 
-                    if len(actual_counts) > 0 and np.sum(actual_counts > 0) > 0:
-                        ax.stairs(
-                            actual_counts,
-                            actual_bin_edges,
-                            fill=True,
-                            color="gray",
-                            alpha=0.6,
-                            linewidth=LINE_WIDTHS["normal"],
-                            label="Actual Test Labels",
-                        )
-                        has_data_for_variable = True
+                        if len(actual_counts) > 0 and np.sum(actual_counts > 0) > 0:
+                            ax.stairs(
+                                actual_counts,
+                                actual_bin_edges,
+                                fill=True,
+                                color="gray",
+                                alpha=0.6,
+                                linewidth=LINE_WIDTHS["normal"],
+                                label="Actual Test Labels",
+                            )
+                            has_data_for_variable = True
 
-                # Plot predictions for each model and data size
-                for model_name in model_names:
-                    for data_size in data_sizes:
-                        data_size_label = (
-                            f"{data_size // 1000}k"
-                            if data_size >= 1000
-                            else str(data_size)
-                        )
+                    # Plot predictions for each model and data size
+                    for model_name in model_names:
+                        for data_size in data_sizes:
+                            data_size_label = (
+                                f"{data_size // 1000}k"
+                                if data_size >= 1000
+                                else str(data_size)
+                            )
 
-                        pred_hist_path = (
-                            label_distributions_dir
-                            / f"{model_name}_{data_size_label}_predictions_hist.json"
-                        )
+                            pred_hist_path = (
+                                label_distributions_dir
+                                / f"{model_name}_{data_size_label}_predictions_hist.json"
+                            )
 
-                        if pred_hist_path.exists():
-                            with open(pred_hist_path) as f:
-                                pred_hist_data = json.load(f)
+                            if pred_hist_path.exists():
+                                with open(pred_hist_path) as f:
+                                    pred_hist_data = json.load(f)
 
-                            if var_name in pred_hist_data:
-                                pred_data = pred_hist_data[var_name]
-                                pred_counts = np.array(pred_data["counts"])
-                                np.array(pred_data["bin_edges"])
+                                if var_name in pred_hist_data:
+                                    pred_data = pred_hist_data[var_name]
+                                    pred_counts = np.array(pred_data["counts"])
+                                    np.array(pred_data["bin_edges"])
 
-                                # Only plot if there are non-zero values
-                                if len(pred_counts) > 0 and np.sum(pred_counts > 0) > 0:
-                                    plot_color = size_to_color.get(data_size, colors[0])
-                                    plot_linestyle = model_to_linestyle.get(
-                                        model_name, "-"
-                                    )
-
-                                    # Use actual bin edges for consistency (coordinated binning)
-                                    if var_name in actual_hist_data:
-                                        actual_bin_edges = np.array(
-                                            actual_hist_data[var_name]["bin_edges"]
+                                    # Only plot if there are non-zero values
+                                    if (
+                                        len(pred_counts) > 0
+                                        and np.sum(pred_counts > 0) > 0
+                                    ):
+                                        plot_color = size_to_color.get(
+                                            data_size, colors[0]
                                         )
-                                        ax.stairs(
-                                            pred_counts,
-                                            actual_bin_edges,
-                                            fill=False,
-                                            color=plot_color,
-                                            linewidth=LINE_WIDTHS["thick"],
-                                            linestyle=plot_linestyle,
-                                            alpha=0.8,
+                                        plot_linestyle = model_to_linestyle.get(
+                                            model_name, "-"
                                         )
-                                        has_data_for_variable = True
+
+                                        # Use actual bin edges for consistency (coordinated binning)
+                                        if var_name in actual_hist_data:
+                                            actual_bin_edges = np.array(
+                                                actual_hist_data[var_name]["bin_edges"]
+                                            )
+                                            ax.stairs(
+                                                pred_counts,
+                                                actual_bin_edges,
+                                                fill=False,
+                                                color=plot_color,
+                                                linewidth=LINE_WIDTHS["thick"],
+                                                linestyle=plot_linestyle,
+                                                alpha=0.8,
+                                            )
+                                            has_data_for_variable = True
+
+                elif plot_mode == "difference":
+                    # Difference mode: plot event-level differences from difference histogram files
+                    if var_name in actual_hist_data:
+                        actual_data = actual_hist_data[var_name]
+                        actual_bin_edges = np.array(actual_data["bin_edges"])
+
+                        for model_name in model_names:
+                            for data_size in data_sizes:
+                                data_size_label = (
+                                    f"{data_size // 1000}k"
+                                    if data_size >= 1000
+                                    else str(data_size)
+                                )
+
+                                # Look for difference histogram files (with "_diff" suffix)
+                                diff_hist_path = (
+                                    label_distributions_dir
+                                    / f"{model_name}_{data_size_label}_diff_predictions_hist.json"
+                                )
+
+                                if diff_hist_path.exists():
+                                    with open(diff_hist_path) as f:
+                                        diff_hist_data = json.load(f)
+
+                                    if var_name in diff_hist_data:
+                                        diff_data = diff_hist_data[var_name]
+                                        diff_counts = np.array(diff_data["counts"])
+                                        diff_bin_edges = np.array(
+                                            diff_data["bin_edges"]
+                                        )
+
+                                        # Only plot if there are meaningful differences
+                                        if len(diff_counts) > 0 and np.any(
+                                            np.abs(diff_counts) > 1e-6
+                                        ):
+                                            plot_color = size_to_color.get(
+                                                data_size, colors[0]
+                                            )
+                                            plot_linestyle = model_to_linestyle.get(
+                                                model_name, "-"
+                                            )
+
+                                            # Use the difference data's own bin edges
+                                            ax.stairs(
+                                                diff_counts,
+                                                diff_bin_edges,
+                                                fill=False,
+                                                color=plot_color,
+                                                linewidth=LINE_WIDTHS["thick"],
+                                                linestyle=plot_linestyle,
+                                                alpha=0.8,
+                                            )
+                                            has_data_for_variable = True
+
+                        # Add a horizontal line at y=0 for reference in difference mode
+                        if has_data_for_variable:
+                            ax.axhline(
+                                y=0,
+                                color="black",
+                                linestyle="-",
+                                alpha=0.3,
+                                linewidth=LINE_WIDTHS["normal"],
+                            )
 
                 # Set subplot title
                 if has_data_for_variable:
@@ -1392,7 +1530,12 @@ class FoundationPlotManager:
 
                 # Set y-axis scale based on scale_type parameter
                 if scale_type == "log":
-                    ax.set_yscale("log")
+                    # For difference plots in log scale, we need to handle negative values
+                    if plot_mode == "difference":
+                        # Use symlog scale for difference plots to handle negative values
+                        ax.set_yscale("symlog", linthresh=1e-6)
+                    else:
+                        ax.set_yscale("log")
                 else:
                     ax.set_yscale("linear")
 
@@ -1407,17 +1550,30 @@ class FoundationPlotManager:
             # Create legend
             legend_elements = []
 
-            # Add actual test labels
-            legend_elements.append(
-                Line2D(
-                    [0],
-                    [0],
-                    color="gray",
-                    linewidth=LINE_WIDTHS["thick"],
-                    alpha=0.8,
-                    label="Actual Test Labels (Normalized)",
+            if plot_mode == "comparison":
+                # Add actual test labels for comparison mode
+                legend_elements.append(
+                    Line2D(
+                        [0],
+                        [0],
+                        color="gray",
+                        linewidth=LINE_WIDTHS["thick"],
+                        alpha=0.8,
+                        label="Actual Test Labels (Normalized)",
+                    )
                 )
-            )
+            elif plot_mode == "difference":
+                # Add reference line explanation for difference mode
+                legend_elements.append(
+                    Line2D(
+                        [0],
+                        [0],
+                        color="black",
+                        linewidth=LINE_WIDTHS["normal"],
+                        alpha=0.3,
+                        label="Zero Reference Line",
+                    )
+                )
 
             # Add dataset size section
             legend_elements.append(
@@ -1477,21 +1633,37 @@ class FoundationPlotManager:
                     line.set_visible(False)
 
             # Set overall labels and title
-            y_label = f"Normalized Frequency ({scale_type} scale)"
+            if plot_mode == "comparison":
+                y_label = f"Normalized Frequency ({scale_type} scale)"
+                main_title = (
+                    f"Label Distribution Comparison: Actual vs. Predicted{title_suffix}"
+                )
+            elif plot_mode == "difference":
+                if scale_type == "log":
+                    y_label = "Difference (Predicted - Actual) (symlog scale)"
+                else:
+                    y_label = f"Difference (Predicted - Actual) ({scale_type} scale)"
+                main_title = (
+                    f"Label Distribution Differences: Predicted - Actual{title_suffix}"
+                )
+
             fig.supylabel(y_label, fontsize=FONT_SIZES["small"])
-            fig.suptitle(
-                f"Label Distribution Comparison: Actual vs. Predicted{title_suffix}",
-                fontsize=FONT_SIZES["large"],
-            )
+            fig.suptitle(main_title, fontsize=FONT_SIZES["large"])
 
             # Adjust layout and save
             plt.tight_layout(rect=[0.05, 0.08, 1, 0.95])
 
-            # Create filename based on scale type
-            if scale_type == "log":
-                plot_filename = "label_distribution_comparison_log_scale.png"
-            else:
-                plot_filename = "label_distribution_comparison_linear_scale.png"
+            # Create filename based on scale type and plot mode
+            if plot_mode == "comparison":
+                if scale_type == "log":
+                    plot_filename = "label_distribution_comparison_log_scale.png"
+                else:
+                    plot_filename = "label_distribution_comparison_linear_scale.png"
+            elif plot_mode == "difference":
+                if scale_type == "log":
+                    plot_filename = "label_distribution_differences_log_scale.png"
+                else:
+                    plot_filename = "label_distribution_differences_linear_scale.png"
 
             plot_path = evaluation_dir / plot_filename
             plot_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1499,7 +1671,7 @@ class FoundationPlotManager:
             plt.close()
 
             self.logger.info(
-                f"Saved {scale_type} scale label distribution comparison plot to: {plot_path}"
+                f"Saved {scale_type} scale label distribution {plot_mode} plot to: {plot_path}"
             )
             return True
 

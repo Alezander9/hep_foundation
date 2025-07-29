@@ -74,7 +74,6 @@ class DatasetManager:
             new_data: New histogram data to add
         """
         if not new_data:
-            self.logger.templog("[HISTOGRAM_ACCUM] No new data to accumulate")
             return
 
         # Log accumulation details
@@ -83,6 +82,7 @@ class DatasetManager:
         )
         data_type = new_data.get("_metadata", {}).get("data_type", "unknown")
         signal_key = new_data.get("_metadata", {}).get("signal_key", "unknown")
+
         self.logger.templog(
             f"[HISTOGRAM_ACCUM] Accumulating {data_type} data from {signal_key} with {new_sample_count} samples"
         )
@@ -464,9 +464,6 @@ class DatasetManager:
             # Calculate total catalogs across all runs for proper sample targeting
             total_catalogs_all_runs = (
                 len(dataset_config.run_numbers) * dataset_config.catalog_limit
-            )
-            self.logger.templog(
-                f"[ATLAS_DATASET] Total catalogs across {len(dataset_config.run_numbers)} runs: {total_catalogs_all_runs}"
             )
 
             first_event_logged = False
