@@ -99,6 +99,25 @@ def get_experiment_plots(folder_path):
     return plots
 
 
+def get_experiment_config(folder_path):
+    """Read the _experiment_config.yaml file from the experiment folder."""
+    if not folder_path or folder_path == "No experiment selected":
+        return ""
+
+    folder = Path(folder_path)
+    if not folder.exists():
+        return ""
+
+    config_file = folder / "_experiment_config.yaml"
+    if config_file.exists():
+        try:
+            return config_file.read_text()
+        except Exception as e:
+            return f"Error reading config file: {str(e)}"
+    else:
+        return "No configuration file found (_experiment_config.yaml)"
+
+
 # Custom CSS for clean light mode with orange accents
 custom_css = """
 @import url('https://fonts.googleapis.com/css2?family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap');
@@ -306,9 +325,28 @@ with demo:
                             "images": section_images,
                         }
 
+            # Add experiment configuration section at the bottom
+            with gr.Row():
+                with gr.Column():
+                    config_header = gr.Markdown(
+                        "## Experiment Configuration",
+                        visible=False,
+                    )
+                    config_display = gr.Code(
+                        label="Configuration YAML",
+                        language="yaml",
+                        show_label=False,
+                        visible=False,
+                        lines=20,
+                        max_lines=40,
+                        wrap_lines=True,
+                        show_line_numbers=True,
+                    )
+
     # Handle experiment button clicks
     def select_experiment(folder_path, current_selected):
         plots_by_section = get_experiment_plots(folder_path)
+        config_text = get_experiment_config(folder_path)
 
         # Prepare outputs: new selected state + button updates + section visibility/content
         outputs = [folder_path]  # Update selected state
@@ -350,6 +388,10 @@ with demo:
                 for img in section_images:
                     outputs.append(gr.update(visible=False))
 
+        # Update configuration display
+        outputs.append(gr.update(visible=True))  # Config header
+        outputs.append(gr.update(value=config_text, visible=True))  # Config content
+
         return outputs
 
     # Prepare output components: state + all buttons + all sections
@@ -366,6 +408,10 @@ with demo:
 
         # Add all individual images for this section
         output_components.extend(plot_sections[section_name]["images"])
+
+    # Add configuration display component
+    output_components.append(config_header)
+    output_components.append(config_display)
 
     # Connect all experiment buttons
     for btn, folder_path in experiment_buttons:
