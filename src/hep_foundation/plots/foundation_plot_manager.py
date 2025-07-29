@@ -1153,6 +1153,11 @@ class FoundationPlotManager:
                             valid_data = var_predictions[np.isfinite(var_predictions)]
                             if len(valid_data) > 0:
                                 data_range = np.max(np.abs(valid_data))
+                                # Add minimal epsilon to avoid zero-width bins when all values are exactly 0
+                                if data_range == 0:
+                                    data_range = (
+                                        1e-6  # Small epsilon to prevent zero-width bins
+                                    )
                                 # Create symmetric bins around zero
                                 predefined_bin_edges = np.linspace(
                                     -data_range * 1.1, data_range * 1.1, 51
@@ -1172,7 +1177,13 @@ class FoundationPlotManager:
                         all_hist_data.update(var_hist_data)
 
                 # Save the combined histogram data
-                pred_hist_filename = f"{model_name}_predictions_hist.json"
+                # Include data size in filename to match what the plotter expects
+                data_size_label = (
+                    f"{data_size // 1000}k" if data_size >= 1000 else str(data_size)
+                )
+                pred_hist_filename = (
+                    f"{model_name}_{data_size_label}_predictions_hist.json"
+                )
                 label_distributions_dir.mkdir(parents=True, exist_ok=True)
 
                 description = f"Predictions from {model_name} model trained with {data_size} samples (multiple variables)"
