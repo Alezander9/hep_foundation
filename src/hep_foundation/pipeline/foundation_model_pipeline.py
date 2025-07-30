@@ -26,6 +26,7 @@ from hep_foundation.pipeline.anomaly_detection_evaluator import (
 )
 from hep_foundation.pipeline.foundation_pipeline_utils import log_evaluation_summary
 from hep_foundation.plots.foundation_plot_manager import FoundationPlotManager
+from hep_foundation.plots.histogram_manager import HistogramManager
 from hep_foundation.training.model_trainer import ModelTrainer
 from hep_foundation.utils.utils import print_system_usage
 
@@ -72,9 +73,9 @@ class FoundationModelPipeline:
         # Source config file for reproducibility
         self._source_config_file = None
 
-        # Initialize plot managers
-
+        # Initialize plot managers and histogram manager
         self.foundation_plot_manager = FoundationPlotManager()
+        self.histogram_manager = HistogramManager()
 
         self.logger.info("Foundation Model Pipeline initialized.")
         self.logger.info(
@@ -1176,7 +1177,7 @@ class FoundationModelPipeline:
                 data_size: int,
                 save_training_history: bool = False,
                 label_distributions_dir_param: Optional[Path] = None,
-                bin_edges_metadata: Optional[dict] = None,
+                label_variable_names_param: Optional[list] = None,
             ):
                 self.logger.info(
                     f"Training {model_name} model with {data_size} events..."
@@ -1228,7 +1229,7 @@ class FoundationModelPipeline:
                         f"Generating predictions for {model_name} model..."
                     )
                     predictions_list = []
-                    actual_labels_list = []  # New: collect actual labels
+                    actual_labels_list = []
                     samples_collected = 0
                     max_prediction_samples = 1000
 
@@ -1243,10 +1244,8 @@ class FoundationModelPipeline:
                                 features_batch, verbose=0
                             )
 
-                            # Process actual labels to match prediction format
-                            # Handle different label structures
+                            # Extract actual labels from batch structure
                             if isinstance(labels_batch, tuple):
-                                # Extract actual label data from tuple structure
                                 actual_labels_batch = None
                                 for item in labels_batch:
                                     if hasattr(item, "shape") and hasattr(
@@ -1266,7 +1265,7 @@ class FoundationModelPipeline:
                                     else labels_batch
                                 )
 
-                            # Ensure labels have the right shape
+                            # Remove extra dimensions if present
                             if (
                                 hasattr(actual_labels_batch, "ndim")
                                 and actual_labels_batch.ndim == 3
@@ -1276,113 +1275,98 @@ class FoundationModelPipeline:
                                     axis=0
                                 )
 
-                            # Don't flatten for multi-variable predictions!
-                            # Keep the original shape to preserve multiple variables
-                            if (
-                                predictions_batch.ndim == 2
-                                and predictions_batch.shape[1] > 1
-                            ):
-                                # Multi-variable predictions: shape (batch_size, num_variables)
-                                predictions_np = predictions_batch
-                                actual_labels_np = actual_labels_batch
-                            else:
-                                # Single variable: flatten if needed
-                                predictions_np = (
-                                    predictions_batch.flatten()
-                                    if predictions_batch.ndim > 1
-                                    else predictions_batch
-                                )
-                                actual_labels_np = (
-                                    actual_labels_batch.flatten()
-                                    if actual_labels_batch.ndim > 1
-                                    else actual_labels_batch
-                                )
+                            # Convert to numpy and collect samples
+                            predictions_np = np.array(predictions_batch)
+                            actual_labels_np = np.array(actual_labels_batch)
 
-                            # Calculate how many to take from this batch
                             batch_size = predictions_np.shape[0]
                             samples_to_take = min(
                                 batch_size, max_prediction_samples - samples_collected
                             )
 
-                            # Take the samples (preserving all dimensions)
-                            batch_predictions = predictions_np[:samples_to_take]
-                            batch_actual_labels = actual_labels_np[:samples_to_take]
-
-                            # Extend predictions_list and actual_labels_list properly
-                            if predictions_np.ndim == 2:
-                                # Multi-variable case: append each sample as a row
-                                for sample in batch_predictions:
-                                    predictions_list.append(sample)
-                                for sample in batch_actual_labels:
-                                    actual_labels_list.append(sample)
-                            else:
-                                # Single variable case: extend with individual values
-                                predictions_list.extend(batch_predictions)
-                                actual_labels_list.extend(batch_actual_labels)
-
+                            predictions_list.extend(predictions_np[:samples_to_take])
+                            actual_labels_list.extend(
+                                actual_labels_np[:samples_to_take]
+                            )
                             samples_collected += samples_to_take
 
-                            if samples_collected >= max_prediction_samples:
-                                break
+                    # Convert to numpy arrays
+                    predictions_array = np.array(predictions_list)
+                    actual_labels_array = np.array(actual_labels_list)
 
-                    # Save histogram data using foundation plot manager
-                    if predictions_list and actual_labels_list:
-                        # Create predictions array properly handling multi-dimensional data
-                        if (
-                            len(predictions_list) > 0
-                            and hasattr(predictions_list[0], "shape")
-                            and len(predictions_list[0].shape) > 0
-                        ):
-                            # Multi-variable predictions: stack the arrays
-                            predictions_array = np.array(
-                                predictions_list[:max_prediction_samples]
+                    if len(predictions_array) > 0 and len(actual_labels_array) > 0:
+                        # Get label variable names (required for histogram keys)
+                        if not label_variable_names_param:
+                            self.logger.warning(
+                                "No label variable names found, using generic names"
                             )
-                            actual_labels_array = np.array(
-                                actual_labels_list[:max_prediction_samples]
+                            num_vars = (
+                                predictions_array.shape[1]
+                                if predictions_array.ndim > 1
+                                else 1
                             )
+                            current_label_names = [
+                                f"variable_{i}" for i in range(num_vars)
+                            ]
                         else:
-                            # Single variable predictions: convert to 1D array
-                            predictions_array = np.array(
-                                predictions_list[:max_prediction_samples]
-                            )
-                            actual_labels_array = np.array(
-                                actual_labels_list[:max_prediction_samples]
-                            )
+                            current_label_names = label_variable_names_param
 
-                        # Use the parameter passed to the function, or create a default path
+                        # Create data dictionaries for histogram manager (simplified - no special cases)
+                        predictions_data = {}
+                        differences_data = {}
+
+                        for i, var_name in enumerate(current_label_names):
+                            if i < predictions_array.shape[1]:
+                                predictions_data[var_name] = predictions_array[
+                                    :, i
+                                ].tolist()
+                                differences_data[var_name] = (
+                                    predictions_array[:, i] - actual_labels_array[:, i]
+                                ).tolist()
+
+                        # Prepare save directory and file paths
                         hist_save_dir = label_distributions_dir_param or (
                             regression_dir / "label_distributions"
                         )
+                        hist_save_dir.mkdir(parents=True, exist_ok=True)
 
-                        # Save regular predictions histogram
-                        self.foundation_plot_manager.save_model_predictions_histogram(
-                            predictions_array,
-                            model_name,
-                            data_size,
-                            hist_save_dir,
-                            bin_edges_metadata,
-                            max_samples=max_prediction_samples,
-                            label_variable_names=label_variable_names,
+                        data_size_label = (
+                            f"{data_size // 1000}k"
+                            if data_size >= 1000
+                            else str(data_size)
                         )
 
-                        # Compute event-level differences and save difference histogram
-                        if predictions_array.shape == actual_labels_array.shape:
-                            differences_array = predictions_array - actual_labels_array
+                        # Save predictions histogram using HistogramManager
+                        pred_file_path = (
+                            hist_save_dir
+                            / f"{model_name}_{data_size_label}_predictions_hist.json"
+                        )
+                        self.histogram_manager.save_to_hist_file(
+                            data=predictions_data,
+                            file_path=pred_file_path,
+                            nbins=50,
+                            use_percentile_index=True,
+                            update_percentile_index=True,
+                            source=f"predictions_{model_name}",
+                        )
 
-                            # Save difference histogram with special naming
-                            self.foundation_plot_manager.save_model_predictions_histogram(
-                                differences_array,
-                                f"{model_name}_diff",  # Add "_diff" suffix to distinguish
-                                data_size,
-                                hist_save_dir,
-                                bin_edges_metadata,
-                                max_samples=max_prediction_samples,
-                                label_variable_names=label_variable_names,
-                            )
-                        else:
-                            self.logger.warning(
-                                f"Shape mismatch between predictions {predictions_array.shape} and labels {actual_labels_array.shape} for {model_name}"
-                            )
+                        # Save differences histogram using HistogramManager with separate percentile index
+                        diff_file_path = (
+                            hist_save_dir
+                            / f"{model_name}_{data_size_label}_diff_predictions_hist.json"
+                        )
+                        self.histogram_manager.save_to_hist_file(
+                            data=differences_data,
+                            file_path=diff_file_path,
+                            nbins=50,
+                            use_percentile_index=False,  # Don't use coordinated bins for differences
+                            update_percentile_index=False,  # Don't update global percentiles with difference data
+                            source=f"differences_{model_name}",
+                        )
+
+                        self.logger.info(
+                            f"Saved histogram data for {model_name} with {len(predictions_array)} samples"
+                        )
                     else:
                         self.logger.warning(
                             f"No predictions or labels generated for {model_name}"
@@ -1413,17 +1397,9 @@ class FoundationModelPipeline:
                 )
                 # Will save histories for all data sizes processed
 
-            # 3. Create label distribution analysis
+            # 3. Set up label distributions directory
             label_distributions_dir = regression_dir / "label_distributions"
-            actual_labels_bin_edges_metadata = (
-                self.foundation_plot_manager.create_label_distribution_analysis(
-                    test_dataset,
-                    label_distributions_dir,
-                    task_config=task_config,
-                    max_samples=5000,
-                    num_bins=50,
-                )
-            )
+            label_distributions_dir.mkdir(parents=True, exist_ok=True)
 
             # Extract label variable names from task config
             label_variable_names = []
@@ -1442,6 +1418,75 @@ class FoundationModelPipeline:
                                 label_variable_names.append(branch_selector.branch.name)
 
             self.logger.info(f"Extracted label variable names: {label_variable_names}")
+
+            # Save actual labels histogram ONCE before model training
+            if label_variable_names:
+                self.logger.info("Saving actual test labels histogram...")
+                actual_labels_list = []
+                samples_collected = 0
+                max_samples = 1000
+
+                for batch in test_dataset:
+                    if samples_collected >= max_samples:
+                        break
+
+                    if isinstance(batch, tuple) and len(batch) == 2:
+                        features_batch, labels_batch = batch
+
+                        # Extract actual labels from batch structure
+                        if isinstance(labels_batch, tuple):
+                            actual_labels_batch = None
+                            for item in labels_batch:
+                                if hasattr(item, "shape") and hasattr(item, "numpy"):
+                                    actual_labels_batch = item.numpy()
+                                    break
+                            if actual_labels_batch is None and len(labels_batch) > 0:
+                                actual_labels_batch = labels_batch[0]
+                        else:
+                            actual_labels_batch = (
+                                labels_batch.numpy()
+                                if hasattr(labels_batch, "numpy")
+                                else labels_batch
+                            )
+
+                        # Remove extra dimensions if present
+                        if (
+                            hasattr(actual_labels_batch, "ndim")
+                            and actual_labels_batch.ndim == 3
+                            and actual_labels_batch.shape[0] == 1
+                        ):
+                            actual_labels_batch = actual_labels_batch.squeeze(axis=0)
+
+                        actual_labels_np = np.array(actual_labels_batch)
+                        batch_size = actual_labels_np.shape[0]
+                        samples_to_take = min(
+                            batch_size, max_samples - samples_collected
+                        )
+
+                        actual_labels_list.extend(actual_labels_np[:samples_to_take])
+                        samples_collected += samples_to_take
+
+                # Convert to numpy and organize by variable names
+                actual_labels_array = np.array(actual_labels_list)
+                actual_data = {}
+
+                for i, var_name in enumerate(label_variable_names):
+                    if i < actual_labels_array.shape[1]:
+                        actual_data[var_name] = actual_labels_array[:, i].tolist()
+
+                # Save actual labels histogram
+                actual_labels_path = (
+                    label_distributions_dir / "actual_test_labels_hist.json"
+                )
+                self.histogram_manager.save_to_hist_file(
+                    data=actual_data,
+                    file_path=actual_labels_path,
+                    nbins=50,
+                    use_percentile_index=True,
+                    update_percentile_index=True,
+                    source="actual_test_labels",
+                )
+                self.logger.info("Saved actual test labels histogram")
 
             # 4. Run experiments for each data size
             for data_size_index, data_size in enumerate(data_sizes):
@@ -1500,7 +1545,7 @@ class FoundationModelPipeline:
                     data_size,
                     save_training_history=should_save_history,
                     label_distributions_dir_param=label_distributions_dir,
-                    bin_edges_metadata=actual_labels_bin_edges_metadata,
+                    label_variable_names_param=label_variable_names,
                 )
                 results["From_Scratch"].append(scratch_loss)
 
@@ -1547,7 +1592,7 @@ class FoundationModelPipeline:
                     data_size,
                     save_training_history=should_save_history,
                     label_distributions_dir_param=label_distributions_dir,
-                    bin_edges_metadata=actual_labels_bin_edges_metadata,
+                    label_variable_names_param=label_variable_names,
                 )
                 results["Fine_Tuned"].append(finetuned_loss)
 
@@ -1594,7 +1639,7 @@ class FoundationModelPipeline:
                     data_size,
                     save_training_history=should_save_history,
                     label_distributions_dir_param=label_distributions_dir,
-                    bin_edges_metadata=actual_labels_bin_edges_metadata,
+                    label_variable_names_param=label_variable_names,
                 )
                 results["Fixed_Encoder"].append(fixed_loss)
 
@@ -1927,7 +1972,7 @@ class FoundationModelPipeline:
                 data_size: int,
                 save_training_history: bool = False,
                 label_distributions_dir_param: Optional[Path] = None,
-                bin_edges_metadata: Optional[dict] = None,
+                label_variable_names_param: Optional[list] = None,
             ):
                 self.logger.info(
                     f"Training {model_name} model with {data_size} events..."
@@ -2044,7 +2089,7 @@ class FoundationModelPipeline:
                     data_size,
                     save_training_history=should_save_history,
                     label_distributions_dir_param=None,  # Signal classification doesn't need label distribution analysis
-                    bin_edges_metadata=None,  # Signal classification doesn't need coordinated binning
+                    label_variable_names_param=None,  # Signal classification uses binary labels
                 )
                 results["From_Scratch_loss"].append(scratch_loss)
                 results["From_Scratch_accuracy"].append(scratch_accuracy)
@@ -2090,7 +2135,7 @@ class FoundationModelPipeline:
                     data_size,
                     save_training_history=should_save_history,
                     label_distributions_dir_param=None,  # Signal classification doesn't need label distribution analysis
-                    bin_edges_metadata=None,  # Signal classification doesn't need coordinated binning
+                    label_variable_names_param=None,  # Signal classification uses binary labels
                 )
                 results["Fine_Tuned_loss"].append(finetuned_loss)
                 results["Fine_Tuned_accuracy"].append(finetuned_accuracy)
@@ -2135,7 +2180,7 @@ class FoundationModelPipeline:
                     data_size,
                     save_training_history=should_save_history,
                     label_distributions_dir_param=None,  # Signal classification doesn't need label distribution analysis
-                    bin_edges_metadata=None,  # Signal classification doesn't need coordinated binning
+                    label_variable_names_param=None,  # Signal classification uses binary labels
                 )
                 results["Fixed_Encoder_loss"].append(fixed_loss)
                 results["Fixed_Encoder_accuracy"].append(fixed_accuracy)

@@ -7,6 +7,7 @@ import numpy as np
 from matplotlib.lines import Line2D
 
 from hep_foundation.config.logging_config import get_logger
+from hep_foundation.plots.histogram_manager import HistogramManager
 from hep_foundation.plots.plot_utils import (
     FONT_SIZES,
     LINE_WIDTHS,
@@ -30,6 +31,7 @@ class FoundationPlotManager:
     def __init__(self):
         """Initialize the foundation plot manager."""
         self.logger = get_logger(__name__)
+        self.histogram_manager = HistogramManager()
 
         # Set up plotting style
         set_science_style(use_tex=False)
@@ -686,519 +688,6 @@ class FoundationPlotManager:
             return False
 
     # LABEL HISTOGRAM PLOT CODE
-    def _save_label_histogram_data(
-        self,
-        histogram_data: dict,
-        output_path: Path,
-        metadata_suffix: str = "",
-    ):
-        """
-        Save histogram data to a JSON file.
-
-        Args:
-            histogram_data: Dictionary containing histogram data
-            output_path: Path where to save the data
-            metadata_suffix: Additional metadata information
-        """
-        try:
-            # Ensure the output directory exists
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-
-            # Create final output structure
-            output_data = {}
-            for key, value in histogram_data.items():
-                if key.startswith("_"):
-                    # Skip internal metadata keys
-                    continue
-                output_data[key] = value
-
-            # Add global metadata if provided
-            if metadata_suffix:
-                output_data["_metadata"] = {
-                    "description": metadata_suffix,
-                    "timestamp": str(
-                        output_path.stat().st_mtime
-                        if output_path.exists()
-                        else "unknown"
-                    ),
-                    "num_variables": len(output_data),
-                }
-
-            # Save to JSON
-            with open(output_path, "w") as f:
-                json.dump(output_data, f, indent=2)
-
-            self.logger.info(f"Saved histogram data to: {output_path}")
-
-        except Exception as e:
-            self.logger.error(f"Failed to save label histogram data: {str(e)}")
-
-    def _create_label_histogram_data(
-        self,
-        labels: np.ndarray,
-        num_bins: int = 50,
-        sample_size: Optional[int] = None,
-        label_name: str = "labels",
-        predefined_bin_edges: Optional[np.ndarray] = None,
-    ) -> dict:
-        """
-        Create histogram data from label arrays.
-
-        Args:
-            labels: Array of label values
-            num_bins: Number of histogram bins (ignored if predefined_bin_edges is provided)
-            sample_size: Optional limit on number of samples to use
-            label_name: Name for this label variable
-            predefined_bin_edges: Optional predefined bin edges for coordinated binning
-
-        Returns:
-            Dictionary with histogram data for the label variable
-        """
-        try:
-            # Convert to numpy array if not already
-            labels_array = np.array(labels)
-
-            # Limit sample size if requested
-            if sample_size and len(labels_array) > sample_size:
-                labels_array = labels_array[:sample_size]
-
-            # Remove any NaN or infinite values
-            valid_mask = np.isfinite(labels_array)
-            labels_clean = labels_array[valid_mask]
-
-            if len(labels_clean) == 0:
-                return {
-                    label_name: {
-                        "counts": [],
-                        "bin_edges": [],
-                        "metadata": f"No valid data for {label_name}",
-                    }
-                }
-
-            # Create histogram using predefined bin edges or compute new ones
-            if predefined_bin_edges is not None:
-                counts, bin_edges = np.histogram(
-                    labels_clean, bins=predefined_bin_edges
-                )
-            else:
-                counts, bin_edges = np.histogram(labels_clean, bins=num_bins)
-
-            # Normalize counts to get relative frequencies (density)
-            total_count = np.sum(counts)
-            if total_count > 0:
-                normalized_counts = counts / total_count
-            else:
-                normalized_counts = counts
-
-            return {
-                label_name: {
-                    "counts": normalized_counts.tolist(),
-                    "bin_edges": bin_edges.tolist(),
-                    "metadata": f"Normalized histogram for {label_name} with {len(labels_clean)} samples",
-                }
-            }
-
-        except Exception as e:
-            self.logger.error(
-                f"Failed to create histogram data for {label_name}: {str(e)}"
-            )
-            return {
-                label_name: {
-                    "counts": [],
-                    "bin_edges": [],
-                    "metadata": f"Error creating histogram for {label_name}",
-                }
-            }
-
-    def _extract_labels_from_dataset(
-        self,
-        dataset,
-        max_samples: int = 5000,
-        task_config=None,
-    ):
-        """
-        Extract labels from a TensorFlow dataset for analysis.
-
-        This method handles both single and multiple label variables and provides
-        appropriate data structures for histogram generation.
-
-        Args:
-            dataset: TensorFlow dataset containing (features, labels) pairs
-            max_samples: Maximum number of samples to extract
-            task_config: TaskConfig to extract individual label variable names
-
-        Returns:
-            For single label: np.ndarray of shape (n_samples,)
-            For multiple labels: dict mapping variable names to np.ndarray
-        """
-        try:
-            labels_list = []
-            samples_collected = 0
-
-            for batch in dataset:
-                if samples_collected >= max_samples:
-                    break
-
-                if isinstance(batch, tuple) and len(batch) == 2:
-                    features, labels = batch
-
-                    # Convert to numpy
-                    try:
-                        # Handle case where labels might be a tuple of data structures
-                        if isinstance(labels, tuple):
-                            # Try to get the actual label data from the tuple
-                            # Common patterns: (label_data,) or (label_data, metadata)
-                            labels_data = None
-                            for item in labels:
-                                if hasattr(item, "shape") and hasattr(item, "numpy"):
-                                    labels_data = item
-                                    break
-                                elif (
-                                    hasattr(item, "shape")
-                                    and len(getattr(item, "shape", [])) >= 2
-                                ):
-                                    labels_data = item
-                                    break
-
-                            if labels_data is None:
-                                # If no tensor-like object found, try the first element
-                                labels_data = labels[0] if len(labels) > 0 else labels
-
-                            labels = labels_data
-
-                        if hasattr(labels, "numpy"):
-                            labels_np = labels.numpy()
-                        else:
-                            labels_np = np.array(labels)
-
-                        # Handle different label shapes
-                        if labels_np.ndim == 3 and labels_np.shape[0] == 1:
-                            # Shape like (1, 800, 3) - remove the first dimension
-                            labels_np = labels_np.squeeze(axis=0)
-
-                        if labels_np.ndim == 2:
-                            # Shape like (batch_size, num_variables) or (num_samples, num_variables)
-                            batch_size = labels_np.shape[0]
-                            num_variables = labels_np.shape[1]
-                        elif labels_np.ndim == 1:
-                            # Shape like (batch_size,) - single variable
-                            batch_size = labels_np.shape[0]
-                        else:
-                            continue
-
-                        # Calculate how many samples to take from this batch
-                        samples_to_take = min(
-                            batch_size, max_samples - samples_collected
-                        )
-
-                        # Take the samples
-                        batch_labels = labels_np[:samples_to_take]
-                        labels_list.append(batch_labels)
-                        samples_collected += samples_to_take
-
-                    except Exception:
-                        continue
-
-                else:
-                    self.logger.warning(
-                        f"Unexpected batch structure in dataset: {type(batch)}"
-                    )
-
-            if not labels_list:
-                return {}
-
-            # Concatenate all collected labels
-            all_labels = np.concatenate(labels_list, axis=0)
-
-            # Handle different label structures
-            if all_labels.ndim == 1:
-                # Single variable case
-                return all_labels
-            elif all_labels.ndim == 2:
-                # Multiple variables case
-                num_variables = all_labels.shape[1]
-
-                # Extract variable names using a robust approach with multiple fallback strategies
-                variable_names = self._extract_variable_names_robust(
-                    task_config, num_variables
-                )
-
-                # Create dict mapping variable names to their data
-                result_dict = {}
-                for i, var_name in enumerate(variable_names):
-                    var_data = all_labels[:, i]
-                    result_dict[var_name] = var_data
-
-                return result_dict
-
-            else:
-                self.logger.warning(
-                    f"Unexpected label array dimensions: {all_labels.shape}"
-                )
-                return {}
-
-        except Exception as e:
-            self.logger.error(f"Failed to extract labels from dataset: {str(e)}")
-            return {}
-
-    def _extract_variable_names_robust(
-        self, task_config, num_variables: int
-    ) -> list[str]:
-        """
-        Extract variable names from task configuration.
-
-        Args:
-            task_config: TaskConfig object (may be None)
-            num_variables: Number of variables detected in the data
-
-        Returns:
-            List of variable names, always exactly num_variables long
-        """
-        try:
-            if task_config and hasattr(task_config, "to_dict"):
-                task_dict = task_config.to_dict()
-
-                if "labels" in task_dict and task_dict["labels"]:
-                    first_label = task_dict["labels"][0]
-                    if (
-                        "feature_array_aggregators" in first_label
-                        and first_label["feature_array_aggregators"]
-                    ):
-                        first_agg = first_label["feature_array_aggregators"][0]
-                        if "input_branches" in first_agg:
-                            branch_names = []
-                            for branch_info in first_agg["input_branches"]:
-                                if (
-                                    isinstance(branch_info, dict)
-                                    and "branch_name" in branch_info
-                                ):
-                                    branch_names.append(branch_info["branch_name"])
-
-                            if len(branch_names) == num_variables:
-                                return branch_names
-        except Exception as e:
-            self.logger.warning(
-                f"Failed to extract variable names from task config: {e}"
-            )
-
-        # Fallback to generic names if extraction fails
-        return [f"variable_{i}" for i in range(num_variables)]
-
-    def create_label_distribution_analysis(
-        self,
-        test_dataset,
-        label_distributions_dir: Path,
-        task_config=None,
-        max_samples: int = 5000,
-        num_bins: int = 50,
-    ) -> Optional[dict]:
-        """
-        Create label distribution analysis for regression tasks.
-
-        Args:
-            test_dataset: TensorFlow dataset containing test labels
-            label_distributions_dir: Directory to save label distribution data
-            task_config: TaskConfig to extract individual label variable names
-            max_samples: Maximum number of samples to use for analysis
-            num_bins: Number of bins for histogram
-
-        Returns:
-            Dict containing bin edges metadata for each variable, or None if failed
-        """
-        try:
-            self.logger.info("Creating label distribution analysis...")
-            label_distributions_dir.mkdir(parents=True, exist_ok=True)
-
-            # Sample actual test labels
-            self.logger.info("Sampling actual test labels for distribution analysis...")
-            actual_test_labels = self._extract_labels_from_dataset(
-                test_dataset, max_samples=max_samples, task_config=task_config
-            )
-
-            if isinstance(actual_test_labels, dict):
-                # Multiple label variables
-                if len(actual_test_labels) == 0:
-                    self.logger.warning(
-                        "No test labels extracted for histogram analysis"
-                    )
-                    return None
-
-                # Create histogram data for each variable
-                all_hist_data = {}
-                bin_edges_metadata = {}
-
-                for var_name, var_data in actual_test_labels.items():
-                    self.logger.info(f"Creating histogram for variable: {var_name}")
-
-                    var_hist_data = self._create_label_histogram_data(
-                        var_data, num_bins=num_bins, label_name=var_name
-                    )
-
-                    # Add this variable's data to the combined structure
-                    all_hist_data.update(var_hist_data)
-
-                    # Extract bin edges for this variable
-                    if var_name in var_hist_data:
-                        bin_edges_metadata[var_name] = var_hist_data[var_name][
-                            "bin_edges"
-                        ]
-
-                # Save the combined histogram data
-                self._save_label_histogram_data(
-                    all_hist_data,
-                    label_distributions_dir / "actual_test_labels_hist.json",
-                    "Actual test labels from regression dataset (multiple variables)",
-                )
-
-                # Save bin edges metadata for coordinated binning
-                bin_edges_metadata_path = (
-                    label_distributions_dir / "label_bin_edges_metadata.json"
-                )
-
-                # Save bin edges metadata directly
-                try:
-                    bin_edges_metadata_path.parent.mkdir(parents=True, exist_ok=True)
-                    with open(bin_edges_metadata_path, "w") as f:
-                        json.dump(bin_edges_metadata, f, indent=2)
-                    self.logger.info(
-                        f"Saved bin edges metadata to: {bin_edges_metadata_path}"
-                    )
-                except Exception as e:
-                    self.logger.error(f"Failed to save bin edges metadata: {str(e)}")
-
-                self.logger.info(
-                    f"Label distribution analysis completed for {len(actual_test_labels)} variables"
-                )
-                return bin_edges_metadata
-            else:
-                self.logger.warning(
-                    "Expected dictionary result from _extract_labels_from_dataset for multiple variables"
-                )
-                return None
-
-        except Exception as e:
-            self.logger.error(f"Failed to create label distribution analysis: {str(e)}")
-            return None
-
-    def save_model_predictions_histogram(
-        self,
-        predictions: np.ndarray,
-        model_name: str,
-        data_size: int,
-        label_distributions_dir: Path,
-        bin_edges_metadata: Optional[dict] = None,
-        max_samples: int = 1000,
-        label_variable_names: Optional[list[str]] = None,
-    ) -> bool:
-        """
-        Save normalized histogram data for model predictions.
-
-        Args:
-            predictions: Array of model predictions (1D for single variable, 2D for multiple variables)
-            model_name: Name of the model
-            data_size: Size of training data used
-            label_distributions_dir: Directory to save histogram data
-            bin_edges_metadata: Metadata for coordinated binning (only used for non-difference data)
-            max_samples: Maximum number of samples to include
-            label_variable_names: Names of label variables (for multi-variable predictions)
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        try:
-            if len(predictions) == 0:
-                self.logger.warning(f"No predictions provided for {model_name}")
-                return False
-
-            # Limit samples if needed
-            predictions_array = np.array(predictions[:max_samples])
-
-            # Check if this is difference data (model name contains "_diff")
-            is_difference_data = "_diff" in model_name
-
-            # Check if we have multiple variables (2D array with multiple columns)
-            if predictions_array.ndim == 2 and predictions_array.shape[1] > 1:
-                # Multiple variables
-                if label_variable_names is None:
-                    label_variable_names = [
-                        f"variable_{i}" for i in range(predictions_array.shape[1])
-                    ]
-
-                # Create combined histogram data for all variables
-                all_hist_data = {}
-
-                for i, var_name in enumerate(label_variable_names):
-                    if i < predictions_array.shape[1]:
-                        var_predictions = predictions_array[:, i]
-
-                        # Use predefined bin edges for regular predictions, but generate new ones for differences
-                        predefined_bin_edges = None
-                        if (
-                            not is_difference_data
-                            and bin_edges_metadata
-                            and var_name in bin_edges_metadata
-                        ):
-                            predefined_bin_edges = np.array(
-                                bin_edges_metadata[var_name]
-                            )
-                            self.logger.info(
-                                f"Using coordinated binning for {model_name} predictions on variable {var_name}"
-                            )
-                        elif is_difference_data:
-                            # For difference data, create symmetric bins around zero
-                            self.logger.info(
-                                f"Creating custom bin edges for difference data {model_name} on variable {var_name}"
-                            )
-                            # Remove NaN/inf values for range calculation
-                            valid_data = var_predictions[np.isfinite(var_predictions)]
-                            if len(valid_data) > 0:
-                                data_range = np.max(np.abs(valid_data))
-                                # Create symmetric bins around zero
-                                predefined_bin_edges = np.linspace(
-                                    -data_range * 1.1, data_range * 1.1, 51
-                                )  # 50 bins
-                            else:
-                                # Fallback if no valid data
-                                predefined_bin_edges = np.linspace(-1, 1, 51)
-
-                        var_hist_data = self._create_label_histogram_data(
-                            var_predictions,
-                            num_bins=50,  # This will be ignored if predefined_bin_edges is provided
-                            label_name=var_name,
-                            predefined_bin_edges=predefined_bin_edges,
-                        )
-
-                        # Add this variable's data to the combined structure
-                        all_hist_data.update(var_hist_data)
-
-                # Save the combined histogram data
-                pred_hist_filename = f"{model_name}_predictions_hist.json"
-                label_distributions_dir.mkdir(parents=True, exist_ok=True)
-
-                description = f"Predictions from {model_name} model trained with {data_size} samples (multiple variables)"
-                if is_difference_data:
-                    description = f"Event-level differences (predicted - actual) from {model_name.replace('_diff', '')} model trained with {data_size} samples (multiple variables)"
-
-                self._save_label_histogram_data(
-                    all_hist_data,
-                    label_distributions_dir / pred_hist_filename,
-                    description,
-                )
-
-                self.logger.info(
-                    f"Saved {len(predictions_array)} normalized predictions for {model_name} across {len(label_variable_names)} variables"
-                )
-                return True
-            else:
-                # For single variable predictions, we'd handle them here, but this case isn't being used in the current code
-                return False
-
-        except Exception as e:
-            self.logger.error(
-                f"Failed to save predictions histogram for {model_name}: {str(e)}"
-            )
-            return False
-
     def create_label_distribution_comparison_plot_with_subplots(
         self,
         evaluation_dir: Path,
@@ -1314,7 +803,7 @@ class FoundationPlotManager:
 
             label_distributions_dir = evaluation_dir / "label_distributions"
 
-            # Load actual test labels histogram
+            # Load actual test labels histogram using HistogramManager
             actual_labels_path = (
                 label_distributions_dir / "actual_test_labels_hist.json"
             )
@@ -1324,8 +813,9 @@ class FoundationPlotManager:
                 )
                 return False
 
-            with open(actual_labels_path) as f:
-                actual_hist_data = json.load(f)
+            actual_hist_data, _ = self.histogram_manager.load_hist_file(
+                actual_labels_path
+            )
 
             # Set up plotting style
             set_science_style(use_tex=False)
@@ -1406,8 +896,11 @@ class FoundationPlotManager:
                             )
 
                             if pred_hist_path.exists():
-                                with open(pred_hist_path) as f:
-                                    pred_hist_data = json.load(f)
+                                pred_hist_data, _ = (
+                                    self.histogram_manager.load_hist_file(
+                                        pred_hist_path
+                                    )
+                                )
 
                                 if var_name in pred_hist_data:
                                     pred_data = pred_hist_data[var_name]
@@ -1463,8 +956,11 @@ class FoundationPlotManager:
                                 )
 
                                 if diff_hist_path.exists():
-                                    with open(diff_hist_path) as f:
-                                        diff_hist_data = json.load(f)
+                                    diff_hist_data, _ = (
+                                        self.histogram_manager.load_hist_file(
+                                            diff_hist_path
+                                        )
+                                    )
 
                                     if var_name in diff_hist_data:
                                         diff_data = diff_hist_data[var_name]
