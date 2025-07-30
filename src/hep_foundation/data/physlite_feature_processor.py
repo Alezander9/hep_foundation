@@ -1464,14 +1464,6 @@ class PhysliteFeatureProcessor:
                     f"{catalog_duration:.2f}s ({rate:.1f} events/s)"
                 )
 
-                # Add sample collection tracking per catalog
-                if plotting_enabled:
-                    self.logger.templog(
-                        f"[SAMPLE_TRACKING] {data_type_label} - Catalog {catalog_idx + 1}: "
-                        f"Zero-bias samples: {current_catalog_zero_bias_count}/{samples_per_catalog}, "
-                        f"Post-selection samples: {current_catalog_samples_count}/{samples_per_catalog}"
-                    )
-
                 if catalog_limit and catalog_idx >= catalog_limit - 1:
                     break
 
@@ -1499,8 +1491,8 @@ class PhysliteFeatureProcessor:
 
         # Add final sample collection summary
         if plotting_enabled:
-            self.logger.templog(
-                f"[SAMPLE_TRACKING] {data_type_label} - FINAL TOTALS: "
+            self.logger.info(
+                f"{data_type_label} - final totals: "
                 f"Zero-bias samples: {zero_bias_samples_count}, "
                 f"Post-selection samples: {overall_plot_samples_count}"
             )

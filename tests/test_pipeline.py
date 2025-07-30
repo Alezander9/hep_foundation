@@ -213,11 +213,6 @@ EXPECTED_EXPERIMENT_STRUCTURE = {
                                 "required": True,
                                 "description": "Actual test labels histogram data",
                             },
-                            "label_bin_edges_metadata.json": {
-                                "type": "file",
-                                "required": True,
-                                "description": "Bin edges metadata for coordinated binning",
-                            },
                             "*_predictions_hist.json": {
                                 "type": "pattern",
                                 "required": True,

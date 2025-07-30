@@ -82,9 +82,8 @@ class DatasetManager:
         )
         data_type = new_data.get("_metadata", {}).get("data_type", "unknown")
         signal_key = new_data.get("_metadata", {}).get("signal_key", "unknown")
-
-        self.logger.templog(
-            f"[HISTOGRAM_ACCUM] Accumulating {data_type} data from {signal_key} with {new_sample_count} samples"
+        self.logger.info(
+            f"Accumulating {data_type} data from {signal_key} with {new_sample_count} samples"
         )
 
         # Skip metadata for now - we'll handle it separately
