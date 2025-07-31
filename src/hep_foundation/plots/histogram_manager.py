@@ -27,7 +27,8 @@ class HistogramManager:
     def __init__(self):
         """Initialize the histogram manager and load physlite percentiles index."""
         self.logger = logging.getLogger(__name__)
-        self._percentiles_data = self._load_physlite_percentiles()
+        self._file_percentiles_data = self._load_physlite_percentiles()
+        self._session_cache = {}  # Session-level cache for percentiles
 
     def _load_physlite_percentiles(self) -> dict:
         """Load the physlite percentiles data from the JSON file, creating if not exists."""
@@ -73,8 +74,9 @@ class HistogramManager:
         data: dict[str, list[float]],
         file_path: Path,
         nbins: int = 50,
-        use_percentile_index: bool = False,
-        update_percentile_index: bool = False,
+        use_percentile_file: bool = False,
+        update_percentile_file: bool = False,
+        use_percentile_cache: bool = True,
         source: Optional[str] = None,
     ) -> None:
         """Save histogram data to JSON file with optional percentile coordination.
@@ -83,8 +85,9 @@ class HistogramManager:
             data: Dictionary mapping feature names to lists of values
             file_path: Path where to save the JSON histogram data
             nbins: Number of bins for histograms
-            use_percentile_index: Whether to use stored percentiles for bin edges
-            update_percentile_index: Whether to update stored percentiles if exceeded
+            use_percentile_file: Whether to initialize cache from file-stored percentiles
+            update_percentile_file: Whether to update file when percentiles exceed range
+            use_percentile_cache: Whether to use cached percentiles for bin coordination
             source: Source identifier for percentile updates
         """
         hist_data = {}
@@ -99,54 +102,90 @@ class HistogramManager:
             current_p01 = np.percentile(values_array, 0.1)
             current_p999 = np.percentile(values_array, 99.9)
 
-            # Determine bin edges
-            if use_percentile_index:
-                stored_percentiles = self._percentiles_data.get(key)
-                if stored_percentiles:
-                    # Use stored percentiles for bin edges
-                    bin_min = stored_percentiles["0.1"]
-                    bin_max = stored_percentiles["99.9"]
+            # Determine bin edges based on the new parameter logic
+            if use_percentile_cache:
+                # Check session cache first
+                cached_percentiles = self._session_cache.get(key)
 
-                    # Calculate what percentage of data falls outside stored range
-                    below_min = np.sum(values_array < bin_min) / len(values_array) * 100
-                    above_max = np.sum(values_array > bin_max) / len(values_array) * 100
+                if cached_percentiles:
+                    # Use cached percentiles
+                    bin_min = cached_percentiles["0.1"]
+                    bin_max = cached_percentiles["99.9"]
 
-                    self.logger.info(
-                        f"For {key} using saved percentiles 0.1: {bin_min:.3f}, "
-                        f"99.9: {bin_max:.3f}, {below_min:.1f}% of data is below 0.1% "
-                        f"and {above_max:.1f}% of data is above 99.9%"
-                    )
+                elif use_percentile_file:
+                    # Try to get from file percentiles
+                    file_percentiles = self._file_percentiles_data.get(key)
+                    if file_percentiles:
+                        bin_min = file_percentiles["0.1"]
+                        bin_max = file_percentiles["99.9"]
 
-                    # Update percentile index if current data exceeds stored range
-                    if update_percentile_index and (
-                        current_p01 < bin_min or current_p999 > bin_max
-                    ):
-                        # Make a copy to avoid modifying cached data
-                        updated_percentiles = self._percentiles_data.copy()
-
-                        new_min = min(current_p01, bin_min)
-                        new_max = max(current_p999, bin_max)
-
-                        updated_percentiles[key] = {
-                            "0.1": new_min,
-                            "99.9": new_max,
-                            "source": source or "unknown",
+                        # Store in session cache for future use
+                        self._session_cache[key] = {
+                            "0.1": bin_min,
+                            "99.9": bin_max,
+                            "source": f"file_{file_percentiles.get('source', 'unknown')}",
                             "timestamp": datetime.now().isoformat(),
                         }
 
-                        # Save updated percentiles to disk
-                        self._save_physlite_percentiles(updated_percentiles)
+                    else:
+                        # No file percentiles, use current data and cache it
+                        bin_min = current_p01
+                        bin_max = current_p999
 
-                        self.logger.info(
-                            f"Updated global percentiles for {key}: "
-                            f"0.1%={new_min:.3f}, 99.9%={new_max:.3f} (source: {source})"
-                        )
+                        self._session_cache[key] = {
+                            "0.1": bin_min,
+                            "99.9": bin_max,
+                            "source": source or "session_first",
+                            "timestamp": datetime.now().isoformat(),
+                        }
+
                 else:
-                    # No stored percentiles, use current data
+                    # Not using file, calculate from current data and cache it
                     bin_min = current_p01
                     bin_max = current_p999
+
+                    self._session_cache[key] = {
+                        "0.1": bin_min,
+                        "99.9": bin_max,
+                        "source": source or "session_first",
+                        "timestamp": datetime.now().isoformat(),
+                    }
+
+                # Calculate what percentage of data falls outside range
+                below_min = np.sum(values_array < bin_min) / len(values_array) * 100
+                above_max = np.sum(values_array > bin_max) / len(values_array) * 100
+
+                # Update file if requested and current data exceeds range
+                if update_percentile_file and (
+                    current_p01 < bin_min or current_p999 > bin_max
+                ):
+                    new_min = min(current_p01, bin_min)
+                    new_max = max(current_p999, bin_max)
+
+                    # Update file (but not session cache to avoid invalidating current session)
+                    updated_file_percentiles = self._file_percentiles_data.copy()
+                    updated_file_percentiles[key] = {
+                        "0.1": new_min,
+                        "99.9": new_max,
+                        "source": source or "unknown",
+                        "timestamp": datetime.now().isoformat(),
+                    }
+
+                    # Save to disk only
+                    self._save_physlite_percentiles(updated_file_percentiles)
+
+                    self.logger.info(
+                        f"Updated FILE percentiles for {key}: "
+                        f"0.1%={new_min:.3f}, 99.9%={new_max:.3f} (source: {source})"
+                    )
+
+                self.logger.info(
+                    f"For {key} using cached percentiles 0.1: {bin_min:.3f}, "
+                    f"99.9: {bin_max:.3f}, {below_min:.1f}% of data is below 0.1% "
+                    f"and {above_max:.1f}% of data is above 99.9%"
+                )
             else:
-                # Use current data percentiles
+                # Not using cache at all, calculate fresh each time
                 bin_min = current_p01
                 bin_max = current_p999
 

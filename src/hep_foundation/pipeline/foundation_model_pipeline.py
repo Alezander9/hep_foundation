@@ -1345,8 +1345,9 @@ class FoundationModelPipeline:
                             data=predictions_data,
                             file_path=pred_file_path,
                             nbins=50,
-                            use_percentile_index=True,
-                            update_percentile_index=True,
+                            use_percentile_file=False,
+                            update_percentile_file=False,
+                            use_percentile_cache=True,  # Use cache for coordinated bins
                             source=f"predictions_{model_name}",
                         )
 
@@ -1359,8 +1360,9 @@ class FoundationModelPipeline:
                             data=differences_data,
                             file_path=diff_file_path,
                             nbins=50,
-                            use_percentile_index=False,  # Don't use coordinated bins for differences
-                            update_percentile_index=False,  # Don't update global percentiles with difference data
+                            use_percentile_file=False,
+                            update_percentile_file=False,
+                            use_percentile_cache=False,  # Don't use coordinated bins for differences
                             source=f"differences_{model_name}",
                         )
 
@@ -1482,8 +1484,9 @@ class FoundationModelPipeline:
                     data=actual_data,
                     file_path=actual_labels_path,
                     nbins=50,
-                    use_percentile_index=True,
-                    update_percentile_index=True,
+                    use_percentile_file=False,
+                    update_percentile_file=False,
+                    use_percentile_cache=True,  # Use cache for coordinated bins
                     source="actual_test_labels",
                 )
                 self.logger.info("Saved actual test labels histogram")
