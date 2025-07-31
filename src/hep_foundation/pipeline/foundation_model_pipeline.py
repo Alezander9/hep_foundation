@@ -1336,10 +1336,18 @@ class FoundationModelPipeline:
                             else str(data_size)
                         )
 
+                        # Extract base model name to avoid duplication (model_name already contains data_size_label)
+                        # e.g., "From_Scratch_1k" -> "From_Scratch"
+                        base_model_name = (
+                            model_name.rsplit("_", 1)[0]
+                            if "_" in model_name
+                            else model_name
+                        )
+
                         # Save predictions histogram using HistogramManager
                         pred_file_path = (
                             hist_save_dir
-                            / f"{model_name}_{data_size_label}_predictions_hist.json"
+                            / f"{base_model_name}_{data_size_label}_predictions_hist.json"
                         )
                         self.histogram_manager.save_to_hist_file(
                             data=predictions_data,
@@ -1354,7 +1362,7 @@ class FoundationModelPipeline:
                         # Save differences histogram using HistogramManager with separate percentile index
                         diff_file_path = (
                             hist_save_dir
-                            / f"{model_name}_{data_size_label}_diff_predictions_hist.json"
+                            / f"{base_model_name}_{data_size_label}_diff_predictions_hist.json"
                         )
                         self.histogram_manager.save_to_hist_file(
                             data=differences_data,

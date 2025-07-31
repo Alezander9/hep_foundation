@@ -740,30 +740,30 @@ class FoundationPlotManager:
 
         # Create difference plots if requested
         if create_difference_plots:
-            # Create log scale difference version
-            log_diff_success = self._create_single_scale_comparison_plot(
+            # Create linear scale difference version (differences look better in linear scale)
+            linear_diff_success = self._create_single_scale_comparison_plot(
                 evaluation_dir,
                 data_sizes,
                 label_variable_names,
                 physlite_plot_labels,
-                scale_type="log",
-                title_suffix=" (Log Scale)",
+                scale_type="linear",
+                title_suffix=" (Linear Scale)",
                 plot_mode="difference",
             )
-            all_success = all_success and log_diff_success
+            all_success = all_success and linear_diff_success
 
-            # Create linear scale difference version only if also creating linear comparison plots
+            # Create log scale difference version only if also creating linear comparison plots
             if create_linear_plot:
-                linear_diff_success = self._create_single_scale_comparison_plot(
+                log_diff_success = self._create_single_scale_comparison_plot(
                     evaluation_dir,
                     data_sizes,
                     label_variable_names,
                     physlite_plot_labels,
-                    scale_type="linear",
-                    title_suffix=" (Linear Scale)",
+                    scale_type="log",
+                    title_suffix=" (Log Scale)",
                     plot_mode="difference",
                 )
-                all_success = all_success and linear_diff_success
+                all_success = all_success and log_diff_success
 
         return all_success
 

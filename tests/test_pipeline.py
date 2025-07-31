@@ -8,6 +8,8 @@ import pytest
 from hep_foundation.config.config_loader import load_pipeline_config
 from hep_foundation.pipeline.foundation_model_pipeline import FoundationModelPipeline
 
+logger = logging.getLogger(__name__)
+
 # Expected file structure after full pipeline completion
 # This serves as documentation and validation for pipeline outputs
 
@@ -193,10 +195,10 @@ EXPECTED_EXPERIMENT_STRUCTURE = {
                         "required": True,
                         "description": "Label distribution comparison plot (log scale)",
                     },
-                    "label_distribution_differences_log_scale.png": {
+                    "label_distribution_differences_linear_scale.png": {
                         "type": "file",
                         "required": True,
-                        "description": "Label distribution differences plot (log scale)",
+                        "description": "Label distribution differences plot (linear scale)",
                     },
                     "training_histories": {
                         "type": "directory",
@@ -510,9 +512,13 @@ def assert_complete_pipeline_structure(base_dir: Path, logger: logging.Logger) -
 
     # Report missing items as test failures
     if all_missing:
-        missing_report = "\n".join(f"  - {item}" for item in all_missing)
+        logger.error("MISSING REQUIRED PIPELINE OUTPUTS DETECTED:")
+        for item in all_missing:
+            logger.error(f"MISSING: {item}")
+
+        # Raise a simple assertion error for pytest
         raise AssertionError(
-            f"Missing required pipeline outputs:\n{missing_report}\n\nThis indicates a regression in the pipeline or missing functionality."
+            f"Missing {len(all_missing)} required pipeline output(s). Check logs above for details."
         )
 
     # Report unexpected items as warnings (not failures)
@@ -634,7 +640,6 @@ def setup_logging(experiment_dir):
 
 def test_run_full_pipeline(pipeline, test_configs, experiment_dir):
     """Test the full pipeline (train → regression → anomaly)"""
-    logger = logging.getLogger(__name__)
 
     try:
         # Load test config to get evaluation settings
