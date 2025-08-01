@@ -3,7 +3,7 @@ import os
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import awkward as ak  # Add awkward import
 import h5py
@@ -13,10 +13,6 @@ import uproot
 
 from hep_foundation.config.logging_config import get_logger
 from hep_foundation.config.task_config import (
-    PhysliteFeatureArrayAggregator,
-    PhysliteFeatureFilter,
-    PhysliteFeatureSelector,
-    PhysliteSelectionConfig,
     TaskConfig,
 )
 from hep_foundation.data.atlas_file_manager import ATLASFileManager
@@ -89,794 +85,15 @@ class PhysliteFeatureProcessor:
                 "Awkward Array is required for PhysliteFeatureProcessor. Please install it."
             )
 
-    def get_required_branches(self, task_config: TaskConfig) -> set:
-        """
-        Get set of all required branch names for a given task configuration.
-        This includes both real and potentially derived branches at this stage.
+        # Create event processor instance
+        from hep_foundation.data.physlite_event_processor import PhysliteEventProcessor
 
-        Args:
-            task_config: TaskConfig object containing event filters, input features, and labels
-
-        Returns:
-            set: Set of branch names required for processing (including derived ones initially)
-        """
-        required_branches = set()
-
-        # Add event filter branches
-        for filter_item in task_config.event_filters:
-            required_branches.add(filter_item.branch.name)
-
-        # Process all selection configs (input and labels)
-        for selection_config in [task_config.input, *task_config.labels]:
-            # Add feature selector branches
-            for selector in selection_config.feature_selectors:
-                required_branches.add(selector.branch.name)
-
-            # Add aggregator branches
-            for aggregator in selection_config.feature_array_aggregators:
-                self.logger.info(
-                    f"Adding aggregator branches: {aggregator.input_branches}"
-                )
-                # Add input branches
-                for selector in aggregator.input_branches:
-                    required_branches.add(selector.branch.name)
-                # Add filter branches
-                for filter_item in aggregator.filter_branches:
-                    required_branches.add(filter_item.branch.name)
-                # Add sort branch if present
-                if aggregator.sort_by_branch:
-                    required_branches.add(aggregator.sort_by_branch.branch.name)
-
-        return required_branches
-
-    # functions brought over from dataset_manager.py
-
-    def _apply_event_filters(
-        self,
-        event_data: dict[str, np.ndarray],
-        event_filters: list[PhysliteFeatureFilter],
-    ) -> bool:
-        """
-        Apply event-level filters to determine if an event should be processed.
-
-        Args:
-            event_data: Dictionary mapping branch names to their values
-            event_filters: List of event-level feature filters to apply
-
-        Returns:
-            bool: True if event passes all filters, False otherwise
-        """
-        if not event_filters:
-            return True
-
-        for filter in event_filters:
-            value = event_data.get(filter.branch.name)
-            if value is None:
-                return False
-
-            # For event filters, we expect scalar values
-            if isinstance(value, np.ndarray) and value.size > 1:
-                return False
-
-            # Convert to scalar if needed
-            value = value.item() if isinstance(value, np.ndarray) else value
-
-            # Apply min/max filters
-            if filter.min_value is not None and value < filter.min_value:
-                return False
-            if filter.max_value is not None and value > filter.max_value:
-                return False
-
-        return True
-
-    def _extract_selected_features(
-        self,
-        event_data: dict[str, np.ndarray],
-        feature_selectors: list[PhysliteFeatureSelector],
-    ) -> dict[str, np.ndarray]:
-        """
-        Extract selected features from event data.
-
-        Args:
-            event_data: Dictionary mapping branch names to their values
-            feature_selectors: List of feature selectors defining what to extract
-
-        Returns:
-            Dictionary mapping branch names to their selected values
-        """
-        selected_features = {}
-
-        for selector in feature_selectors:
-            value = event_data.get(selector.branch.name)
-            if value is None:
-                continue
-
-            # For scalar features, ensure we get a single value
-            if selector.branch.is_feature:
-                if isinstance(value, np.ndarray):
-                    if value.size == 0:
-                        continue
-                    value = value.item()
-
-            selected_features[selector.branch.name] = value
-
-        return selected_features
-
-    def _process_event(
-        self,
-        event_data: dict[str, np.ndarray],
-        task_config: TaskConfig,
-        plotting_enabled: bool = False,
-        need_more_zero_bias_samples: bool = False,
-    ) -> Optional[dict[str, np.ndarray]]:
-        """
-        Process a single event using the task configuration.
-        (Now returns the structure including original branch names for plotting)
-
-        Args:
-            event_data: Dictionary mapping branch names (real and derived) to their raw values
-            task_config: TaskConfig object containing event filters, input features, and labels
-            plotting_enabled: Whether plotting is enabled
-            need_more_zero_bias_samples: Whether we still need more zero-bias samples for plotting
-
-        Returns:
-            Dictionary of processed features or None if event rejected. Structure:
-            {
-                "scalar_features": {branch_name: value, ...},
-                "aggregated_features": {
-                     aggregator_key: { # e.g., "aggregator_0"
-                          "array": aggregated_array,
-                          "plot_feature_names": [list_of_final_plot_names_for_each_column],
-                          "n_valid_elements": int # Add this for track counting
-                     }, ...
-                },
-                "label_features": [ # List for multiple label sets
-                     {
-                          "scalar_features": {branch_name: value, ...},
-                          "aggregated_features": {agg_key: {"array": ..., "plot_feature_names": [...]}}
-                     }, ...
-                ],
-                "passed_filters": bool  # Add this to track filter status
-            }
-        """
-        # Apply event filters first and track the result
-        passed_filters = self._apply_event_filters(
-            event_data, task_config.event_filters
+        self.event_processor = PhysliteEventProcessor(
+            atlas_manager=self.atlas_manager,
+            custom_label_map_path=custom_label_map_path,
         )
 
-        # If event doesn't pass filters, only continue if we need zero-bias samples for plotting
-        if not passed_filters and not (
-            plotting_enabled and need_more_zero_bias_samples
-        ):
-            return None
-
-        # Process input selection config
-        input_result = self._process_selection_config(event_data, task_config.input)
-        if input_result is None:
-            return None
-
-        # Process each label config if present
-        label_results = []
-        for label_config in task_config.labels:
-            label_result = self._process_selection_config(event_data, label_config)
-            if label_result is None:
-                # If any label processing fails for a supervised task, reject the event
-                # Modify this if partial labels are acceptable
-                return None
-            label_results.append(label_result)
-
-        # Construct the final result dictionary, adding branch names to aggregators
-        final_result = {
-            "scalar_features": input_result["scalar_features"],
-            "aggregated_features": {},
-            "label_features": [],
-            "num_tracks_for_plot": None,  # Initialize
-            "passed_filters": passed_filters,  # Track filter status
-        }
-
-        # Add input aggregators with branch names and n_valid_elements
-        first_input_agg_key = None
-        for agg_key, agg_data_dict in input_result["aggregated_features"].items():
-            if (
-                first_input_agg_key is None
-            ):  # Capture the key of the first input aggregator
-                first_input_agg_key = agg_key
-
-            agg_array = agg_data_dict["array"]
-            input_branch_details = agg_data_dict[
-                "input_branch_details"
-            ]  # name, num_output_cols
-            n_valid_elements = agg_data_dict.get(
-                "n_valid_elements"
-            )  # Get from selection_config processing
-            hist_data = agg_data_dict.get("hist_data")  # Get histogram data
-
-            plot_feature_names = []
-            for detail in input_branch_details:
-                branch_name = detail["name"]
-                num_output_cols = detail["num_output_cols"]
-                custom_titles = self.custom_label_map.get(branch_name)
-
-                if (
-                    isinstance(custom_titles, list)
-                    and len(custom_titles) == num_output_cols
-                ):
-                    plot_feature_names.extend(custom_titles)
-                elif isinstance(custom_titles, str) and num_output_cols == 1:
-                    plot_feature_names.append(custom_titles)
-                else:  # Fallback
-                    if num_output_cols == 1:
-                        plot_feature_names.append(branch_name)
-                    else:
-                        plot_feature_names.extend(
-                            [f"{branch_name}_comp{j}" for j in range(num_output_cols)]
-                        )
-
-            aggregator_data = {
-                "array": agg_array,
-                "plot_feature_names": plot_feature_names,
-                "n_valid_elements": n_valid_elements,
-            }
-
-            # Add clipped histogram data if available (for post-selection plotting)
-            if hist_data and plotting_enabled:
-                aggregator_data["clipped_histogram_data"] = {
-                    "clipped_features": hist_data["clipped_features"],
-                    "clipped_num_tracks": hist_data["clipped_num_tracks"],
-                    "plot_feature_names": plot_feature_names,
-                }
-
-            final_result["aggregated_features"][agg_key] = aggregator_data
-
-        # Set num_tracks_for_plot from the first input aggregator if available
-        if (
-            first_input_agg_key
-            and first_input_agg_key in final_result["aggregated_features"]
-        ):
-            final_result["num_tracks_for_plot"] = final_result["aggregated_features"][
-                first_input_agg_key
-            ].get("n_valid_elements")
-
-        # Add label results with branch names
-        for i, label_res in enumerate(label_results):
-            processed_label = {
-                "scalar_features": label_res["scalar_features"],
-                "aggregated_features": {},
-            }
-            for agg_key, agg_data_dict in label_res["aggregated_features"].items():
-                agg_array = agg_data_dict["array"]
-                input_branch_details = agg_data_dict["input_branch_details"]
-                n_valid_elements = agg_data_dict.get("n_valid_elements")
-                hist_data = agg_data_dict.get("hist_data")  # Get histogram data
-
-                plot_feature_names = []
-                # Ensure the label config exists and has aggregators for details
-                # agg_index = int(agg_key.split("_")[1]) # Not needed if details are passed up
-
-                for detail in input_branch_details:
-                    branch_name = detail["name"]
-                    num_output_cols = detail["num_output_cols"]
-                    custom_titles = self.custom_label_map.get(branch_name)
-
-                    if (
-                        isinstance(custom_titles, list)
-                        and len(custom_titles) == num_output_cols
-                    ):
-                        plot_feature_names.extend(custom_titles)
-                    elif isinstance(custom_titles, str) and num_output_cols == 1:
-                        plot_feature_names.append(custom_titles)
-                    else:  # Fallback
-                        if num_output_cols == 1:
-                            plot_feature_names.append(branch_name)
-                        else:
-                            plot_feature_names.extend(
-                                [
-                                    f"{branch_name}_comp{j}"
-                                    for j in range(num_output_cols)
-                                ]
-                            )
-
-                label_aggregator_data = {
-                    "array": agg_array,
-                    "plot_feature_names": plot_feature_names,
-                    "n_valid_elements": n_valid_elements,
-                }
-
-                # Add clipped histogram data if available (for post-selection plotting)
-                if hist_data and plotting_enabled:
-                    label_aggregator_data["clipped_histogram_data"] = {
-                        "clipped_features": hist_data["clipped_features"],
-                        "clipped_num_tracks": hist_data["clipped_num_tracks"],
-                        "plot_feature_names": plot_feature_names,
-                    }
-
-                processed_label["aggregated_features"][agg_key] = label_aggregator_data
-            final_result["label_features"].append(processed_label)
-
-        # Only return the result for dataset creation if the event passed filters
-        if passed_filters:
-            return final_result
-        else:
-            # Event failed filters but was processed for zero-bias plotting - don't include in dataset
-            return None
-
-    def _convert_stl_vector_array(self, branch_name: str, data: Any) -> np.ndarray:
-        """
-        Converts input data (NumPy array potentially containing STLVector objects,
-        or a single STLVector object) into a numerical NumPy array using awkward-array,
-        preserving dimensions where possible.
-
-        Args:
-            branch_name: Name of the branch (for logging)
-            data: Input data (np.ndarray or potentially STLVector object)
-
-        Returns:
-            Converted numerical NumPy array (e.g., float32) or the original data if no conversion needed/possible.
-            Returns an empty float32 array if the input represents an empty structure.
-        """
-        try:
-            is_numpy = isinstance(data, np.ndarray)
-
-            # --- Handle NumPy Array Input ---
-            if is_numpy:
-                if data.ndim == 0:
-                    # Handle 0-dimensional array (likely containing a single object)
-                    item = data.item()
-                    if "STLVector" in str(type(item)):
-                        self.logger.debug(
-                            f"Converting 0-D array item for '{branch_name}'..."
-                        )
-                        # Convert the single item
-                        ak_array = ak.Array([item])  # Wrap item for awkward conversion
-                        np_array = ak.to_numpy(ak_array)  # REMOVED .flatten()
-                    else:
-                        # 0-D array but not STLVector, return as is (or wrap if needed?)
-                        # If downstream expects at least 1D, wrap it.
-                        return np.atleast_1d(data)
-                elif data.dtype == object:
-                    # Handle N-dimensional object array
-                    if data.size == 0:
-                        return np.array(
-                            [], dtype=np.float32
-                        )  # Handle empty object array
-                    # Check first element to guess if it contains STL Vectors
-                    first_element = data.flat[0]
-                    if "STLVector" in str(type(first_element)):
-                        self.logger.debug(
-                            f"Converting N-D object array for '{branch_name}'..."
-                        )
-                        # Use awkward-array for robust conversion
-                        ak_array = ak.from_iter(data)
-                        np_array = ak.to_numpy(ak_array)  # REMOVED .flatten()
-                    else:
-                        # N-D object array, but doesn't seem to contain STL Vectors
-                        self.logger.warning(
-                            f"Branch '{branch_name}' is N-D object array but doesn't appear to be STLVector. Returning as is."
-                        )
-                        return data  # Return original object array
-                else:
-                    # Standard numerical NumPy array, return as is
-                    return data
-
-            # --- Handle Non-NumPy Input (e.g., direct STLVector) ---
-            elif "STLVector" in str(type(data)):
-                self.logger.debug(
-                    f"Converting direct STLVector object for '{branch_name}'..."
-                )
-                # Convert the single STLVector object
-                ak_array = ak.Array([data])  # Wrap object for awkward conversion
-                np_array = ak.to_numpy(ak_array)[
-                    0
-                ]  # Convert and get the single resulting array
-
-            # --- Handle Other Non-NumPy Input Types ---
-            else:
-                # E.g., could be a standard Python scalar (int, float) - ensure it's a numpy array
-                if isinstance(data, (int, float, bool)):
-                    return np.array([data])  # Return as 1-element array
-                else:
-                    # Unexpected type
-                    self.logger.warning(
-                        f"Branch '{branch_name}' has unexpected type '{type(data)}'. Returning as is."
-                    )
-                    return data  # Return original data if type is unexpected
-
-            # --- Post-Conversion Processing (applies if conversion happened) ---
-            # Check if the result of conversion is numeric and cast
-            if np.issubdtype(np_array.dtype, np.number):
-                converted_array = np_array.astype(np.float32)
-                self.logger.debug(
-                    f"Successfully converted '{branch_name}' from object dtype to {converted_array.dtype}, shape {converted_array.shape}"
-                )  # Updated log
-                return converted_array
-            else:
-                self.logger.warning(
-                    f"Branch '{branch_name}' converted, but result is not numeric ({np_array.dtype}). Returning non-flattened array."
-                )  # Updated log
-                return np_array
-
-        except Exception as e:
-            self.logger.error(
-                f"Failed to convert data for branch '{branch_name}' (type: {type(data)}): {e}",
-                exc_info=True,
-            )
-            # Return original array or raise error depending on desired handling
-            raise  # Re-raise the exception to stop processing if conversion fails
-
-    def _process_selection_config(
-        self,
-        event_data: dict[str, np.ndarray],
-        selection_config: PhysliteSelectionConfig,
-    ) -> Optional[dict[str, Any]]:
-        """
-        Process an event according to a selection configuration.
-
-        New approach:
-        - Each aggregator ALWAYS returns correctly shaped arrays (max_length x num_features)
-        - If aggregator fails, return zeros with correct shape
-        - If any aggregator fails a filter, reject entire event
-        - Concatenate all aggregator results at the end
-        - Skip event if all aggregators are zero
-        """
-        # Extract scalar features
-        scalar_features = {}
-        if selection_config.feature_selectors:
-            scalar_features = self._extract_selected_features(
-                event_data, selection_config.feature_selectors
-            )
-
-        # Process aggregators with new approach
-        aggregated_features = {}
-        is_passing_filters = True  # Track if event passes all filters
-
-        if selection_config.feature_array_aggregators:
-            for idx, aggregator in enumerate(
-                selection_config.feature_array_aggregators
-            ):
-                agg_key = f"aggregator_{idx}"
-
-                # Try to process this aggregator
-                try:
-                    result_array, input_branch_details, n_valid_elements, hist_data = (
-                        self._process_single_aggregator(event_data, aggregator, idx)
-                    )
-
-                    # Check if this aggregator failed a filter (indicated by None return)
-                    if result_array is None:
-                        # Filter failed - reject entire event
-                        is_passing_filters = False
-                        break
-
-                    # Store successful aggregator result
-                    aggregated_features[agg_key] = {
-                        "array": result_array,
-                        "input_branch_details": input_branch_details,
-                        "n_valid_elements": n_valid_elements,
-                        "hist_data": hist_data,
-                    }
-
-                except Exception as e:
-                    self.logger.warning(f"Error processing aggregator {idx}: {e}")
-                    # On error, create zero-filled array with correct shape
-                    zero_array, zero_branch_details, zero_n_valid, zero_hist_data = (
-                        self._create_zero_aggregator(event_data, aggregator, idx)
-                    )
-                    aggregated_features[agg_key] = {
-                        "array": zero_array,
-                        "input_branch_details": zero_branch_details,
-                        "n_valid_elements": zero_n_valid,
-                        "hist_data": zero_hist_data,
-                    }
-
-        # If any aggregator failed filters, reject the entire event
-        if not is_passing_filters:
-            self.logger.debug(
-                "Event rejected due to filter failure in one or more aggregators"
-            )
-            return None
-
-        # Check if all aggregators are zero (no useful data)
-        if aggregated_features:
-            all_zero = True
-            for agg_data in aggregated_features.values():
-                if agg_data["n_valid_elements"] > 0:
-                    all_zero = False
-                    break
-
-            if all_zero:
-                self.logger.debug("Event rejected: all aggregators returned zero data")
-                return None
-
-        # Return results if we have anything
-        if not scalar_features and not aggregated_features:
-            self.logger.debug("No scalar features and no aggregated features found")
-            return None
-
-        return {
-            "scalar_features": scalar_features,
-            "aggregated_features": aggregated_features,
-        }
-
-    def _process_single_aggregator(
-        self,
-        event_data: dict[str, np.ndarray],
-        aggregator: PhysliteFeatureArrayAggregator,
-        idx: int,
-    ) -> tuple[Optional[np.ndarray], list[dict], int, Optional[dict]]:
-        """
-        Process a single aggregator, always returning correctly shaped arrays.
-
-        Returns:
-            - result_array: Always (max_length, num_features) or None if filter failed
-            - input_branch_details: List of branch detail dicts
-            - n_valid_elements: Number of valid elements before padding
-            - hist_data: Histogram data or None
-        """
-        # --- Check Requirements and Get Input Arrays ---
-        array_features = {}  # Stores input arrays for aggregation
-        required_for_agg = set(s.branch.name for s in aggregator.input_branches)
-        filter_branch_names = set(f.branch.name for f in aggregator.filter_branches)
-        required_for_agg.update(filter_branch_names)
-        if aggregator.sort_by_branch:
-            required_for_agg.add(aggregator.sort_by_branch.branch.name)
-
-        # Check if all required branches exist
-        if not all(branch_name in event_data for branch_name in required_for_agg):
-            missing = required_for_agg - set(event_data.keys())
-            self.logger.debug(
-                f"Missing required branches for aggregator {idx}: {missing}"
-            )
-            # Return zero-filled array with correct shape
-            return self._create_zero_aggregator(event_data, aggregator, idx)
-
-        # --- Check length consistency on RAW arrays ---
-        initial_length = -1
-        raw_array_features = {}
-        for branch_name in required_for_agg:
-            current_array = event_data[branch_name]
-            raw_array_features[branch_name] = current_array
-
-            try:
-                current_length = len(current_array)
-            except TypeError:
-                self.logger.warning(
-                    f"Could not get length of raw data for branch '{branch_name}' in aggregator {idx}"
-                )
-                return self._create_zero_aggregator(event_data, aggregator, idx)
-
-            if initial_length == -1:
-                initial_length = current_length
-            elif initial_length != current_length:
-                self.logger.warning(f"RAW array length mismatch in aggregator {idx}")
-                return self._create_zero_aggregator(event_data, aggregator, idx)
-
-        # If no length found or zero length
-        if initial_length <= 0:
-            self.logger.debug(
-                f"Initial length is {initial_length} for aggregator {idx}"
-            )
-            return self._create_zero_aggregator(event_data, aggregator, idx)
-
-        # --- Convert STL Vectors and prepare arrays ---
-        array_features = {}
-        filter_arrays = {}
-        sort_value = None
-        post_conversion_length = -1
-
-        for branch_name in required_for_agg:
-            converted_array = self._convert_stl_vector_array(
-                branch_name, raw_array_features[branch_name]
-            )
-
-            is_input_branch = branch_name in (
-                s.branch.name for s in aggregator.input_branches
-            )
-            is_filter_branch = branch_name in filter_branch_names
-            is_sort_branch = (
-                aggregator.sort_by_branch
-                and branch_name == aggregator.sort_by_branch.branch.name
-            )
-
-            if is_input_branch:
-                array_features[branch_name] = converted_array
-            if is_filter_branch:
-                filter_arrays[branch_name] = converted_array
-            if is_sort_branch:
-                sort_value = converted_array
-
-            if post_conversion_length == -1:
-                if is_sort_branch or is_filter_branch or is_input_branch:
-                    post_conversion_length = len(converted_array)
-
-        # --- Apply Filters ---
-        valid_mask = np.ones(post_conversion_length, dtype=bool)
-        for filter_config in aggregator.filter_branches:
-            filter_name = filter_config.branch.name
-            filter_array = filter_arrays.get(filter_name)
-            if filter_array is None:
-                continue
-
-            # Apply filter
-            if hasattr(filter_config, "min") and filter_config.min is not None:
-                valid_mask &= filter_array >= filter_config.min
-            if hasattr(filter_config, "max") and filter_config.max is not None:
-                valid_mask &= filter_array <= filter_config.max
-
-        # Check if we meet minimum length requirement after filtering
-        n_valid = np.sum(valid_mask)
-        if n_valid < aggregator.min_length:
-            self.logger.debug(
-                f"Aggregator {idx}: n_valid ({n_valid}) < min_length ({aggregator.min_length})"
-            )
-            return self._create_zero_aggregator(event_data, aggregator, idx)
-
-        # --- Apply Sorting ---
-        if aggregator.sort_by_branch and sort_value is not None:
-            if len(sort_value) != post_conversion_length:
-                self.logger.warning(f"Sort array length mismatch in aggregator {idx}")
-                return self._create_zero_aggregator(event_data, aggregator, idx)
-
-            masked_sort_value = sort_value[valid_mask]
-            if len(masked_sort_value) == 0:
-                sort_indices = np.array([], dtype=int)
-            else:
-                sort_indices = np.argsort(masked_sort_value)[::-1]
-        else:
-            sort_indices = np.arange(n_valid)
-
-        # --- Apply Aggregation ---
-        processed_feature_segments = []
-        for selector in aggregator.input_branches:
-            branch_name = selector.branch.name
-            values = array_features.get(branch_name)
-            if values is None:
-                self.logger.warning(
-                    f"Input branch '{branch_name}' not found for aggregator {idx}"
-                )
-                return self._create_zero_aggregator(event_data, aggregator, idx)
-
-            # Apply mask and reshape
-            filtered_values = values[valid_mask]
-            if filtered_values.shape[0] != n_valid:
-                self.logger.warning(
-                    f"Filtered array shape mismatch for '{branch_name}' in aggregator {idx}"
-                )
-                return self._create_zero_aggregator(event_data, aggregator, idx)
-
-            if filtered_values.ndim == 1:
-                filtered_values = filtered_values.reshape(-1, 1)
-            elif filtered_values.ndim != 2:
-                self.logger.warning(
-                    f"Unexpected array dimension for '{branch_name}' in aggregator {idx}"
-                )
-                return self._create_zero_aggregator(event_data, aggregator, idx)
-
-            processed_feature_segments.append(filtered_values)
-
-        if not processed_feature_segments:
-            self.logger.warning(f"No feature segments collected for aggregator {idx}")
-            return self._create_zero_aggregator(event_data, aggregator, idx)
-
-        # Get num_cols per segment
-        num_cols_per_segment = [
-            seg.shape[1] if seg.ndim == 2 else 1 for seg in processed_feature_segments
-        ]
-
-        # Stack features horizontally
-        try:
-            features = np.hstack(processed_feature_segments)
-        except ValueError as e:
-            self.logger.error(f"Error during np.hstack in aggregator {idx}: {e}")
-            return self._create_zero_aggregator(event_data, aggregator, idx)
-
-        # Apply sorting
-        if len(sort_indices) != n_valid:
-            self.logger.warning(f"Sort indices length mismatch in aggregator {idx}")
-            return self._create_zero_aggregator(event_data, aggregator, idx)
-
-        try:
-            sort_indices = np.asarray(sort_indices, dtype=int)
-            sorted_features = features[sort_indices]
-        except (IndexError, Exception) as e:
-            self.logger.error(f"Error applying sort_indices in aggregator {idx}: {e}")
-            return self._create_zero_aggregator(event_data, aggregator, idx)
-
-        # Handle length requirements (padding/truncation)
-        num_selected_tracks = sorted_features.shape[0]
-        num_features_per_track = sorted_features.shape[1]
-
-        # Capture clipped features for histogram
-        if num_selected_tracks > aggregator.max_length:
-            clipped_features_for_hist = sorted_features[: aggregator.max_length, :]
-            clipped_num_tracks = aggregator.max_length
-            final_features = clipped_features_for_hist.copy()
-        elif num_selected_tracks < aggregator.max_length:
-            clipped_features_for_hist = sorted_features.copy()
-            clipped_num_tracks = num_selected_tracks
-            # Pad with zeros
-            num_padding_tracks = aggregator.max_length - num_selected_tracks
-            padding = np.zeros(
-                (num_padding_tracks, num_features_per_track),
-                dtype=sorted_features.dtype,
-            )
-            final_features = np.vstack([sorted_features, padding])
-        else:
-            clipped_features_for_hist = sorted_features.copy()
-            clipped_num_tracks = num_selected_tracks
-            final_features = sorted_features
-
-        # Build input_branch_details
-        input_branch_details = []
-        for i, selector in enumerate(aggregator.input_branches):
-            input_branch_details.append(
-                {
-                    "name": selector.branch.name,
-                    "num_output_cols": num_cols_per_segment[i],
-                }
-            )
-
-        # Prepare histogram data
-        hist_data = {
-            "clipped_features": clipped_features_for_hist,
-            "clipped_num_tracks": clipped_num_tracks,
-            "num_cols_per_segment": num_cols_per_segment,
-        }
-
-        return final_features, input_branch_details, n_valid, hist_data
-
-    def _create_zero_aggregator(
-        self,
-        event_data: dict[str, np.ndarray],
-        aggregator: PhysliteFeatureArrayAggregator,
-        idx: int,
-    ) -> tuple[np.ndarray, list[dict], int, None]:
-        """
-        Create a zero-filled aggregator result with correct shape.
-
-        Returns:
-            - zero_array: (max_length, total_features) filled with zeros
-            - input_branch_details: List of branch detail dicts
-            - n_valid_elements: 0 (no valid elements for failed aggregator)
-            - hist_data: None (no histogram data for failed aggregator)
-        """
-        total_features = 0
-        input_branch_details = []
-
-        for selector in aggregator.input_branches:
-            branch_name = selector.branch.name
-
-            # Determine actual column count by conversion
-            try:
-                sample_data = event_data.get(branch_name)
-                if sample_data is not None:
-                    converted_sample = self._convert_stl_vector_array(
-                        branch_name, sample_data
-                    )
-                    if converted_sample.ndim == 1:
-                        num_cols = 1
-                    elif converted_sample.ndim == 2:
-                        num_cols = converted_sample.shape[1]
-                    else:
-                        num_cols = 1
-                else:
-                    num_cols = 1
-            except Exception:
-                num_cols = 1
-
-            total_features += num_cols
-            input_branch_details.append(
-                {
-                    "name": selector.branch.name,
-                    "num_output_cols": num_cols,
-                }
-            )
-
-        # Create zero-filled array with correct shape
-        zero_array = np.zeros((aggregator.max_length, total_features), dtype=np.float32)
-
-        return zero_array, input_branch_details, 0, None
-
-    def _process_data(
+    def process_data(
         self,
         task_config: TaskConfig,
         run_number: Optional[str] = None,
@@ -953,7 +170,9 @@ class PhysliteFeatureProcessor:
         processed_labels = []
 
         # Collect all initially required branch names (including derived ones)
-        initially_required_branches = self.get_required_branches(task_config)
+        initially_required_branches = self.event_processor.get_required_branches(
+            task_config
+        )
         self.logger.info(
             f"Initially required branches (incl. derived): {initially_required_branches}"
         )
@@ -1118,13 +337,6 @@ class PhysliteFeatureProcessor:
                                     "Encountered batch dictionary with no arrays inside. Skipping."
                                 )
                                 continue
-                            except KeyError:
-                                # Should not happen if StopIteration doesn't, but defensive
-                                self.logger.error(
-                                    "Internal error accessing first key in non-empty batch. Skipping."
-                                )
-                                continue
-
                             if num_events_in_batch == 0:
                                 self.logger.debug("Skipping batch with 0 events.")
                                 continue
@@ -1138,63 +350,18 @@ class PhysliteFeatureProcessor:
                                     for branch_name in branches_to_read_in_tree
                                     if branch_name in arrays  # Double check presence
                                 }
-                                # Skip if somehow event data is empty (shouldn't happen with checks above)
+                                # Skip if somehow event data is empty
                                 if not raw_event_data:
+                                    self.logger.warning(
+                                        f"Skipping event {evt_idx} in batch {catalog_idx} because it has no data."
+                                    )
                                     continue
 
                                 # --- Calculate Derived Features ---
-                                processed_event_data = (
-                                    raw_event_data.copy()
-                                )  # Start with real data
-                                calculation_failed = False
-                                for derived_name in derived_features_requested:
-                                    derived_feature_def = get_derived_feature(
-                                        derived_name
-                                    )
-                                    if not derived_feature_def:
-                                        continue  # Should not happen
-
-                                    # Check if all dependencies were read successfully for this event
-                                    dependencies_present = all(
-                                        dep in raw_event_data
-                                        for dep in derived_feature_def.dependencies
-                                    )
-
-                                    if dependencies_present:
-                                        try:
-                                            # Prepare dependency data for calculation
-                                            dependency_values = {
-                                                dep: raw_event_data[dep]
-                                                for dep in derived_feature_def.dependencies
-                                            }
-                                            # Calculate and add to the processed data
-                                            calculated_value = (
-                                                derived_feature_def.calculate(
-                                                    dependency_values
-                                                )
-                                            )
-                                            processed_event_data[derived_name] = (
-                                                calculated_value
-                                            )
-                                        except Exception as calc_e:
-                                            self.logger.error(
-                                                f"Error calculating derived feature '{derived_name}' for event {evt_idx} in batch: {calc_e}"
-                                            )
-                                            calculation_failed = True
-                                            break  # Stop processing derived features for this event
-                                    else:
-                                        missing_deps = [
-                                            dep
-                                            for dep in derived_feature_def.dependencies
-                                            if dep not in raw_event_data
-                                        ]
-                                        self.logger.warning(
-                                            f"Cannot calculate derived feature '{derived_name}' due to missing dependencies: {missing_deps}. Skipping for this event."
-                                        )
-                                        calculation_failed = True
-                                        break  # Stop processing derived features for this event
-
-                                if calculation_failed:
+                                processed_event_data = self._calculate_derived_features(
+                                    raw_event_data, derived_features_requested, evt_idx
+                                )
+                                if processed_event_data is None:
                                     continue  # Skip this event entirely if any derived feature calculation failed
 
                                 # --- Determine if we need more zero-bias samples ---
@@ -1204,49 +371,49 @@ class PhysliteFeatureProcessor:
                                     < samples_per_catalog
                                 )
 
-                                # --- Process Event (using data with derived features added) ---
-                                result = self._process_event(
-                                    processed_event_data,
-                                    task_config,
-                                    plotting_enabled,
-                                    need_more_zero_bias_samples,
-                                )
-
-                                # --- Handle zero-bias data collection (before filter check) ---
-                                if (
-                                    plotting_enabled
-                                    and current_catalog_zero_bias_count
-                                    < samples_per_catalog
-                                ):
-                                    # Collect TRUE zero-bias data using dedicated method that bypasses ALL filtering
-                                    zero_bias_result = self._process_event_zero_bias(
+                                # --- Process Event (unified method handles both filtered and zero-bias data) ---
+                                result, passed_filters = (
+                                    self.event_processor.process_event(
                                         processed_event_data,
                                         task_config,
+                                        plotting_enabled,
+                                        need_more_zero_bias_samples,
                                     )
+                                )
 
-                                    if zero_bias_result is not None:
+                                # --- Handle data collection based on result and filter status ---
+                                if result is not None:
+                                    # For zero-bias plotting: collect data when filters failed but we need zero-bias samples
+                                    if (
+                                        not passed_filters
+                                        and plotting_enabled
+                                        and current_catalog_zero_bias_count
+                                        < samples_per_catalog
+                                    ):
                                         # Accumulate zero-bias data
-                                        for name, value in zero_bias_result[
+                                        for name, value in result[
                                             "scalar_features"
                                         ].items():
                                             zero_bias_scalar_features[name].append(
                                                 value
                                             )
 
-                                        for (
-                                            agg_key,
-                                            agg_data_with_plot_names,
-                                        ) in zero_bias_result[
+                                        for agg_key, agg_data_with_plot_names in result[
                                             "aggregated_features"
                                         ].items():
                                             zero_bias_aggregated_features[
                                                 agg_key
                                             ].append(agg_data_with_plot_names)
 
-                                        # Append num_tracks_for_plot for zero-bias
-                                        num_tracks = zero_bias_result.get(
-                                            "num_tracks_for_plot"
+                                        # Get first aggregator's track count for zero-bias
+                                        first_agg_key = next(
+                                            iter(result["aggregated_features"].keys()),
+                                            None,
                                         )
+                                        if first_agg_key:
+                                            num_tracks = result["aggregated_features"][
+                                                first_agg_key
+                                            ].get("n_valid_elements")
                                         if num_tracks is not None:
                                             zero_bias_event_n_tracks_list.append(
                                                 num_tracks
@@ -1255,21 +422,23 @@ class PhysliteFeatureProcessor:
                                         current_catalog_zero_bias_count += 1
                                         zero_bias_samples_count += 1
 
-                                # --- Handle post-selection data collection (only if event passed filters) ---
-                                if result is not None:
-                                    # Store the result for dataset creation
-                                    # Correctly extract only the arrays for the dataset
-                                    input_features_for_dataset = {
-                                        "scalar_features": result["scalar_features"],
-                                        "aggregated_features": {
-                                            agg_key: agg_data[
-                                                "array"
-                                            ]  # Ensure only array is stored for dataset
-                                            for agg_key, agg_data in result[
-                                                "aggregated_features"
-                                            ].items()
-                                        },
-                                    }
+                                    # For filtered data: collect for dataset creation when filters passed
+                                    if passed_filters:
+                                        # Store the result for dataset creation
+                                        # Correctly extract only the arrays for the dataset
+                                        input_features_for_dataset = {
+                                            "scalar_features": result[
+                                                "scalar_features"
+                                            ],
+                                            "aggregated_features": {
+                                                agg_key: agg_data[
+                                                    "array"
+                                                ]  # Ensure only array is stored for dataset
+                                                for agg_key, agg_data in result[
+                                                    "aggregated_features"
+                                                ].items()
+                                            },
+                                        }
                                     # Process labels similarly for the dataset
                                     label_features_for_dataset = []
                                     for label_set in result["label_features"]:
@@ -1308,17 +477,6 @@ class PhysliteFeatureProcessor:
 
                                     catalog_stats["processed"] += 1
                                     processed_events_in_catalog += 1
-
-                                    # Check event limit for this catalog
-                                    if (
-                                        event_limit is not None
-                                        and processed_events_in_catalog >= event_limit
-                                    ):
-                                        self.logger.info(
-                                            f"Reached event limit of {event_limit} for catalog {catalog_idx + 1}. Stopping processing of this catalog."
-                                        )
-                                        catalog_event_limit_reached = True
-                                        break  # Exit the event loop for this catalog
 
                                     # --- Accumulate post-selection data for plotting ---
                                     if (
@@ -1394,8 +552,8 @@ class PhysliteFeatureProcessor:
                                                         num_tracks
                                                     )
 
-                                        current_catalog_samples_count += 1
-                                        overall_plot_samples_count += 1
+                                    current_catalog_samples_count += 1
+                                    overall_plot_samples_count += 1
 
                                     # Update feature statistics
                                     # Note: This might need adjustment if derived features impact how stats are counted
@@ -1431,6 +589,17 @@ class PhysliteFeatureProcessor:
                                                     stats["total_features"] += np.sum(
                                                         first_aggregator != 0
                                                     )
+
+                                    # Check event limit for this catalog
+                                    if (
+                                        event_limit is not None
+                                        and processed_events_in_catalog >= event_limit
+                                    ):
+                                        self.logger.info(
+                                            f"Reached event limit of {event_limit} for catalog {catalog_idx + 1}. Stopping processing of this catalog."
+                                        )
+                                        catalog_event_limit_reached = True
+                                        break  # Exit the event loop for this catalog
 
                         except Exception as e:
                             # General error handling for the batch processing
@@ -1498,321 +667,6 @@ class PhysliteFeatureProcessor:
             )
 
         # --- Generate and Save Dual Histogram Data (Zero-bias + Post-selection) ---
-        # Helper function to generate histogram data for a dataset
-        def generate_histogram_data(
-            scalar_features_dict,
-            aggregated_features_dict,
-            event_n_tracks_list,
-            overall_samples_count,
-            data_type_name,
-        ):
-            if overall_samples_count == 0:
-                return None
-
-            histogram_data = {}
-
-            # Load existing bin edges metadata if available (for coordinated binning)
-            existing_bin_edges = None
-            if bin_edges_metadata_path:
-                existing_bin_edges = self._load_bin_edges_metadata(
-                    bin_edges_metadata_path
-                )
-
-            # Add metadata including event count for legend display
-            histogram_data["_metadata"] = {
-                "total_events": int(stats["total_events"]),
-                "total_processed_events": int(stats["processed_events"]),
-                "total_features": int(stats["total_features"]),
-                "processing_time": float(stats["processing_time"]),
-                "total_sampled_events": int(overall_samples_count),
-                "signal_key": signal_key if signal_key else "background",
-                "run_number": run_number
-                if run_number and not return_histogram_data
-                else None,
-                "data_type": data_type_name,  # "zero_bias" (raw detector) or "post_selection" (clipped, before padding)
-            }
-
-            # Details for N_Tracks_per_Event
-            if event_n_tracks_list:
-                counts_arr = np.array(event_n_tracks_list)
-                if counts_arr.size > 0:
-                    if (
-                        existing_bin_edges
-                        and "N_Tracks_per_Event" in existing_bin_edges
-                    ):
-                        # Use existing bin edges, filter out-of-range data
-                        stored_edges = np.array(
-                            existing_bin_edges["N_Tracks_per_Event"]
-                        )
-                        filtered_data = self._check_data_range_compatibility(
-                            counts_arr, stored_edges, "N_Tracks_per_Event"
-                        )
-                        counts, bin_edges = np.histogram(
-                            filtered_data, bins=stored_edges, density=True
-                        )
-                    else:
-                        # Create new bin edges
-                        min_val = int(np.min(counts_arr))
-                        max_val = int(np.max(counts_arr))
-                        if min_val == max_val:
-                            bin_edges = np.array([min_val - 0.5, min_val + 0.5])
-                        else:
-                            bin_edges = np.arange(min_val - 0.5, max_val + 1.5, 1)
-                        counts, _ = np.histogram(
-                            counts_arr, bins=bin_edges, density=True
-                        )
-                    histogram_data["N_Tracks_per_Event"] = {
-                        "counts": counts.tolist(),
-                        "bin_edges": bin_edges.tolist(),
-                    }
-                else:
-                    histogram_data["N_Tracks_per_Event"] = {
-                        "counts": [],
-                        "bin_edges": [],
-                    }
-
-            # Details for Scalar Features
-            for name, values_list in scalar_features_dict.items():
-                values_arr = np.array(values_list)
-                if values_arr.size > 0:
-                    if existing_bin_edges and name in existing_bin_edges:
-                        # Use existing bin edges, filter out-of-range data
-                        stored_edges = np.array(existing_bin_edges[name])
-                        filtered_data = self._check_data_range_compatibility(
-                            values_arr, stored_edges, name
-                        )
-                        counts, bin_edges = np.histogram(
-                            filtered_data, bins=stored_edges, density=True
-                        )
-                    else:
-                        # Create new bin edges using wider percentiles to reduce harsh cutoffs
-                        p0_1, p99_9 = np.percentile(values_arr, [0.1, 99.9])
-                        if p0_1 == p99_9:
-                            p0_1 -= 0.5
-                            p99_9 += 0.5
-                        plot_range = (p0_1, p99_9)
-                        counts, bin_edges = np.histogram(
-                            values_arr, bins=100, range=plot_range, density=True
-                        )
-
-                    histogram_data[name] = {
-                        "counts": counts.tolist(),
-                        "bin_edges": bin_edges.tolist(),
-                    }
-                else:
-                    histogram_data[name] = {"counts": [], "bin_edges": []}
-
-            # Details for Aggregated Features
-            for agg_key, arrays_data_list in aggregated_features_dict.items():
-                if arrays_data_list:
-                    plot_feature_names = arrays_data_list[0].get(
-                        "plot_feature_names", []
-                    )
-                    actual_arrays_to_stack = [
-                        item["array"]
-                        for item in arrays_data_list
-                        if "array" in item and item["array"] is not None
-                    ]
-
-                    if not actual_arrays_to_stack:
-                        # If no arrays, store empty for all expected features
-                        for feature_name_val in plot_feature_names:
-                            histogram_data[feature_name_val] = {
-                                "counts": [],
-                                "bin_edges": [],
-                            }
-                        continue
-
-                    # NEW APPROACH: Handle variable-shaped arrays by collecting track features directly
-                    try:
-                        # Check if all arrays have the same shape for the original stacking approach
-                        first_shape = actual_arrays_to_stack[0].shape
-                        shapes_consistent = all(
-                            a.shape == first_shape for a in actual_arrays_to_stack
-                        )
-
-                        if shapes_consistent:
-                            # Original approach: all arrays have same shape, can stack normally
-                            stacked_array = np.stack(actual_arrays_to_stack, axis=0)
-                            n_features_in_agg = stacked_array.shape[
-                                2
-                            ]  # Features along 3rd axis
-
-                            # Ensure plot_feature_names matches n_features_in_agg
-                            if len(plot_feature_names) != n_features_in_agg:
-                                self.logger.warning(
-                                    f"Mismatch plot_feature_names for agg '{agg_key}' ({len(plot_feature_names)}) vs actual features ({n_features_in_agg}). Using generic."
-                                )
-                                effective_plot_names = [
-                                    f"{agg_key}_Feature_{k}"
-                                    for k in range(n_features_in_agg)
-                                ]
-                            else:
-                                effective_plot_names = plot_feature_names
-
-                            for k in range(n_features_in_agg):
-                                feature_name = effective_plot_names[k]
-                                data_slice = stacked_array[
-                                    :, :, k
-                                ]  # All events, all tracks for feature k
-                                mask = data_slice != 0  # Considering 0 as padding
-                                valid_data = data_slice[mask]
-
-                                if valid_data.size > 0:
-                                    if (
-                                        existing_bin_edges
-                                        and feature_name in existing_bin_edges
-                                    ):
-                                        # Use existing bin edges, filter out-of-range data
-                                        stored_edges = np.array(
-                                            existing_bin_edges[feature_name]
-                                        )
-                                        filtered_data = (
-                                            self._check_data_range_compatibility(
-                                                valid_data, stored_edges, feature_name
-                                            )
-                                        )
-                                        counts, bin_edges = np.histogram(
-                                            filtered_data,
-                                            bins=stored_edges,
-                                            density=True,
-                                        )
-                                    else:
-                                        # Create new bin edges using wider percentiles to reduce harsh cutoffs
-                                        p0_1, p99_9 = np.percentile(
-                                            valid_data, [0.1, 99.9]
-                                        )
-                                        if p0_1 == p99_9:
-                                            p0_1 -= 0.5
-                                            p99_9 += 0.5
-                                        plot_range = (p0_1, p99_9)
-                                        counts, bin_edges = np.histogram(
-                                            valid_data,
-                                            bins=100,
-                                            range=plot_range,
-                                            density=True,
-                                        )
-
-                                    histogram_data[feature_name] = {
-                                        "counts": counts.tolist(),
-                                        "bin_edges": bin_edges.tolist(),
-                                    }
-                                else:
-                                    histogram_data[feature_name] = {
-                                        "counts": [],
-                                        "bin_edges": [],
-                                    }
-                        else:
-                            # NEW APPROACH: Variable shapes - collect track features directly
-                            self.logger.debug(
-                                f"Variable array shapes for aggregator '{agg_key}', using track-by-track collection"
-                            )
-
-                            # Determine number of features from the first array
-                            if (
-                                len(actual_arrays_to_stack) > 0
-                                and actual_arrays_to_stack[0].size > 0
-                            ):
-                                n_features_in_agg = (
-                                    actual_arrays_to_stack[0].shape[1]
-                                    if actual_arrays_to_stack[0].ndim > 1
-                                    else 1
-                                )
-                            else:
-                                n_features_in_agg = (
-                                    len(plot_feature_names) if plot_feature_names else 0
-                                )
-
-                            # Ensure plot_feature_names matches n_features_in_agg
-                            if len(plot_feature_names) != n_features_in_agg:
-                                self.logger.warning(
-                                    f"Mismatch plot_feature_names for agg '{agg_key}' ({len(plot_feature_names)}) vs actual features ({n_features_in_agg}). Using generic."
-                                )
-                                effective_plot_names = [
-                                    f"{agg_key}_Feature_{k}"
-                                    for k in range(n_features_in_agg)
-                                ]
-                            else:
-                                effective_plot_names = plot_feature_names
-
-                            # Collect all track features by concatenating across events
-                            for k in range(n_features_in_agg):
-                                feature_name = effective_plot_names[k]
-                                all_track_values = []
-
-                                for array in actual_arrays_to_stack:
-                                    if array.size > 0 and array.ndim >= 2:
-                                        # Extract feature k from all tracks in this event
-                                        feature_values = array[:, k]
-                                        # Remove padding (zeros) and collect valid track values
-                                        valid_tracks = feature_values[
-                                            feature_values != 0
-                                        ]
-                                        all_track_values.extend(valid_tracks)
-                                    elif array.size > 0 and array.ndim == 1 and k == 0:
-                                        # Handle 1D case for single feature
-                                        valid_tracks = array[array != 0]
-                                        all_track_values.extend(valid_tracks)
-
-                                if all_track_values:
-                                    valid_data = np.array(all_track_values)
-
-                                    if (
-                                        existing_bin_edges
-                                        and feature_name in existing_bin_edges
-                                    ):
-                                        # Use existing bin edges, filter out-of-range data
-                                        stored_edges = np.array(
-                                            existing_bin_edges[feature_name]
-                                        )
-                                        filtered_data = (
-                                            self._check_data_range_compatibility(
-                                                valid_data, stored_edges, feature_name
-                                            )
-                                        )
-                                        counts, bin_edges = np.histogram(
-                                            filtered_data,
-                                            bins=stored_edges,
-                                            density=True,
-                                        )
-                                    else:
-                                        # Create new bin edges using wider percentiles to reduce harsh cutoffs
-                                        p0_1, p99_9 = np.percentile(
-                                            valid_data, [0.1, 99.9]
-                                        )
-                                        if p0_1 == p99_9:
-                                            p0_1 -= 0.5
-                                            p99_9 += 0.5
-                                        plot_range = (p0_1, p99_9)
-                                        counts, bin_edges = np.histogram(
-                                            valid_data,
-                                            bins=100,
-                                            range=plot_range,
-                                            density=True,
-                                        )
-
-                                    histogram_data[feature_name] = {
-                                        "counts": counts.tolist(),
-                                        "bin_edges": bin_edges.tolist(),
-                                    }
-                                else:
-                                    histogram_data[feature_name] = {
-                                        "counts": [],
-                                        "bin_edges": [],
-                                    }
-
-                    except Exception as e_agg_hist:
-                        self.logger.error(
-                            f"Error generating histogram data for aggregated feature in {agg_key}: {e_agg_hist}"
-                        )
-                        # Store empty for all features of this problematic aggregator
-                        for feature_name_val in plot_feature_names:
-                            histogram_data[feature_name_val] = {
-                                "counts": [],
-                                "bin_edges": [],
-                            }
-
-            return histogram_data
 
         # Generate post-selection histogram data (existing behavior)
         if (
@@ -1824,12 +678,17 @@ class PhysliteFeatureProcessor:
                 f"Preparing post-selection histogram data (clipped tracks, before padding) from {overall_plot_samples_count} sampled events for {plot_output}"
             )
 
-            raw_histogram_data_for_file = generate_histogram_data(
+            raw_histogram_data_for_file = self._generate_histogram_data(
                 sampled_scalar_features,
                 sampled_aggregated_features,
                 sampled_event_n_tracks_list,
                 overall_plot_samples_count,
                 "post_selection",
+                bin_edges_metadata_path,
+                stats,
+                signal_key,
+                run_number,
+                return_histogram_data,
             )
 
             # Collect new bin edges that will be saved
@@ -1872,12 +731,17 @@ class PhysliteFeatureProcessor:
                 f"Preparing zero-bias histogram data (truly unfiltered detector data) from {zero_bias_samples_count} sampled events for {plot_output}"
             )
 
-            zero_bias_histogram_data_for_file = generate_histogram_data(
+            zero_bias_histogram_data_for_file = self._generate_histogram_data(
                 zero_bias_scalar_features,
                 zero_bias_aggregated_features,
                 zero_bias_event_n_tracks_list,
                 zero_bias_samples_count,
                 "zero_bias",
+                bin_edges_metadata_path,
+                stats,
+                signal_key,
+                run_number,
+                return_histogram_data,
             )
 
             # Save the zero-bias histogram data to plot_data folder or return it
@@ -1958,7 +822,7 @@ class PhysliteFeatureProcessor:
             histogram_data_to_return,
         )
 
-    def _compute_dataset_normalization(
+    def compute_dataset_normalization(
         self,
         inputs: list[dict[str, dict[str, np.ndarray]]],
         labels: Optional[list[list[dict[str, dict[str, np.ndarray]]]]] = None,
@@ -2077,7 +941,7 @@ class PhysliteFeatureProcessor:
 
         return norm_params
 
-    def _create_normalized_dataset(
+    def create_normalized_dataset(
         self,
         features_dict: dict[str, np.ndarray],
         norm_params: dict,
@@ -2191,7 +1055,7 @@ class PhysliteFeatureProcessor:
         else:
             return tf.data.Dataset.from_tensor_slices(all_features)
 
-    def _load_features_from_group(
+    def load_features_from_group(
         self, features_group: h5py.Group
     ) -> dict[str, np.ndarray]:
         """Load features from an HDF5 group."""
@@ -2209,7 +1073,7 @@ class PhysliteFeatureProcessor:
 
         return features_dict
 
-    def _load_labels_from_group(
+    def load_labels_from_group(
         self, labels_group: h5py.Group
     ) -> dict[str, dict[str, np.ndarray]]:
         """Load labels from an HDF5 group."""
@@ -2273,6 +1137,63 @@ class PhysliteFeatureProcessor:
             return [catalog_path] if catalog_path else []
         else:
             raise ValueError("Must provide either run_number or signal_key")
+
+    def _calculate_derived_features(
+        self,
+        raw_event_data: dict[str, np.ndarray],
+        derived_features_requested: set[str],
+        evt_idx: int,
+    ) -> Optional[dict[str, np.ndarray]]:
+        """
+        Calculate derived features for an event.
+
+        Args:
+            raw_event_data: Dictionary mapping branch names to their raw values
+            derived_features_requested: Set of derived feature names to calculate
+            evt_idx: Event index (for logging)
+
+        Returns:
+            Dictionary with both raw and derived features, or None if calculation failed
+        """
+        processed_event_data = raw_event_data.copy()  # Start with real data
+
+        for derived_name in derived_features_requested:
+            derived_feature_def = get_derived_feature(derived_name)
+            if not derived_feature_def:
+                continue  # Should not happen
+
+            # Check if all dependencies were read successfully for this event
+            dependencies_present = all(
+                dep in raw_event_data for dep in derived_feature_def.dependencies
+            )
+
+            if dependencies_present:
+                try:
+                    # Prepare dependency data for calculation
+                    dependency_values = {
+                        dep: raw_event_data[dep]
+                        for dep in derived_feature_def.dependencies
+                    }
+                    # Calculate and add to the processed data
+                    calculated_value = derived_feature_def.calculate(dependency_values)
+                    processed_event_data[derived_name] = calculated_value
+                except Exception as calc_e:
+                    self.logger.error(
+                        f"Error calculating derived feature '{derived_name}' for event {evt_idx} in batch: {calc_e}"
+                    )
+                    return None  # Signal calculation failure
+            else:
+                missing_deps = [
+                    dep
+                    for dep in derived_feature_def.dependencies
+                    if dep not in raw_event_data
+                ]
+                self.logger.warning(
+                    f"Cannot calculate derived feature '{derived_name}' due to missing dependencies: {missing_deps}. Skipping for this event."
+                )
+                return None  # Signal calculation failure
+
+        return processed_event_data
 
     def _save_bin_edges_metadata(
         self, bin_edges_data: dict, metadata_path: Path
@@ -2355,167 +1276,306 @@ class PhysliteFeatureProcessor:
 
         return filtered_values
 
-    def _process_event_zero_bias(
+    def _generate_histogram_data(
         self,
-        event_data: dict[str, np.ndarray],
-        task_config: TaskConfig,
-    ) -> Optional[dict[str, np.ndarray]]:
-        """
-        Process a single event for zero-bias plotting - bypasses ALL filtering.
-        This shows the true raw detector response before any selections.
-
-        Args:
-            event_data: Dictionary mapping branch names (real and derived) to their raw values
-            task_config: TaskConfig object containing input feature definitions (filters ignored)
-
-        Returns:
-            Dictionary of raw features or None if no valid tracks exist
-        """
-        # Extract scalar features without any filtering
-        scalar_features = {}
-        if task_config.input.feature_selectors:
-            scalar_features = self._extract_selected_features(
-                event_data, task_config.input.feature_selectors
-            )
-
-        # Process aggregators without any filtering - collect ALL tracks
-        aggregated_features = {}
-        if task_config.input.feature_array_aggregators:
-            for idx, aggregator in enumerate(
-                task_config.input.feature_array_aggregators
-            ):
-                # Get all required branches for this aggregator
-                required_for_agg = set(s.branch.name for s in aggregator.input_branches)
-
-                # Check if all required branches exist
-                if not all(
-                    branch_name in event_data for branch_name in required_for_agg
-                ):
-                    missing = required_for_agg - set(event_data.keys())
-                    self.logger.debug(
-                        f"Missing branches for zero-bias aggregator {idx}: {missing}"
-                    )
-                    continue
-
-                # Get raw arrays without any length checks or filtering
-                raw_array_features = {}
-                for branch_name in required_for_agg:
-                    raw_array_features[branch_name] = event_data[branch_name]
-
-                # Convert STL vectors
-                array_features = {}
-                for branch_name in required_for_agg:
-                    converted_array = self._convert_stl_vector_array(
-                        branch_name, raw_array_features[branch_name]
-                    )
-                    array_features[branch_name] = converted_array
-
-                # Get the track count from the first array (no length requirements)
-                first_branch = list(required_for_agg)[0]
-                if first_branch in array_features:
-                    raw_track_count = len(array_features[first_branch])
-
-                    if raw_track_count == 0:
-                        continue  # Skip if no tracks at all
-
-                    # Stack features horizontally without any filtering
-                    processed_feature_segments = []
-                    for selector in aggregator.input_branches:
-                        branch_name = selector.branch.name
-                        values = array_features.get(branch_name)
-                        if values is None:
-                            continue
-
-                        # Reshape 1D to 2D if needed
-                        if values.ndim == 1:
-                            values = values.reshape(-1, 1)
-                        processed_feature_segments.append(values)
-
-                    if not processed_feature_segments:
-                        continue
-
-                    # Stack horizontally
-                    try:
-                        raw_features = np.hstack(processed_feature_segments)
-
-                        # Apply sorting if specified (but no track count limits)
-                        if aggregator.sort_by_branch:
-                            sort_branch_name = aggregator.sort_by_branch.branch.name
-                            if sort_branch_name in array_features:
-                                sort_values = array_features[sort_branch_name]
-                                if len(sort_values) == raw_track_count:
-                                    sort_indices = np.argsort(sort_values)[::-1]
-                                    raw_features = raw_features[sort_indices]
-
-                        # Create branch details for plotting
-                        num_cols_per_segment = [
-                            seg.shape[1] if seg.ndim == 2 else 1
-                            for seg in processed_feature_segments
-                        ]
-                        input_branch_details = []
-                        for i, selector in enumerate(aggregator.input_branches):
-                            input_branch_details.append(
-                                {
-                                    "name": selector.branch.name,
-                                    "num_output_cols": num_cols_per_segment[i],
-                                }
-                            )
-
-                        # Create plot feature names
-                        plot_feature_names = []
-                        for detail in input_branch_details:
-                            branch_name = detail["name"]
-                            num_output_cols = detail["num_output_cols"]
-                            custom_titles = self.custom_label_map.get(branch_name)
-
-                            if (
-                                isinstance(custom_titles, list)
-                                and len(custom_titles) == num_output_cols
-                            ):
-                                plot_feature_names.extend(custom_titles)
-                            elif (
-                                isinstance(custom_titles, str) and num_output_cols == 1
-                            ):
-                                plot_feature_names.append(custom_titles)
-                            else:  # Fallback
-                                if num_output_cols == 1:
-                                    plot_feature_names.append(branch_name)
-                                else:
-                                    plot_feature_names.extend(
-                                        [
-                                            f"{branch_name}_comp{j}"
-                                            for j in range(num_output_cols)
-                                        ]
-                                    )
-
-                        aggregated_features[f"aggregator_{idx}"] = {
-                            "array": raw_features,  # All tracks, no padding/clipping
-                            "plot_feature_names": plot_feature_names,
-                            "n_valid_elements": raw_track_count,
-                        }
-
-                    except Exception as e:
-                        self.logger.debug(
-                            f"Error processing zero-bias aggregator {idx}: {e}"
-                        )
-                        continue
-
-        # Return results if we have anything
-        if not scalar_features and not aggregated_features:
+        scalar_features_dict,
+        aggregated_features_dict,
+        event_n_tracks_list,
+        overall_samples_count,
+        data_type_name,
+        bin_edges_metadata_path,
+        stats,
+        signal_key,
+        run_number,
+        return_histogram_data,
+    ):
+        if overall_samples_count == 0:
             return None
 
-        # Set num_tracks_for_plot from first aggregator
-        num_tracks_for_plot = None
-        if aggregated_features:
-            first_agg_key = next(iter(aggregated_features.keys()))
-            num_tracks_for_plot = aggregated_features[first_agg_key].get(
-                "n_valid_elements"
-            )
+        histogram_data = {}
 
-        return {
-            "scalar_features": scalar_features,
-            "aggregated_features": aggregated_features,
-            "label_features": [],  # No labels for zero-bias
-            "num_tracks_for_plot": num_tracks_for_plot,
-            "passed_filters": False,  # Zero-bias data didn't pass filters by definition
+        # Load existing bin edges metadata if available (for coordinated binning)
+        existing_bin_edges = None
+        if bin_edges_metadata_path:
+            existing_bin_edges = self._load_bin_edges_metadata(bin_edges_metadata_path)
+
+        # Add metadata including event count for legend display
+        histogram_data["_metadata"] = {
+            "total_events": int(stats["total_events"]),
+            "total_processed_events": int(stats["processed_events"]),
+            "total_features": int(stats["total_features"]),
+            "processing_time": float(stats["processing_time"]),
+            "total_sampled_events": int(overall_samples_count),
+            "signal_key": signal_key if signal_key else "background",
+            "run_number": run_number
+            if run_number and not return_histogram_data
+            else None,
+            "data_type": data_type_name,  # "zero_bias" (raw detector) or "post_selection" (clipped, before padding)
         }
+
+        # Details for N_Tracks_per_Event
+        if event_n_tracks_list:
+            counts_arr = np.array(event_n_tracks_list)
+            if counts_arr.size > 0:
+                if existing_bin_edges and "N_Tracks_per_Event" in existing_bin_edges:
+                    # Use existing bin edges, filter out-of-range data
+                    stored_edges = np.array(existing_bin_edges["N_Tracks_per_Event"])
+                    filtered_data = self._check_data_range_compatibility(
+                        counts_arr, stored_edges, "N_Tracks_per_Event"
+                    )
+                    counts, bin_edges = np.histogram(
+                        filtered_data, bins=stored_edges, density=True
+                    )
+                else:
+                    # Create new bin edges
+                    min_val = int(np.min(counts_arr))
+                    max_val = int(np.max(counts_arr))
+                    if min_val == max_val:
+                        bin_edges = np.array([min_val - 0.5, min_val + 0.5])
+                    else:
+                        bin_edges = np.arange(min_val - 0.5, max_val + 1.5, 1)
+                    counts, _ = np.histogram(counts_arr, bins=bin_edges, density=True)
+                histogram_data["N_Tracks_per_Event"] = {
+                    "counts": counts.tolist(),
+                    "bin_edges": bin_edges.tolist(),
+                }
+            else:
+                histogram_data["N_Tracks_per_Event"] = {
+                    "counts": [],
+                    "bin_edges": [],
+                }
+
+        # Details for Scalar Features
+        for name, values_list in scalar_features_dict.items():
+            values_arr = np.array(values_list)
+            if values_arr.size > 0:
+                if existing_bin_edges and name in existing_bin_edges:
+                    # Use existing bin edges, filter out-of-range data
+                    stored_edges = np.array(existing_bin_edges[name])
+                    filtered_data = self._check_data_range_compatibility(
+                        values_arr, stored_edges, name
+                    )
+                    counts, bin_edges = np.histogram(
+                        filtered_data, bins=stored_edges, density=True
+                    )
+                else:
+                    # Create new bin edges using wider percentiles to reduce harsh cutoffs
+                    p0_1, p99_9 = np.percentile(values_arr, [0.1, 99.9])
+                    if p0_1 == p99_9:
+                        p0_1 -= 0.5
+                        p99_9 += 0.5
+                    plot_range = (p0_1, p99_9)
+                    counts, bin_edges = np.histogram(
+                        values_arr, bins=100, range=plot_range, density=True
+                    )
+
+                histogram_data[name] = {
+                    "counts": counts.tolist(),
+                    "bin_edges": bin_edges.tolist(),
+                }
+            else:
+                histogram_data[name] = {"counts": [], "bin_edges": []}
+
+        # Details for Aggregated Features
+        for agg_key, arrays_data_list in aggregated_features_dict.items():
+            if arrays_data_list:
+                plot_feature_names = arrays_data_list[0].get("plot_feature_names", [])
+                actual_arrays_to_stack = [
+                    item["array"]
+                    for item in arrays_data_list
+                    if "array" in item and item["array"] is not None
+                ]
+
+                if not actual_arrays_to_stack:
+                    # If no arrays, store empty for all expected features
+                    for feature_name_val in plot_feature_names:
+                        histogram_data[feature_name_val] = {
+                            "counts": [],
+                            "bin_edges": [],
+                        }
+                    continue
+
+                # NEW APPROACH: Handle variable-shaped arrays by collecting track features directly
+                try:
+                    # Check if all arrays have the same shape for the original stacking approach
+                    first_shape = actual_arrays_to_stack[0].shape
+                    shapes_consistent = all(
+                        a.shape == first_shape for a in actual_arrays_to_stack
+                    )
+
+                    if shapes_consistent:
+                        # Original approach: all arrays have same shape, can stack normally
+                        stacked_array = np.stack(actual_arrays_to_stack, axis=0)
+                        n_features_in_agg = stacked_array.shape[
+                            2
+                        ]  # Features along 3rd axis
+
+                        # Ensure plot_feature_names matches n_features_in_agg
+                        if len(plot_feature_names) != n_features_in_agg:
+                            self.logger.warning(
+                                f"Mismatch plot_feature_names for agg '{agg_key}' ({len(plot_feature_names)}) vs actual features ({n_features_in_agg}). Using generic."
+                            )
+                            effective_plot_names = [
+                                f"{agg_key}_Feature_{k}"
+                                for k in range(n_features_in_agg)
+                            ]
+                        else:
+                            effective_plot_names = plot_feature_names
+
+                        for k in range(n_features_in_agg):
+                            feature_name = effective_plot_names[k]
+                            data_slice = stacked_array[
+                                :, :, k
+                            ]  # All events, all tracks for feature k
+                            mask = data_slice != 0  # Considering 0 as padding
+                            valid_data = data_slice[mask]
+
+                            if valid_data.size > 0:
+                                if (
+                                    existing_bin_edges
+                                    and feature_name in existing_bin_edges
+                                ):
+                                    # Use existing bin edges, filter out-of-range data
+                                    stored_edges = np.array(
+                                        existing_bin_edges[feature_name]
+                                    )
+                                    filtered_data = (
+                                        self._check_data_range_compatibility(
+                                            valid_data, stored_edges, feature_name
+                                        )
+                                    )
+                                    counts, bin_edges = np.histogram(
+                                        filtered_data,
+                                        bins=stored_edges,
+                                        density=True,
+                                    )
+                                else:
+                                    # Create new bin edges using wider percentiles to reduce harsh cutoffs
+                                    p0_1, p99_9 = np.percentile(valid_data, [0.1, 99.9])
+                                    if p0_1 == p99_9:
+                                        p0_1 -= 0.5
+                                        p99_9 += 0.5
+                                    plot_range = (p0_1, p99_9)
+                                    counts, bin_edges = np.histogram(
+                                        valid_data,
+                                        bins=100,
+                                        range=plot_range,
+                                        density=True,
+                                    )
+
+                                histogram_data[feature_name] = {
+                                    "counts": counts.tolist(),
+                                    "bin_edges": bin_edges.tolist(),
+                                }
+                            else:
+                                histogram_data[feature_name] = {
+                                    "counts": [],
+                                    "bin_edges": [],
+                                }
+                    else:
+                        # NEW APPROACH: Variable shapes - collect track features directly
+                        self.logger.debug(
+                            f"Variable array shapes for aggregator '{agg_key}', using track-by-track collection"
+                        )
+
+                        # Determine number of features from the first array
+                        if (
+                            len(actual_arrays_to_stack) > 0
+                            and actual_arrays_to_stack[0].size > 0
+                        ):
+                            n_features_in_agg = (
+                                actual_arrays_to_stack[0].shape[1]
+                                if actual_arrays_to_stack[0].ndim > 1
+                                else 1
+                            )
+                        else:
+                            n_features_in_agg = (
+                                len(plot_feature_names) if plot_feature_names else 0
+                            )
+
+                        # Ensure plot_feature_names matches n_features_in_agg
+                        if len(plot_feature_names) != n_features_in_agg:
+                            self.logger.warning(
+                                f"Mismatch plot_feature_names for agg '{agg_key}' ({len(plot_feature_names)}) vs actual features ({n_features_in_agg}). Using generic."
+                            )
+                            effective_plot_names = [
+                                f"{agg_key}_Feature_{k}"
+                                for k in range(n_features_in_agg)
+                            ]
+                        else:
+                            effective_plot_names = plot_feature_names
+
+                        # Collect all track features by concatenating across events
+                        for k in range(n_features_in_agg):
+                            feature_name = effective_plot_names[k]
+                            all_track_values = []
+
+                            for array in actual_arrays_to_stack:
+                                if array.size > 0 and array.ndim >= 2:
+                                    # Extract feature k from all tracks in this event
+                                    feature_values = array[:, k]
+                                    # Remove padding (zeros) and collect valid track values
+                                    valid_tracks = feature_values[feature_values != 0]
+                                    all_track_values.extend(valid_tracks)
+                                elif array.size > 0 and array.ndim == 1 and k == 0:
+                                    # Handle 1D case for single feature
+                                    valid_tracks = array[array != 0]
+                                    all_track_values.extend(valid_tracks)
+
+                            if all_track_values:
+                                valid_data = np.array(all_track_values)
+
+                                if (
+                                    existing_bin_edges
+                                    and feature_name in existing_bin_edges
+                                ):
+                                    # Use existing bin edges, filter out-of-range data
+                                    stored_edges = np.array(
+                                        existing_bin_edges[feature_name]
+                                    )
+                                    filtered_data = (
+                                        self._check_data_range_compatibility(
+                                            valid_data, stored_edges, feature_name
+                                        )
+                                    )
+                                    counts, bin_edges = np.histogram(
+                                        filtered_data,
+                                        bins=stored_edges,
+                                        density=True,
+                                    )
+                                else:
+                                    # Create new bin edges using wider percentiles to reduce harsh cutoffs
+                                    p0_1, p99_9 = np.percentile(valid_data, [0.1, 99.9])
+                                    if p0_1 == p99_9:
+                                        p0_1 -= 0.5
+                                        p99_9 += 0.5
+                                    plot_range = (p0_1, p99_9)
+                                    counts, bin_edges = np.histogram(
+                                        valid_data,
+                                        bins=100,
+                                        range=plot_range,
+                                        density=True,
+                                    )
+
+                                histogram_data[feature_name] = {
+                                    "counts": counts.tolist(),
+                                    "bin_edges": bin_edges.tolist(),
+                                }
+                            else:
+                                histogram_data[feature_name] = {
+                                    "counts": [],
+                                    "bin_edges": [],
+                                }
+
+                except Exception as e_agg_hist:
+                    self.logger.error(
+                        f"Error generating histogram data for aggregated feature in {agg_key}: {e_agg_hist}"
+                    )
+                    # Store empty for all features of this problematic aggregator
+                    for feature_name_val in plot_feature_names:
+                        histogram_data[feature_name_val] = {
+                            "counts": [],
+                            "bin_edges": [],
+                        }
+
+        return histogram_data

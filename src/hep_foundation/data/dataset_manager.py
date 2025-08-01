@@ -469,7 +469,7 @@ class DatasetManager:
             for run_number in dataset_config.run_numbers:
                 self.logger.info(f"Processing run {run_number}")
                 try:
-                    result = self.feature_processor._process_data(
+                    result = self.feature_processor.process_data(
                         task_config=dataset_config.task_config,
                         run_number=run_number,
                         catalog_limit=dataset_config.catalog_limit,
@@ -586,7 +586,7 @@ class DatasetManager:
                     )
 
                 # Compute and store normalization parameters
-                norm_params = self.feature_processor._compute_dataset_normalization(
+                norm_params = self.feature_processor.compute_dataset_normalization(
                     all_inputs, all_labels if all_labels else None
                 )
 
@@ -699,7 +699,7 @@ class DatasetManager:
                         plot_data_dir = dataset_dir / "plot_data"
                         plot_data_dir.mkdir(parents=True, exist_ok=True)
 
-                        # This plot_output is for _process_data to determine the JSON filename
+                        # This plot_output is for process_data to determine the JSON filename
                         # The actual JSON will be saved in plot_data folder
                         plot_output_for_signal_json = (
                             plots_dir / f"{signal_key}_dataset_features.png"
@@ -721,7 +721,7 @@ class DatasetManager:
 
                     # Process data for this signal type
                     # IMPORTANT: Ensure plot_distributions=dataset_config.plot_distributions
-                    # so that _process_data generates the _hist_data.json files.
+                    # so that process_data generates the _hist_data.json files.
                     # Use signal_event_limit if specified, otherwise fall back to event_limit
                     signal_event_limit_to_use = (
                         dataset_config.signal_event_limit or dataset_config.event_limit
@@ -730,7 +730,7 @@ class DatasetManager:
                         f"[SIGNAL_EVENT_LIMIT_DEBUG] signal_event_limit={dataset_config.signal_event_limit}, "
                         f"event_limit={dataset_config.event_limit}, using={signal_event_limit_to_use}"
                     )
-                    inputs, labels, stats, _ = self.feature_processor._process_data(
+                    inputs, labels, stats, _ = self.feature_processor.process_data(
                         task_config=dataset_config.task_config,
                         signal_key=signal_key,
                         event_limit=signal_event_limit_to_use,
@@ -768,7 +768,7 @@ class DatasetManager:
                         )
 
                     # Compute and store normalization parameters
-                    norm_params = self.feature_processor._compute_dataset_normalization(
+                    norm_params = self.feature_processor.compute_dataset_normalization(
                         inputs, labels if labels else None
                     )
 
@@ -1080,9 +1080,9 @@ class DatasetManager:
             Normalized TensorFlow dataset
         """
         # Load features and labels
-        features_dict = self.feature_processor._load_features_from_group(features_group)
+        features_dict = self.feature_processor.load_features_from_group(features_group)
         labels_dict = (
-            self.feature_processor._load_labels_from_group(labels_group)
+            self.feature_processor.load_labels_from_group(labels_group)
             if include_labels and labels_group is not None
             else None
         )
@@ -1104,7 +1104,7 @@ class DatasetManager:
             raise ValueError("Normalization parameters not found in HDF5 file")
 
         # Create normalized dataset
-        dataset = self.feature_processor._create_normalized_dataset(
+        dataset = self.feature_processor.create_normalized_dataset(
             features_dict, norm_params, labels_dict
         )
 
@@ -1112,40 +1112,6 @@ class DatasetManager:
             return dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
         else:
             return dataset
-
-    def _get_catalog_paths(
-        self,
-        run_number: Optional[str] = None,
-        signal_key: Optional[str] = None,
-        catalog_limit: Optional[int] = None,
-    ) -> list[Path]:
-        """Get list of catalog paths for either ATLAS data or signal data"""
-        if run_number is not None:
-            # Get ATLAS data catalogs
-            paths = []
-            for catalog_idx in range(self.atlas_manager.get_catalog_count(run_number)):
-                if catalog_limit and catalog_idx >= catalog_limit:
-                    break
-                catalog_path = self.atlas_manager.get_run_catalog_path(
-                    run_number, catalog_idx
-                )
-                if not catalog_path.exists():
-                    catalog_path = self.atlas_manager.download_run_catalog(
-                        run_number, catalog_idx
-                    )
-                if catalog_path:
-                    paths.append(catalog_path)
-            self.logger.info(f"Found {len(paths)} catalogs for run {run_number}")
-            return paths
-        elif signal_key is not None:
-            # Get signal data catalog
-            catalog_path = self.atlas_manager.get_signal_catalog_path(signal_key, 0)
-            if not catalog_path.exists():
-                catalog_path = self.atlas_manager.download_signal_catalog(signal_key, 0)
-            self.logger.info(f"Found signal catalog for {signal_key}")
-            return [catalog_path] if catalog_path else []
-        else:
-            raise ValueError("Must provide either run_number or signal_key")
 
     def load_atlas_datasets(
         self,
@@ -1182,11 +1148,11 @@ class DatasetManager:
             # Load and process dataset
             with h5py.File(self.current_dataset_path, "r") as f:
                 # Load features and labels
-                features_dict = self.feature_processor._load_features_from_group(
+                features_dict = self.feature_processor.load_features_from_group(
                     f["features"]
                 )
                 labels_dict = (
-                    self.feature_processor._load_labels_from_group(f["labels"])
+                    self.feature_processor.load_labels_from_group(f["labels"])
                     if include_labels and "labels" in f
                     else None
                 )
@@ -1196,7 +1162,7 @@ class DatasetManager:
                 n_events = next(iter(features_dict.values())).shape[0]
 
                 # Create dataset (unbatched for splitting)
-                dataset = self.feature_processor._create_normalized_dataset(
+                dataset = self.feature_processor.create_normalized_dataset(
                     features_dict, norm_params, labels_dict
                 )
 
