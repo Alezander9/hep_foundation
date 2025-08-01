@@ -460,80 +460,98 @@ class DatasetManager:
             accumulated_sampled_events = 0
             accumulated_zero_bias_sampled_events = 0
 
-            # Calculate total catalogs across all runs for proper sample targeting
-            total_catalogs_all_runs = (
-                len(dataset_config.run_numbers) * dataset_config.catalog_limit
+            # Collect all catalog paths from all runs
+            all_catalog_paths = []
+            for run_number in dataset_config.run_numbers:
+                self.logger.info(f"Collecting catalogs for run {run_number}")
+                for catalog_idx in range(
+                    self.atlas_manager.get_catalog_count(run_number)
+                ):
+                    if (
+                        dataset_config.catalog_limit
+                        and catalog_idx >= dataset_config.catalog_limit
+                    ):
+                        break
+                    catalog_path = self.atlas_manager.get_run_catalog_path(
+                        run_number, catalog_idx
+                    )
+                    if not catalog_path.exists():
+                        catalog_path = self.atlas_manager.download_run_catalog(
+                            run_number, catalog_idx
+                        )
+                    if catalog_path:
+                        all_catalog_paths.append(catalog_path)
+
+            self.logger.info(
+                f"Collected {len(all_catalog_paths)} catalog paths from {len(dataset_config.run_numbers)} runs"
             )
 
-            first_event_logged = False
-            for run_number in dataset_config.run_numbers:
-                self.logger.info(f"Processing run {run_number}")
-                try:
-                    result = self.feature_processor.process_data(
-                        task_config=dataset_config.task_config,
-                        run_number=run_number,
-                        catalog_limit=dataset_config.catalog_limit,
-                        event_limit=dataset_config.event_limit,
-                        delete_catalogs=delete_catalogs,
-                        plot_distributions=dataset_config.plot_distributions,
-                        plot_output=plot_output,
-                        first_event_logged=first_event_logged,
-                        bin_edges_metadata_path=bin_edges_metadata_path,
-                        return_histogram_data=dataset_config.plot_distributions,
-                        total_catalogs_across_all_runs=total_catalogs_all_runs,
-                    )
-                    first_event_logged = True
-                    inputs, labels, stats, histogram_data = result
-                    all_inputs.extend(inputs)
-                    all_labels.extend(labels)
-                    total_stats["total_events"] += stats["total_events"]
-                    total_stats["processed_events"] += stats["processed_events"]
-                    total_stats["total_features"] += stats["total_features"]
-                    total_stats["processing_time"] += stats["processing_time"]
+            # Process all catalogs in a single call
+            try:
+                data_type_label = (
+                    f"ATLAS_BACKGROUND(runs={len(dataset_config.run_numbers)})"
+                )
+                result = self.feature_processor.process_data(
+                    task_config=dataset_config.task_config,
+                    catalog_paths=all_catalog_paths,
+                    data_type_label=data_type_label,
+                    event_limit=dataset_config.event_limit,
+                    delete_catalogs=delete_catalogs,
+                    plot_distributions=dataset_config.plot_distributions,
+                    plot_output=plot_output,
+                    first_event_logged=False,
+                    bin_edges_metadata_path=bin_edges_metadata_path,
+                    return_histogram_data=dataset_config.plot_distributions,
+                )
+                inputs, labels, stats, histogram_data = result
+                all_inputs.extend(inputs)
+                all_labels.extend(labels)
+                total_stats["total_events"] += stats["total_events"]
+                total_stats["processed_events"] += stats["processed_events"]
+                total_stats["total_features"] += stats["total_features"]
+                total_stats["processing_time"] += stats["processing_time"]
 
-                    # Accumulate histogram data if available (now handles both post-selection and zero-bias)
-                    if histogram_data and dataset_config.plot_distributions:
-                        # Handle the new structure with both post-selection and zero-bias data
-                        if (
-                            isinstance(histogram_data, dict)
-                            and "post_selection" in histogram_data
-                        ):
-                            # New format with both datasets
-                            post_selection_data = histogram_data.get("post_selection")
-                            zero_bias_data = histogram_data.get("zero_bias")
+                # Accumulate histogram data if available (now handles both post-selection and zero-bias)
+                if histogram_data and dataset_config.plot_distributions:
+                    # Handle the new structure with both post-selection and zero-bias data
+                    if (
+                        isinstance(histogram_data, dict)
+                        and "post_selection" in histogram_data
+                    ):
+                        # New format with both datasets
+                        post_selection_data = histogram_data.get("post_selection")
+                        zero_bias_data = histogram_data.get("zero_bias")
 
-                            if post_selection_data:
-                                self._accumulate_histogram_data(
-                                    accumulated_histogram_data, post_selection_data
-                                )
-                                if "_metadata" in post_selection_data:
-                                    accumulated_sampled_events += post_selection_data[
-                                        "_metadata"
-                                    ].get("total_sampled_events", 0)
-
-                            if zero_bias_data:
-                                self._accumulate_histogram_data(
-                                    accumulated_zero_bias_histogram_data, zero_bias_data
-                                )
-                                if "_metadata" in zero_bias_data:
-                                    accumulated_zero_bias_sampled_events += (
-                                        zero_bias_data["_metadata"].get(
-                                            "total_sampled_events", 0
-                                        )
-                                    )
-                        else:
-                            # Legacy format (fallback for compatibility)
+                        if post_selection_data:
                             self._accumulate_histogram_data(
-                                accumulated_histogram_data, histogram_data
+                                accumulated_histogram_data, post_selection_data
                             )
-                            if "_metadata" in histogram_data:
-                                accumulated_sampled_events += histogram_data[
+                            if "_metadata" in post_selection_data:
+                                accumulated_sampled_events += post_selection_data[
                                     "_metadata"
                                 ].get("total_sampled_events", 0)
 
-                except Exception as e:
-                    self.logger.error(f"Error unpacking process_data result: {str(e)}")
-                    raise
+                        if zero_bias_data:
+                            self._accumulate_histogram_data(
+                                accumulated_zero_bias_histogram_data, zero_bias_data
+                            )
+                            if "_metadata" in zero_bias_data:
+                                accumulated_zero_bias_sampled_events += zero_bias_data[
+                                    "_metadata"
+                                ].get("total_sampled_events", 0)
+                    else:
+                        # Legacy format (fallback for compatibility)
+                        self._accumulate_histogram_data(
+                            accumulated_histogram_data, histogram_data
+                        )
+                        if "_metadata" in histogram_data:
+                            accumulated_sampled_events += histogram_data[
+                                "_metadata"
+                            ].get("total_sampled_events", 0)
+
+            except Exception as e:
+                self.logger.error(f"Error unpacking process_data result: {str(e)}")
+                raise
 
             if not all_inputs:
                 raise ValueError("No events passed selection criteria")
@@ -719,6 +737,23 @@ class DatasetManager:
                                 / "background_bin_edges_metadata.json"
                             )
 
+                    # Get signal catalog path
+                    catalog_path = self.atlas_manager.get_signal_catalog_path(
+                        signal_key, 0
+                    )
+                    if not catalog_path.exists():
+                        catalog_path = self.atlas_manager.download_signal_catalog(
+                            signal_key, 0
+                        )
+
+                    if not catalog_path:
+                        self.logger.warning(
+                            f"Could not get catalog for signal {signal_key}"
+                        )
+                        continue
+
+                    catalog_paths = [catalog_path]
+
                     # Process data for this signal type
                     # IMPORTANT: Ensure plot_distributions=dataset_config.plot_distributions
                     # so that process_data generates the _hist_data.json files.
@@ -730,16 +765,18 @@ class DatasetManager:
                         f"[SIGNAL_EVENT_LIMIT_DEBUG] signal_event_limit={dataset_config.signal_event_limit}, "
                         f"event_limit={dataset_config.event_limit}, using={signal_event_limit_to_use}"
                     )
+
+                    data_type_label = f"SIGNAL({signal_key})"
                     inputs, labels, stats, _ = self.feature_processor.process_data(
                         task_config=dataset_config.task_config,
-                        signal_key=signal_key,
+                        catalog_paths=catalog_paths,
+                        data_type_label=data_type_label,
                         event_limit=signal_event_limit_to_use,
                         delete_catalogs=False,  # Always keep signal catalogs
                         plot_distributions=dataset_config.plot_distributions,
                         plot_output=plot_output_for_signal_json,  # Pass path for JSON saving
                         first_event_logged=first_event_logged,
                         bin_edges_metadata_path=bin_edges_metadata_path,
-                        total_catalogs_across_all_runs=1,  # Each signal has exactly 1 catalog
                     )
                     first_event_logged = True
                     if not inputs:

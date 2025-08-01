@@ -96,9 +96,8 @@ class PhysliteFeatureProcessor:
     def process_data(
         self,
         task_config: TaskConfig,
-        run_number: Optional[str] = None,
-        signal_key: Optional[str] = None,
-        catalog_limit: Optional[int] = None,
+        catalog_paths: list[Path],
+        data_type_label: str,
         event_limit: Optional[int] = None,
         plot_distributions: bool = False,
         delete_catalogs: bool = True,
@@ -106,18 +105,16 @@ class PhysliteFeatureProcessor:
         first_event_logged: bool = True,
         bin_edges_metadata_path: Optional[Path] = None,
         return_histogram_data: bool = False,
-        total_catalogs_across_all_runs: Optional[int] = None,
     ) -> tuple[
         list[dict[str, np.ndarray]], list[dict[str, np.ndarray]], dict, Optional[dict]
     ]:
         """
-        Process either ATLAS or signal data using task configuration.
+        Process ATLAS or signal data using task configuration.
 
         Args:
             task_config: Configuration defining event filters, input features, and labels
-            run_number: Optional run number for ATLAS data
-            signal_key: Optional signal type for signal data
-            catalog_limit: Optional limit on number of catalogs to process
+            catalog_paths: List of paths to catalog files to process
+            data_type_label: Label describing the data type being processed (for logging)
             event_limit: Optional limit on number of events to process per catalog (only events that pass selection count)
             plot_distributions: Whether to generate distribution plots
             delete_catalogs: Whether to delete catalogs after processing
@@ -125,7 +122,6 @@ class PhysliteFeatureProcessor:
             first_event_logged: Whether the first event has been logged
             bin_edges_metadata_path: Optional path to save/load bin edges metadata for coordinated histogram binning
             return_histogram_data: If True, return histogram data instead of saving it to file
-            total_catalogs_across_all_runs: Total number of catalogs across all runs for proper sample calculation
 
         Returns:
             Tuple containing:
@@ -134,19 +130,9 @@ class PhysliteFeatureProcessor:
             - Processing statistics
             - Optional histogram data dictionary (if return_histogram_data=True)
         """
-        # Add logging to identify data type being processed
-        data_type_label = (
-            f"BACKGROUND(run={run_number})"
-            if run_number
-            else f"SIGNAL(key={signal_key})"
+        self.logger.info(
+            f"Processing {data_type_label} data from {len(catalog_paths)} catalogs"
         )
-
-        if signal_key:
-            self.logger.info(f"Processing signal data for {signal_key}")
-        elif run_number:
-            self.logger.info(f"Processing ATLAS data for run {run_number}")
-        else:
-            raise ValueError("Must provide either run_number or signal_key")
 
         if plot_distributions:
             if plot_output is None:
@@ -218,12 +204,8 @@ class PhysliteFeatureProcessor:
             )
             return [], [], stats, None  # Return empty results
 
-        # Get catalog paths
-        self.logger.info(
-            f"Getting catalog paths for run {run_number} and signal {signal_key}"
-        )
-        catalog_paths = self._get_catalog_paths(run_number, signal_key, catalog_limit)
-        self.logger.info(f"Found {len(catalog_paths)} catalog paths to process.")
+        # Use provided catalog paths
+        self.logger.info(f"Processing {len(catalog_paths)} catalog paths.")
 
         # --- Plotting Setup ---
         plotting_enabled = plot_distributions and plot_output is not None
@@ -233,17 +215,9 @@ class PhysliteFeatureProcessor:
         overall_plot_samples_count = 0  # Counter for post-selection samples
         zero_bias_samples_count = 0  # Counter for zero-bias samples
         samples_per_catalog = 0  # Target samples from each catalog
-        num_catalogs_to_process = len(catalog_paths)
 
-        if plotting_enabled and num_catalogs_to_process > 0:
-            # Calculate target samples per catalog, ensuring at least 1
-            # Use total catalogs across all runs if provided, otherwise use catalogs for this run only
-            total_catalogs_for_calculation = (
-                total_catalogs_across_all_runs or num_catalogs_to_process
-            )
-            samples_per_catalog = max(
-                1, max_plot_samples_total // total_catalogs_for_calculation
-            )
+        if plotting_enabled and len(catalog_paths) > 0:
+            samples_per_catalog = max(1, max_plot_samples_total // len(catalog_paths))
             self.logger.info(
                 f"Plotting enabled. Aiming for ~{samples_per_catalog} samples per catalog for both zero-bias and post-selection (total target: {max_plot_samples_total} each)."
             )
@@ -283,7 +257,7 @@ class PhysliteFeatureProcessor:
             catalog_event_limit_reached = False  # Flag to break out of batch loop
 
             self.logger.info(
-                f"Processing catalog {catalog_idx + 1}/{num_catalogs_to_process} with path: {catalog_path}"
+                f"Processing catalog {catalog_idx + 1}/{len(catalog_paths)} with path: {catalog_path}"
             )
 
             try:
@@ -633,9 +607,6 @@ class PhysliteFeatureProcessor:
                     f"{catalog_duration:.2f}s ({rate:.1f} events/s)"
                 )
 
-                if catalog_limit and catalog_idx >= catalog_limit - 1:
-                    break
-
             except FileNotFoundError:
                 self.logger.error(f"Catalog file not found: {catalog_path}. Skipping.")
                 continue
@@ -686,9 +657,7 @@ class PhysliteFeatureProcessor:
                 "post_selection",
                 bin_edges_metadata_path,
                 stats,
-                signal_key,
-                run_number,
-                return_histogram_data,
+                data_type_label,
             )
 
             # Collect new bin edges that will be saved
@@ -739,9 +708,7 @@ class PhysliteFeatureProcessor:
                 "zero_bias",
                 bin_edges_metadata_path,
                 stats,
-                signal_key,
-                run_number,
-                return_histogram_data,
+                data_type_label,
             )
 
             # Save the zero-bias histogram data to plot_data folder or return it
@@ -1096,48 +1063,6 @@ class PhysliteFeatureProcessor:
 
         return labels_dict
 
-    def _get_catalog_paths(
-        self,
-        run_number: Optional[str] = None,
-        signal_key: Optional[str] = None,
-        catalog_limit: Optional[int] = None,
-    ) -> list[Path]:
-        """
-        Get list of catalog paths for either ATLAS data or signal data
-
-        Args:
-            run_number: Optional run number for ATLAS data
-            signal_key: Optional signal type for signal data
-            catalog_limit: Optional limit on number of catalogs to process
-
-        Returns:
-            List of paths to catalog files
-        """
-        if run_number is not None:
-            # Get ATLAS data catalogs
-            paths = []
-            for catalog_idx in range(self.atlas_manager.get_catalog_count(run_number)):
-                if catalog_limit and catalog_idx >= catalog_limit:
-                    break
-                catalog_path = self.atlas_manager.get_run_catalog_path(
-                    run_number, catalog_idx
-                )
-                if not catalog_path.exists():
-                    catalog_path = self.atlas_manager.download_run_catalog(
-                        run_number, catalog_idx
-                    )
-                if catalog_path:
-                    paths.append(catalog_path)
-            return paths
-        elif signal_key is not None:
-            # Get signal data catalog
-            catalog_path = self.atlas_manager.get_signal_catalog_path(signal_key, 0)
-            if not catalog_path.exists():
-                catalog_path = self.atlas_manager.download_signal_catalog(signal_key, 0)
-            return [catalog_path] if catalog_path else []
-        else:
-            raise ValueError("Must provide either run_number or signal_key")
-
     def _calculate_derived_features(
         self,
         raw_event_data: dict[str, np.ndarray],
@@ -1285,9 +1210,7 @@ class PhysliteFeatureProcessor:
         data_type_name,
         bin_edges_metadata_path,
         stats,
-        signal_key,
-        run_number,
-        return_histogram_data,
+        data_type_label,
     ):
         if overall_samples_count == 0:
             return None
@@ -1306,10 +1229,7 @@ class PhysliteFeatureProcessor:
             "total_features": int(stats["total_features"]),
             "processing_time": float(stats["processing_time"]),
             "total_sampled_events": int(overall_samples_count),
-            "signal_key": signal_key if signal_key else "background",
-            "run_number": run_number
-            if run_number and not return_histogram_data
-            else None,
+            "data_source": data_type_label,
             "data_type": data_type_name,  # "zero_bias" (raw detector) or "post_selection" (clipped, before padding)
         }
 
