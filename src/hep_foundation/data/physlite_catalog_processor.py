@@ -25,7 +25,7 @@ from hep_foundation.data.physlite_derived_features import (
 # Import plotting utilities
 
 
-class PhysliteFeatureProcessor:
+class PhysliteCatalogProcessor:
     """
     Handles processing, filtering, and aggregation of ATLAS PhysLite features.
 
@@ -45,7 +45,7 @@ class PhysliteFeatureProcessor:
         ] = "src/hep_foundation/data/physlite_plot_labels.json",
     ):
         """
-        Initialize the PhysliteFeatureProcessor.
+        Initialize the PhysliteCatalogProcessor.
 
         Args:
             atlas_manager: Optional ATLASFileManager instance
@@ -78,11 +78,11 @@ class PhysliteFeatureProcessor:
 
         if uproot is None:
             raise ImportError(
-                "Uproot is required for PhysliteFeatureProcessor. Please install it."
+                "Uproot is required for PhysliteCatalogProcessor. Please install it."
             )
         if ak is None:  # Check awkward import
             raise ImportError(
-                "Awkward Array is required for PhysliteFeatureProcessor. Please install it."
+                "Awkward Array is required for PhysliteCatalogProcessor. Please install it."
             )
 
         # Create event processor instance
@@ -93,7 +93,7 @@ class PhysliteFeatureProcessor:
             custom_label_map_path=custom_label_map_path,
         )
 
-    def process_data(
+    def process_catalogs(
         self,
         task_config: TaskConfig,
         catalog_paths: list[Path],

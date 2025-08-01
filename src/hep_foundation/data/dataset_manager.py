@@ -13,7 +13,7 @@ import tensorflow as tf
 from hep_foundation.config.dataset_config import DatasetConfig
 from hep_foundation.config.logging_config import get_logger
 from hep_foundation.data.atlas_file_manager import ATLASFileManager
-from hep_foundation.data.physlite_feature_processor import PhysliteFeatureProcessor
+from hep_foundation.data.physlite_catalog_processor import PhysliteCatalogProcessor
 
 
 class DatasetManager:
@@ -32,7 +32,7 @@ class DatasetManager:
         self.atlas_manager = atlas_manager or ATLASFileManager()
 
         # Add feature processor
-        self.feature_processor = PhysliteFeatureProcessor()
+        self.feature_processor = PhysliteCatalogProcessor()
 
         # Add state tracking
         self.current_dataset_id = None
@@ -491,7 +491,7 @@ class DatasetManager:
                 data_type_label = (
                     f"ATLAS_BACKGROUND(runs={len(dataset_config.run_numbers)})"
                 )
-                result = self.feature_processor.process_data(
+                result = self.feature_processor.process_catalogs(
                     task_config=dataset_config.task_config,
                     catalog_paths=all_catalog_paths,
                     data_type_label=data_type_label,
@@ -550,7 +550,7 @@ class DatasetManager:
                             ].get("total_sampled_events", 0)
 
             except Exception as e:
-                self.logger.error(f"Error unpacking process_data result: {str(e)}")
+                self.logger.error(f"Error unpacking process_catalogs result: {str(e)}")
                 raise
 
             if not all_inputs:
@@ -717,7 +717,7 @@ class DatasetManager:
                         plot_data_dir = dataset_dir / "plot_data"
                         plot_data_dir.mkdir(parents=True, exist_ok=True)
 
-                        # This plot_output is for process_data to determine the JSON filename
+                        # This plot_output is for process_catalogs to determine the JSON filename
                         # The actual JSON will be saved in plot_data folder
                         plot_output_for_signal_json = (
                             plots_dir / f"{signal_key}_dataset_features.png"
@@ -756,7 +756,7 @@ class DatasetManager:
 
                     # Process data for this signal type
                     # IMPORTANT: Ensure plot_distributions=dataset_config.plot_distributions
-                    # so that process_data generates the _hist_data.json files.
+                    # so that process_catalogs generates the _hist_data.json files.
                     # Use signal_event_limit if specified, otherwise fall back to event_limit
                     signal_event_limit_to_use = (
                         dataset_config.signal_event_limit or dataset_config.event_limit
@@ -767,7 +767,7 @@ class DatasetManager:
                     )
 
                     data_type_label = f"SIGNAL({signal_key})"
-                    inputs, labels, stats, _ = self.feature_processor.process_data(
+                    inputs, labels, stats, _ = self.feature_processor.process_catalogs(
                         task_config=dataset_config.task_config,
                         catalog_paths=catalog_paths,
                         data_type_label=data_type_label,

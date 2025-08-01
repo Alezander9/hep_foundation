@@ -113,7 +113,7 @@ Each experiment folder in `_foundation_experiments/` contains:
 - Datasets stored as HDF5 files in `_processed_datasets/`
 
 ### Event Processing Details
-Each event goes through `physlite_feature_processor.py` which:
+Each event goes through `physlite_catalog_processor.py` which:
 - Reads branches from ROOT files
 - Calculates derived features
 - Applies event-level filters (reject whole events that don't meet criteria)
