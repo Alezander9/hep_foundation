@@ -21,6 +21,7 @@ from hep_foundation.data.physlite_derived_features import (
     get_derived_feature,
     is_derived_feature,
 )
+from hep_foundation.plots.histogram_manager import HistogramManager
 
 # Import plotting utilities
 
@@ -93,6 +94,98 @@ class PhysliteCatalogProcessor:
             custom_label_map_path=custom_label_map_path,
         )
 
+        # Create histogram manager instance
+        self.histogram_manager = HistogramManager()
+
+    def _save_histogram_data_with_manager(
+        self,
+        scalar_features_dict: dict,
+        aggregated_features_dict: dict,
+        event_n_tracks_list: list,
+        data_type_name: str,
+        plot_output: Path,
+        plot_data_dir: Optional[Path] = None,
+    ) -> None:
+        """
+        Save histogram data using HistogramManager.
+
+        Args:
+            scalar_features_dict: Dictionary of scalar features with lists of values
+            aggregated_features_dict: Dictionary of aggregated features
+            event_n_tracks_list: List of track counts per event
+            data_type_name: Either "post_selection" or "zero_bias"
+            plot_output: Path for determining JSON file location
+            plot_data_dir: Optional directory where plot data should be saved
+        """
+        if (
+            not scalar_features_dict
+            and not aggregated_features_dict
+            and not event_n_tracks_list
+        ):
+            self.logger.warning(f"No histogram data to save for {data_type_name}")
+            return
+
+        # Prepare data in format expected by HistogramManager
+        histogram_data = {}
+
+        # Add scalar features
+        for feature_name, values_list in scalar_features_dict.items():
+            if values_list:
+                histogram_data[feature_name] = values_list
+
+        # Add N_Tracks_per_Event if available
+        if event_n_tracks_list:
+            histogram_data["N_Tracks_per_Event"] = event_n_tracks_list
+
+        # Add aggregated features (flattened)
+        for agg_name, values_arrays in aggregated_features_dict.items():
+            if values_arrays:
+                # Stack and flatten aggregated features to get all values
+                stacked_array = np.stack(values_arrays)
+                n_events, n_tracks, n_features = stacked_array.shape
+
+                # Get feature names for this aggregator
+                plot_feature_names = [f"{agg_name}_{i}" for i in range(n_features)]
+
+                for k in range(n_features):
+                    feature_name = plot_feature_names[k]
+                    data_slice = stacked_array[
+                        :, :, k
+                    ]  # All events, all tracks for feature k
+                    mask = data_slice != 0  # Considering 0 as padding
+                    valid_data = data_slice[mask]
+
+                    if valid_data.size > 0:
+                        histogram_data[feature_name] = valid_data.tolist()
+
+        if not histogram_data:
+            self.logger.warning(f"No valid histogram data for {data_type_name}")
+            return
+
+        # Determine file path - use provided plot_data_dir or derive from plot_output
+        if plot_data_dir is None:
+            plot_data_dir = plot_output.parent.parent / "plot_data"
+        plot_data_dir.mkdir(parents=True, exist_ok=True)
+
+        if data_type_name == "zero_bias":
+            json_file_path = plot_data_dir / (
+                plot_output.stem + "_zero_bias_hist_data.json"
+            )
+        else:
+            json_file_path = plot_data_dir / (plot_output.stem + "_hist_data.json")
+
+        # Use HistogramManager to save with percentile coordination
+        self.histogram_manager.save_to_hist_file(
+            data=histogram_data,
+            file_path=json_file_path,
+            nbins=100,  # Use same default as original system
+            use_percentile_file=True,
+            update_percentile_file=True,
+            use_percentile_cache=True,
+        )
+
+        self.logger.info(f"Saved {data_type_name} histogram data to {json_file_path}")
+
     def process_catalogs(
         self,
         task_config: TaskConfig,
@@ -103,8 +196,7 @@ class PhysliteCatalogProcessor:
         delete_catalogs: bool = True,
         plot_output: Optional[Path] = None,
         first_event_logged: bool = True,
-        bin_edges_metadata_path: Optional[Path] = None,
-        return_histogram_data: bool = False,
+        plot_data_dir: Optional[Path] = None,
     ) -> tuple[
         list[dict[str, np.ndarray]], list[dict[str, np.ndarray]], dict, Optional[dict]
     ]:
@@ -120,15 +212,14 @@ class PhysliteCatalogProcessor:
             delete_catalogs: Whether to delete catalogs after processing
             plot_output: Optional complete path (including filename) for saving plots
             first_event_logged: Whether the first event has been logged
-            bin_edges_metadata_path: Optional path to save/load bin edges metadata for coordinated histogram binning
-            return_histogram_data: If True, return histogram data instead of saving it to file
+            plot_data_dir: Optional directory where plot data JSON files should be saved
 
         Returns:
             Tuple containing:
             - List of processed input features (each a dict with scalar and aggregated features)
             - List of processed label features (each a list of dicts for multiple label configs)
             - Processing statistics
-            - Optional histogram data dictionary (if return_histogram_data=True)
+            - Empty dict (preserved for backward compatibility)
         """
         self.logger.info(
             f"Processing {data_type_label} data from {len(catalog_paths)} catalogs"
@@ -437,7 +528,7 @@ class PhysliteCatalogProcessor:
                                     processed_labels.append(label_features_for_dataset)
 
                                     # Log processed data only for the very first event and set the flag
-                                    if not first_event_logged and evt_idx == 0:
+                                    if not first_event_logged:
                                         self.logger.info(
                                             f"First event raw data (Catalog {catalog_idx + 1}, Batch Event {evt_idx}): {raw_event_data}"
                                         )
@@ -637,134 +728,37 @@ class PhysliteCatalogProcessor:
                 f"Post-selection samples: {overall_plot_samples_count}"
             )
 
-        # --- Generate and Save Dual Histogram Data (Zero-bias + Post-selection) ---
+        # --- Generate and Save Histogram Data using HistogramManager ---
 
-        # Generate post-selection histogram data (existing behavior)
-        if (
-            plotting_enabled
-            and overall_plot_samples_count > 0
-            and raw_histogram_data_for_file is not None
-        ):
+        # Save post-selection histogram data
+        if plotting_enabled and overall_plot_samples_count > 0 and plot_output:
             self.logger.info(
-                f"Preparing post-selection histogram data (clipped tracks, before padding) from {overall_plot_samples_count} sampled events for {plot_output}"
+                f"Saving post-selection histogram data from {overall_plot_samples_count} sampled events"
             )
-
-            raw_histogram_data_for_file = self._generate_histogram_data(
+            self._save_histogram_data_with_manager(
                 sampled_scalar_features,
                 sampled_aggregated_features,
                 sampled_event_n_tracks_list,
-                overall_plot_samples_count,
                 "post_selection",
-                bin_edges_metadata_path,
-                stats,
-                data_type_label,
+                plot_output,
+                plot_data_dir,
             )
 
-            # Collect new bin edges that will be saved
-            new_bin_edges_metadata = {}
-
-            # Save the post-selection histogram data to plot_data folder or return it
-            if (
-                raw_histogram_data_for_file
-                and plot_output
-                and not return_histogram_data
-            ):
-                data_file_path = None
-                try:
-                    # Create plot_data folder alongside the plots folder
-                    plot_data_dir = plot_output.parent.parent / "plot_data"
-                    plot_data_dir.mkdir(parents=True, exist_ok=True)
-
-                    # Save JSON to plot_data folder
-                    data_file_path = plot_data_dir / (
-                        plot_output.stem + "_hist_data.json"
-                    )
-                    with open(data_file_path, "w") as f_json:
-                        json.dump(raw_histogram_data_for_file, f_json, indent=4)
-                    self.logger.info(
-                        f"Saved post-selection histogram data to {data_file_path}"
-                    )
-
-                except Exception as e_save:
-                    self.logger.error(
-                        f"Failed to save post-selection histogram data: {e_save}"
-                    )
-
-        # Generate zero-bias histogram data (new behavior)
-        if (
-            plotting_enabled
-            and zero_bias_samples_count > 0
-            and zero_bias_histogram_data_for_file is not None
-        ):
+        # Save zero-bias histogram data
+        if plotting_enabled and zero_bias_samples_count > 0 and plot_output:
             self.logger.info(
-                f"Preparing zero-bias histogram data (truly unfiltered detector data) from {zero_bias_samples_count} sampled events for {plot_output}"
+                f"Saving zero-bias histogram data from {zero_bias_samples_count} sampled events"
             )
-
-            zero_bias_histogram_data_for_file = self._generate_histogram_data(
+            self._save_histogram_data_with_manager(
                 zero_bias_scalar_features,
                 zero_bias_aggregated_features,
                 zero_bias_event_n_tracks_list,
-                zero_bias_samples_count,
                 "zero_bias",
-                bin_edges_metadata_path,
-                stats,
-                data_type_label,
+                plot_output,
+                plot_data_dir,
             )
 
-            # Save the zero-bias histogram data to plot_data folder or return it
-            if (
-                zero_bias_histogram_data_for_file
-                and plot_output
-                and not return_histogram_data
-            ):
-                data_file_path = None
-                try:
-                    # Create plot_data folder alongside the plots folder
-                    plot_data_dir = plot_output.parent.parent / "plot_data"
-                    plot_data_dir.mkdir(parents=True, exist_ok=True)
-
-                    # Save JSON to plot_data folder with zero_bias prefix
-                    data_file_path = plot_data_dir / (
-                        plot_output.stem + "_zero_bias_hist_data.json"
-                    )
-                    with open(data_file_path, "w") as f_json:
-                        json.dump(zero_bias_histogram_data_for_file, f_json, indent=4)
-                    self.logger.info(
-                        f"Saved zero-bias histogram data to {data_file_path}"
-                    )
-
-                except Exception as e_save:
-                    self.logger.error(
-                        f"Failed to save zero-bias histogram data: {e_save}"
-                    )
-
-            # Save bin edges metadata if we have new bin edges to save
-            if bin_edges_metadata_path:
-                try:
-                    # Extract bin edges from the zero-bias data for saving (since it's processed first)
-                    new_bin_edges_metadata = {}
-                    for (
-                        feature_name,
-                        feature_data,
-                    ) in zero_bias_histogram_data_for_file.items():
-                        if (
-                            not feature_name.startswith("_")
-                            and "bin_edges" in feature_data
-                        ):
-                            new_bin_edges_metadata[feature_name] = feature_data[
-                                "bin_edges"
-                            ]
-
-                    if new_bin_edges_metadata:
-                        self._save_bin_edges_metadata(
-                            new_bin_edges_metadata, bin_edges_metadata_path
-                        )
-                except Exception as e_save_bin_edges:
-                    self.logger.error(
-                        f"Failed to save bin edges metadata: {e_save_bin_edges}"
-                    )
-
-        # --- End of Dual Histogram Data Generation ---
+        # --- End of Histogram Data Generation ---
 
         # Convert stats to native Python types
         stats = {
@@ -774,19 +768,10 @@ class PhysliteCatalogProcessor:
             "processing_time": float(stats["processing_time"]),
         }
 
-        # Return both post-selection and zero-bias histogram data if requested
-        histogram_data_to_return = None
-        if return_histogram_data:
-            histogram_data_to_return = {
-                "post_selection": raw_histogram_data_for_file,
-                "zero_bias": zero_bias_histogram_data_for_file,
-            }
-
         return (
             processed_inputs,
             processed_labels,
             stats,
-            histogram_data_to_return,
         )
 
     def compute_dataset_normalization(
@@ -1119,87 +1104,6 @@ class PhysliteCatalogProcessor:
                 return None  # Signal calculation failure
 
         return processed_event_data
-
-    def _save_bin_edges_metadata(
-        self, bin_edges_data: dict, metadata_path: Path
-    ) -> None:
-        """
-        Save bin edges metadata to a JSON file for coordinated histogram binning.
-
-        Args:
-            bin_edges_data: Dictionary mapping feature names to their bin edges
-            metadata_path: Path to save the metadata file
-        """
-        try:
-            metadata_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(metadata_path, "w") as f:
-                json.dump(bin_edges_data, f, indent=2)
-            self.logger.info(f"Saved bin edges metadata to {metadata_path}")
-        except Exception as e:
-            self.logger.error(
-                f"Failed to save bin edges metadata to {metadata_path}: {e}"
-            )
-
-    def _load_bin_edges_metadata(self, metadata_path: Path) -> Optional[dict]:
-        """
-        Load bin edges metadata from a JSON file for coordinated histogram binning.
-
-        Args:
-            metadata_path: Path to the metadata file
-
-        Returns:
-            Dictionary mapping feature names to their bin edges, or None if loading fails
-        """
-        try:
-            if not metadata_path.exists():
-                return None
-            with open(metadata_path) as f:
-                bin_edges_data = json.load(f)
-            self.logger.info(f"Loaded bin edges metadata from {metadata_path}")
-            return bin_edges_data
-        except Exception as e:
-            self.logger.error(
-                f"Failed to load bin edges metadata from {metadata_path}: {e}"
-            )
-            return None
-
-    def _check_data_range_compatibility(
-        self, values: np.ndarray, existing_bin_edges: np.ndarray, feature_name: str
-    ) -> tuple[np.ndarray, int, int]:
-        """
-        Check if data fits within existing bin edges and filter out-of-range values.
-
-        Args:
-            values: New data values
-            existing_bin_edges: Existing bin edges
-            feature_name: Name of the feature (for logging)
-
-        Returns:
-            Tuple of (filtered_values, n_excluded_low, n_excluded_high)
-        """
-        if values.size == 0:
-            return values, 0, 0
-
-        edges_min, edges_max = existing_bin_edges[0], existing_bin_edges[-1]
-
-        # Count out-of-range values
-        n_below = np.sum(values < edges_min)
-        n_above = np.sum(values > edges_max)
-
-        if n_below > 0 or n_above > 0:
-            total_values = len(values)
-            pct_below = 100 * n_below / total_values
-            pct_above = 100 * n_above / total_values
-            self.logger.info(
-                f"Feature '{feature_name}': {n_below} values ({pct_below:.1f}%) below bin range, "
-                f"{n_above} values ({pct_above:.1f}%) above bin range. Excluding from histogram to maintain consistent binning."
-            )
-
-        # Filter out values outside the bin range (don't clip to avoid edge pileup)
-        mask = (values >= edges_min) & (values <= edges_max)
-        filtered_values = values[mask]
-
-        return filtered_values
 
     def _generate_histogram_data(
         self,

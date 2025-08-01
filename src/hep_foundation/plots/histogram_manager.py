@@ -77,7 +77,6 @@ class HistogramManager:
         use_percentile_file: bool = False,
         update_percentile_file: bool = False,
         use_percentile_cache: bool = True,
-        source: Optional[str] = None,
     ) -> None:
         """Save histogram data to JSON file with optional percentile coordination.
 
@@ -88,7 +87,6 @@ class HistogramManager:
             use_percentile_file: Whether to initialize cache from file-stored percentiles
             update_percentile_file: Whether to update file when percentiles exceed range
             use_percentile_cache: Whether to use cached percentiles for bin coordination
-            source: Source identifier for percentile updates
         """
         hist_data = {}
 
@@ -123,7 +121,6 @@ class HistogramManager:
                         self._session_cache[key] = {
                             "0.1": bin_min,
                             "99.9": bin_max,
-                            "source": f"file_{file_percentiles.get('source', 'unknown')}",
                             "timestamp": datetime.now().isoformat(),
                         }
 
@@ -135,7 +132,6 @@ class HistogramManager:
                         self._session_cache[key] = {
                             "0.1": bin_min,
                             "99.9": bin_max,
-                            "source": source or "session_first",
                             "timestamp": datetime.now().isoformat(),
                         }
 
@@ -147,7 +143,6 @@ class HistogramManager:
                     self._session_cache[key] = {
                         "0.1": bin_min,
                         "99.9": bin_max,
-                        "source": source or "session_first",
                         "timestamp": datetime.now().isoformat(),
                     }
 
@@ -167,7 +162,6 @@ class HistogramManager:
                     updated_file_percentiles[key] = {
                         "0.1": new_min,
                         "99.9": new_max,
-                        "source": source or "unknown",
                         "timestamp": datetime.now().isoformat(),
                     }
 
@@ -176,7 +170,7 @@ class HistogramManager:
 
                     self.logger.info(
                         f"Updated FILE percentiles for {key}: "
-                        f"0.1%={new_min:.3f}, 99.9%={new_max:.3f} (source: {source})"
+                        f"0.1%={new_min:.3f}, 99.9%={new_max:.3f}"
                     )
 
                 self.logger.info(

@@ -1356,7 +1356,6 @@ class FoundationModelPipeline:
                             use_percentile_file=False,
                             update_percentile_file=False,
                             use_percentile_cache=True,  # Use cache for coordinated bins
-                            source=f"predictions_{model_name}",
                         )
 
                         # Save differences histogram using HistogramManager with separate percentile index
@@ -1371,7 +1370,6 @@ class FoundationModelPipeline:
                             use_percentile_file=False,
                             update_percentile_file=False,
                             use_percentile_cache=False,  # Don't use coordinated bins for differences
-                            source=f"differences_{model_name}",
                         )
 
                         self.logger.info(
@@ -1495,7 +1493,6 @@ class FoundationModelPipeline:
                     use_percentile_file=False,
                     update_percentile_file=False,
                     use_percentile_cache=True,  # Use cache for coordinated bins
-                    source="actual_test_labels",
                 )
                 self.logger.info("Saved actual test labels histogram")
 
