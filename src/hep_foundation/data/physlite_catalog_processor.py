@@ -303,8 +303,8 @@ class PhysliteCatalogProcessor:
         max_plot_samples_total = 5000  # Overall target for plotting samples
 
         # Separate counters for zero-bias vs post-selection samples
-        overall_plot_samples_count = 0  # Counter for post-selection samples
-        zero_bias_samples_count = 0  # Counter for zero-bias samples
+        total_plot_samples_count = 0  # Counter for post-selection samples
+        total_zero_bias_samples_count = 0  # Counter for zero-bias samples
         samples_per_catalog = 0  # Target samples from each catalog
 
         if plotting_enabled and len(catalog_paths) > 0:
@@ -318,7 +318,7 @@ class PhysliteCatalogProcessor:
             plotting_enabled = False  # Disable if no catalogs
 
         # Data accumulators for plotting (only if enabled) - DUAL SETS
-        # Post-selection data (existing)
+        # Post-selection data
         sampled_scalar_features = defaultdict(list) if plotting_enabled else None
         sampled_aggregated_features = defaultdict(list) if plotting_enabled else None
         sampled_event_n_tracks_list = (
@@ -328,7 +328,7 @@ class PhysliteCatalogProcessor:
             {} if plotting_enabled else None
         )  # To store hist data for saving
 
-        # Zero-bias data (new)
+        # Zero-bias data
         zero_bias_scalar_features = defaultdict(list) if plotting_enabled else None
         zero_bias_aggregated_features = defaultdict(list) if plotting_enabled else None
         zero_bias_event_n_tracks_list = (
@@ -342,9 +342,9 @@ class PhysliteCatalogProcessor:
         # --- Main Processing Loop ---
         for catalog_idx, catalog_path in enumerate(catalog_paths):
             # Reset counters for this specific catalog
-            current_catalog_samples_count = 0
-            current_catalog_zero_bias_count = 0
-            processed_events_in_catalog = 0  # Counter for event_limit
+            current_catalog_samples_count = 0  # Counter for post-selection samples
+            current_catalog_samples_zero_bias_count = 0  # Counter for zero-bias samples
+            current_catalog_processed_events = 0  # Counter for event_limit
             catalog_event_limit_reached = False  # Flag to break out of batch loop
 
             self.logger.info(
@@ -432,27 +432,34 @@ class PhysliteCatalogProcessor:
                                 # --- Determine if we need more zero-bias samples ---
                                 need_more_zero_bias_samples = (
                                     plotting_enabled
-                                    and current_catalog_zero_bias_count
+                                    and current_catalog_samples_zero_bias_count
                                     < samples_per_catalog
                                 )
 
                                 # --- Process Event (unified method handles both filtered and zero-bias data) ---
+                                # Determine if we need more post-selection samples
+                                need_more_post_selection_samples = (
+                                    plotting_enabled
+                                    and current_catalog_samples_count
+                                    < samples_per_catalog
+                                )
+
                                 result, passed_filters = (
                                     self.event_processor.process_event(
                                         processed_event_data,
                                         task_config,
                                         plotting_enabled,
                                         need_more_zero_bias_samples,
+                                        need_more_post_selection_samples,
                                     )
                                 )
 
                                 # --- Handle data collection based on result and filter status ---
                                 if result is not None:
-                                    # For zero-bias plotting: collect data when filters failed but we need zero-bias samples
+                                    # For zero-bias plotting: collect data from ALL events (filter-free) when we need zero-bias samples
                                     if (
-                                        not passed_filters
-                                        and plotting_enabled
-                                        and current_catalog_zero_bias_count
+                                        plotting_enabled
+                                        and current_catalog_samples_zero_bias_count
                                         < samples_per_catalog
                                     ):
                                         # Accumulate zero-bias data
@@ -484,13 +491,13 @@ class PhysliteCatalogProcessor:
                                                 num_tracks
                                             )
 
-                                        current_catalog_zero_bias_count += 1
-                                        zero_bias_samples_count += 1
+                                        current_catalog_samples_zero_bias_count += 1
+                                        total_zero_bias_samples_count += 1
 
                                     # For filtered data: collect for dataset creation when filters passed
                                     if passed_filters:
                                         # Store the result for dataset creation
-                                        # Correctly extract only the arrays for the dataset
+                                        # Extract only the arrays for the dataset
                                         input_features_for_dataset = {
                                             "scalar_features": result[
                                                 "scalar_features"
@@ -504,167 +511,180 @@ class PhysliteCatalogProcessor:
                                                 ].items()
                                             },
                                         }
-                                    # Process labels similarly for the dataset
-                                    label_features_for_dataset = []
-                                    for label_set in result["label_features"]:
-                                        label_set_for_dataset = {
-                                            "scalar_features": label_set[
-                                                "scalar_features"
-                                            ],
-                                            "aggregated_features": {
-                                                agg_key: agg_data[
-                                                    "array"
-                                                ]  # Ensure only array is stored for dataset
-                                                for agg_key, agg_data in label_set[
-                                                    "aggregated_features"
-                                                ].items()
-                                            },
-                                        }
-                                        label_features_for_dataset.append(
-                                            label_set_for_dataset
-                                        )
-
-                                    processed_inputs.append(input_features_for_dataset)
-                                    processed_labels.append(label_features_for_dataset)
-
-                                    # Log processed data only for the very first event and set the flag
-                                    if not first_event_logged:
-                                        self.logger.info(
-                                            f"First event raw data (Catalog {catalog_idx + 1}, Batch Event {evt_idx}): {raw_event_data}"
-                                        )
-                                        self.logger.info(
-                                            f"First event processed input_features_for_dataset: {input_features_for_dataset}"
-                                        )
-                                        self.logger.info(
-                                            f"First event processed label_features_for_dataset: {label_features_for_dataset}"
-                                        )
-                                        first_event_logged = True  # Set flag after logging the first processed event
-
-                                    catalog_stats["processed"] += 1
-                                    processed_events_in_catalog += 1
-
-                                    # --- Accumulate post-selection data for plotting ---
-                                    if (
-                                        plotting_enabled
-                                        and current_catalog_samples_count
-                                        < samples_per_catalog
-                                    ):
-                                        # Append scalar features
-                                        for name, value in result[
-                                            "scalar_features"
-                                        ].items():
-                                            sampled_scalar_features[name].append(value)
-
-                                        # Append aggregated features using clipped data (after clipping, before padding)
-                                        first_agg_key = None
-                                        for agg_key, agg_data_with_plot_names in result[
-                                            "aggregated_features"
-                                        ].items():
-                                            if first_agg_key is None:
-                                                first_agg_key = agg_key  # Capture first aggregator key
-
-                                        # Use clipped histogram data if available, otherwise fall back to original
-                                        if (
-                                            "clipped_histogram_data"
-                                            in agg_data_with_plot_names
-                                        ):
-                                            # Extract clipped features array and flatten track-by-track for histogram
-                                            clipped_hist_data = (
-                                                agg_data_with_plot_names[
-                                                    "clipped_histogram_data"
-                                                ]
-                                            )
-                                            clipped_array = clipped_hist_data[
-                                                "clipped_features"
-                                            ]  # Shape: (n_tracks, n_features)
-                                            plot_feature_names = clipped_hist_data[
-                                                "plot_feature_names"
-                                            ]
-
-                                            # Create a modified aggregator data structure that matches the original format
-                                            # but with individual track features flattened for histogram collection
-                                            modified_agg_data = {
-                                                "array": clipped_array,  # This will be handled differently in histogram generation
-                                                "plot_feature_names": plot_feature_names,
-                                                "n_valid_elements": clipped_hist_data[
-                                                    "clipped_num_tracks"
+                                        # Process labels similarly for the dataset
+                                        label_features_for_dataset = []
+                                        for label_set in result["label_features"]:
+                                            label_set_for_dataset = {
+                                                "scalar_features": label_set[
+                                                    "scalar_features"
                                                 ],
+                                                "aggregated_features": {
+                                                    agg_key: agg_data[
+                                                        "array"
+                                                    ]  # Ensure only array is stored for dataset
+                                                    for agg_key, agg_data in label_set[
+                                                        "aggregated_features"
+                                                    ].items()
+                                                },
                                             }
-                                            sampled_aggregated_features[agg_key].append(
-                                                modified_agg_data
+                                            label_features_for_dataset.append(
+                                                label_set_for_dataset
                                             )
 
-                                            # Use clipped track count for plotting from first aggregator only
-                                            if agg_key == first_agg_key:
-                                                sampled_event_n_tracks_list.append(
-                                                    clipped_hist_data[
-                                                        "clipped_num_tracks"
+                                        processed_inputs.append(
+                                            input_features_for_dataset
+                                        )
+                                        processed_labels.append(
+                                            label_features_for_dataset
+                                        )
+
+                                        # Log processed data only for the very first event and set the flag
+                                        if not first_event_logged:
+                                            self.logger.info(
+                                                f"First event raw data (Catalog {catalog_idx + 1}, Batch Event {evt_idx}): {raw_event_data}"
+                                            )
+                                            self.logger.info(
+                                                f"First event processed input_features_for_dataset: {input_features_for_dataset}"
+                                            )
+                                            self.logger.info(
+                                                f"First event processed label_features_for_dataset: {label_features_for_dataset}"
+                                            )
+                                            first_event_logged = True  # Set flag after logging the first processed event
+
+                                        catalog_stats["processed"] += 1
+                                        current_catalog_processed_events += 1
+
+                                        # --- Accumulate post-selection data for plotting ---
+                                        if (
+                                            plotting_enabled
+                                            and current_catalog_samples_count
+                                            < samples_per_catalog
+                                        ):
+                                            # Append scalar features
+                                            for name, value in result[
+                                                "scalar_features"
+                                            ].items():
+                                                sampled_scalar_features[name].append(
+                                                    value
+                                                )
+
+                                            # Append aggregated features using clipped data (after clipping, before padding)
+                                            first_agg_key = None
+                                            for (
+                                                agg_key,
+                                                agg_data_with_plot_names,
+                                            ) in result["aggregated_features"].items():
+                                                if first_agg_key is None:
+                                                    first_agg_key = agg_key  # Capture first aggregator key
+
+                                            # Use clipped histogram data if available, otherwise fall back to original
+                                            if (
+                                                "clipped_histogram_data"
+                                                in agg_data_with_plot_names
+                                            ):
+                                                # Extract clipped features array and flatten track-by-track for histogram
+                                                clipped_hist_data = (
+                                                    agg_data_with_plot_names[
+                                                        "clipped_histogram_data"
                                                     ]
                                                 )
-                                        else:
-                                            # Fallback to original behavior if clipped data not available
-                                            sampled_aggregated_features[agg_key].append(
-                                                agg_data_with_plot_names
-                                            )
+                                                clipped_array = clipped_hist_data[
+                                                    "clipped_features"
+                                                ]  # Shape: (n_tracks, n_features)
+                                                plot_feature_names = clipped_hist_data[
+                                                    "plot_feature_names"
+                                                ]
 
-                                            # Append num_tracks_for_plot if available (fallback) from first aggregator only
-                                            if agg_key == first_agg_key:
-                                                num_tracks = result.get(
-                                                    "num_tracks_for_plot"
-                                                )
-                                                if num_tracks is not None:
+                                                # Create a modified aggregator data structure that matches the original format
+                                                # but with individual track features flattened for histogram collection
+                                                modified_agg_data = {
+                                                    "array": clipped_array,  # This will be handled differently in histogram generation
+                                                    "plot_feature_names": plot_feature_names,
+                                                    "n_valid_elements": clipped_hist_data[
+                                                        "clipped_num_tracks"
+                                                    ],
+                                                }
+                                                sampled_aggregated_features[
+                                                    agg_key
+                                                ].append(modified_agg_data)
+
+                                                # Use clipped track count for plotting from first aggregator only
+                                                if agg_key == first_agg_key:
                                                     sampled_event_n_tracks_list.append(
-                                                        num_tracks
+                                                        clipped_hist_data[
+                                                            "clipped_num_tracks"
+                                                        ]
                                                     )
+                                            else:
+                                                # Fallback to original behavior if clipped data not available
+                                                sampled_aggregated_features[
+                                                    agg_key
+                                                ].append(agg_data_with_plot_names)
 
-                                    current_catalog_samples_count += 1
-                                    overall_plot_samples_count += 1
-
-                                    # Update feature statistics
-                                    # Note: This might need adjustment if derived features impact how stats are counted
-                                    if input_features_for_dataset[
-                                        "aggregated_features"
-                                    ]:
-                                        first_aggregator_key = next(
-                                            iter(
-                                                input_features_for_dataset[
-                                                    "aggregated_features"
-                                                ].keys()
-                                            ),
-                                            None,
-                                        )
-                                        if first_aggregator_key:
-                                            first_aggregator = (
-                                                input_features_for_dataset[
-                                                    "aggregated_features"
-                                                ][first_aggregator_key]
-                                            )
-                                            # Ensure the aggregator output is not empty before checking shape
-                                            if first_aggregator.size > 0:
-                                                try:
-                                                    # Check for non-zero elements along the feature axis
-                                                    stats["total_features"] += np.sum(
-                                                        np.any(
-                                                            first_aggregator != 0,
-                                                            axis=1,
+                                                # Append num_tracks_for_plot if available (fallback) from first aggregator only
+                                                if agg_key == first_agg_key:
+                                                    num_tracks = result.get(
+                                                        "num_tracks_for_plot"
+                                                    )
+                                                    if num_tracks is not None:
+                                                        sampled_event_n_tracks_list.append(
+                                                            num_tracks
                                                         )
-                                                    )
-                                                except np.AxisError:
-                                                    # Handle potential scalar case if aggregator somehow returns it
-                                                    stats["total_features"] += np.sum(
-                                                        first_aggregator != 0
-                                                    )
 
-                                    # Check event limit for this catalog
-                                    if (
-                                        event_limit is not None
-                                        and processed_events_in_catalog >= event_limit
-                                    ):
-                                        self.logger.info(
-                                            f"Reached event limit of {event_limit} for catalog {catalog_idx + 1}. Stopping processing of this catalog."
-                                        )
-                                        catalog_event_limit_reached = True
-                                        break  # Exit the event loop for this catalog
+                                            current_catalog_samples_count += 1
+                                            total_plot_samples_count += 1
+
+                                        # Update feature statistics
+                                        # Note: This might need adjustment if derived features impact how stats are counted
+                                        if input_features_for_dataset[
+                                            "aggregated_features"
+                                        ]:
+                                            first_aggregator_key = next(
+                                                iter(
+                                                    input_features_for_dataset[
+                                                        "aggregated_features"
+                                                    ].keys()
+                                                ),
+                                                None,
+                                            )
+                                            if first_aggregator_key:
+                                                first_aggregator = (
+                                                    input_features_for_dataset[
+                                                        "aggregated_features"
+                                                    ][first_aggregator_key]
+                                                )
+                                                # Ensure the aggregator output is not empty before checking shape
+                                                if first_aggregator.size > 0:
+                                                    try:
+                                                        # Check for non-zero elements along the feature axis
+                                                        stats["total_features"] += (
+                                                            np.sum(
+                                                                np.any(
+                                                                    first_aggregator
+                                                                    != 0,
+                                                                    axis=1,
+                                                                )
+                                                            )
+                                                        )
+                                                    except np.AxisError:
+                                                        # Handle potential scalar case if aggregator somehow returns it
+                                                        stats["total_features"] += (
+                                                            np.sum(
+                                                                first_aggregator != 0
+                                                            )
+                                                        )
+
+                                        # Check event limit for this catalog
+                                        if (
+                                            event_limit is not None
+                                            and current_catalog_processed_events
+                                            >= event_limit
+                                        ):
+                                            self.logger.info(
+                                                f"Reached event limit of {event_limit} for catalog {catalog_idx + 1}. Stopping processing of this catalog."
+                                            )
+                                            catalog_event_limit_reached = True
+                                            break  # Exit the event loop for this catalog
 
                         except Exception as e:
                             # General error handling for the batch processing
@@ -724,16 +744,16 @@ class PhysliteCatalogProcessor:
         if plotting_enabled:
             self.logger.info(
                 f"{data_type_label} - final totals: "
-                f"Zero-bias samples: {zero_bias_samples_count}, "
-                f"Post-selection samples: {overall_plot_samples_count}"
+                f"Zero-bias samples: {total_zero_bias_samples_count}, "
+                f"Post-selection samples: {total_plot_samples_count}"
             )
 
         # --- Generate and Save Histogram Data using HistogramManager ---
 
         # Save post-selection histogram data
-        if plotting_enabled and overall_plot_samples_count > 0 and plot_output:
+        if plotting_enabled and total_plot_samples_count > 0 and plot_output:
             self.logger.info(
-                f"Saving post-selection histogram data from {overall_plot_samples_count} sampled events"
+                f"Saving post-selection histogram data from {total_plot_samples_count} sampled events"
             )
             self._save_histogram_data_with_manager(
                 sampled_scalar_features,
@@ -745,9 +765,9 @@ class PhysliteCatalogProcessor:
             )
 
         # Save zero-bias histogram data
-        if plotting_enabled and zero_bias_samples_count > 0 and plot_output:
+        if plotting_enabled and total_zero_bias_samples_count > 0 and plot_output:
             self.logger.info(
-                f"Saving zero-bias histogram data from {zero_bias_samples_count} sampled events"
+                f"Saving zero-bias histogram data from {total_zero_bias_samples_count} sampled events"
             )
             self._save_histogram_data_with_manager(
                 zero_bias_scalar_features,
