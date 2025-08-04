@@ -128,35 +128,20 @@ class PhysliteCatalogProcessor:
         # Prepare data in format expected by HistogramManager
         histogram_data = {}
 
-        # Add scalar features
+        # Note: Track counts are now included directly as aggregator_X_valid_tracks in scalar_features_dict
+        # No need to add separate N_Tracks_per_Event
+
+        # Add all features from scalar_features_dict (now contains both scalar and flattened aggregated features)
         for feature_name, values_list in scalar_features_dict.items():
-            if values_list:
-                histogram_data[feature_name] = values_list
-
-        # Add N_Tracks_per_Event if available
-        if event_n_tracks_list:
-            histogram_data["N_Tracks_per_Event"] = event_n_tracks_list
-
-        # Add aggregated features (flattened)
-        for agg_name, values_arrays in aggregated_features_dict.items():
-            if values_arrays:
-                # Stack and flatten aggregated features to get all values
-                stacked_array = np.stack(values_arrays)
-                n_events, n_tracks, n_features = stacked_array.shape
-
-                # Get feature names for this aggregator
-                plot_feature_names = [f"{agg_name}_{i}" for i in range(n_features)]
-
-                for k in range(n_features):
-                    feature_name = plot_feature_names[k]
-                    data_slice = stacked_array[
-                        :, :, k
-                    ]  # All events, all tracks for feature k
-                    mask = data_slice != 0  # Considering 0 as padding
-                    valid_data = data_slice[mask]
-
-                    if valid_data.size > 0:
-                        histogram_data[feature_name] = valid_data.tolist()
+            if values_list and len(values_list) > 0:
+                # Apply custom label mapping if available
+                display_name = self.custom_label_map.get(feature_name, feature_name)
+                
+                # Convert to list if it's a numpy array
+                if hasattr(values_list, 'tolist'):
+                    histogram_data[display_name] = values_list.tolist()
+                else:
+                    histogram_data[display_name] = list(values_list)
 
         if not histogram_data:
             self.logger.warning(f"No valid histogram data for {data_type_name}")
@@ -195,13 +180,13 @@ class PhysliteCatalogProcessor:
         event_n_tracks_list: list,
     ) -> Optional[int]:
         """
-        Collect histogram data from a processed event result.
+        Collect histogram data from a processed event result using the proper histogram data format.
 
         Args:
             result: The processed event result dictionary
             data_type: Either "zero_bias" or "post_selection"
-            scalar_features_dict: Dictionary to accumulate scalar features
-            aggregated_features_dict: Dictionary to accumulate aggregated features
+            scalar_features_dict: Dictionary to accumulate scalar features (branch_name -> list of values)
+            aggregated_features_dict: Dictionary to accumulate aggregated features (NOT USED - kept for compatibility)
             event_n_tracks_list: List to accumulate track counts
 
         Returns:
@@ -215,44 +200,29 @@ class PhysliteCatalogProcessor:
         first_agg_key = next(iter(result["aggregated_features"].keys()), None)
         num_tracks = None
 
-        # Collect aggregated features
-        for agg_key, agg_data_with_plot_names in result["aggregated_features"].items():
-            if data_type == "zero_bias":
-                # For zero-bias, use all data as-is but extract the array for histogram stacking
-                aggregated_features_dict[agg_key].append(
-                    agg_data_with_plot_names["array"]
-                )
-            else:
-                # For post-selection, handle clipped data if available
-                if "clipped_histogram_data" in agg_data_with_plot_names:
-                    # Use clipped data - extract the clipped features array
-                    clipped_hist_data = agg_data_with_plot_names[
-                        "clipped_histogram_data"
-                    ]
-                    aggregated_features_dict[agg_key].append(
-                        clipped_hist_data["clipped_features"]
-                    )
+        # Collect histogram data from aggregators using the properly formatted histogram data
+        for agg_key, agg_data in result["aggregated_features"].items():
+            # Get the histogram data for the appropriate data type
+            hist_data_key = f"{data_type}_hist_data"
+            hist_data = agg_data.get(hist_data_key)
+            
+            if hist_data:
+                # hist_data is a dict: {"branch_name": array_of_values, ...}
+                for branch_name, branch_values in hist_data.items():
+                    # Flatten the branch values and extend the accumulated list
+                    flattened_values = branch_values.flatten() if hasattr(branch_values, 'flatten') else branch_values
+                    scalar_features_dict[branch_name].extend(flattened_values)
+            
+            # Get track count from first aggregator
+            if agg_key == first_agg_key:
+                num_tracks = agg_data.get("n_valid_elements")
+                
+                # Add aggregator track count as a special histogram feature
+                if num_tracks is not None:
+                    track_count_key = f"{agg_key}_valid_tracks"
+                    scalar_features_dict[track_count_key].append(num_tracks)
 
-                    # Use clipped track count from first aggregator
-                    if agg_key == first_agg_key:
-                        num_tracks = clipped_hist_data["clipped_num_tracks"]
-                else:
-                    # Fallback to original data - extract the array
-                    aggregated_features_dict[agg_key].append(
-                        agg_data_with_plot_names["array"]
-                    )
-
-                    # Use original track count from first aggregator
-                    if agg_key == first_agg_key:
-                        num_tracks = result.get("num_tracks_for_plot")
-
-        # For zero-bias, get track count from first aggregator
-        if data_type == "zero_bias" and first_agg_key:
-            num_tracks = result["aggregated_features"][first_agg_key].get(
-                "n_valid_elements"
-            )
-
-        # Add track count to list
+        # Add overall track count to the event tracks list
         if num_tracks is not None:
             event_n_tracks_list.append(num_tracks)
 
