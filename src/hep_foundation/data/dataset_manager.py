@@ -449,6 +449,8 @@ class DatasetManager:
                 compression = "gzip" if dataset_config.hdf5_compression else None
 
                 first_event_logged = False
+                collected_signal_hist_data_paths = []
+                collected_signal_legend_labels = []
                 for signal_key in dataset_config.signal_keys:
                     self.logger.info(f"Processing signal type: {signal_key}")
 

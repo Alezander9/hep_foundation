@@ -401,11 +401,6 @@ class PhysliteEventProcessor:
         post_selection_hist_data = None
         zero_bias_hist_data = None
 
-        # Add debug logging
-        self.logger.templog(
-            f"Aggregator {idx}: need_more_zero_bias_samples={need_more_zero_bias_samples}, need_more_post_selection_samples={need_more_post_selection_samples}, model_training_failed={model_training_failed}"
-        )
-
         # --- Determine Sorting Indices ---
         if aggregator.sort_by_branch and sort_value is not None:
             if len(sort_value) != post_conversion_length:
@@ -426,14 +421,8 @@ class PhysliteEventProcessor:
         # Initialize histogram data dictionaries if needed
         if need_more_post_selection_samples:
             post_selection_hist_data = {}
-            self.logger.templog(
-                f"Aggregator {idx}: Initialized post_selection_hist_data as empty dict"
-            )
         if need_more_zero_bias_samples:
             zero_bias_hist_data = {}
-            self.logger.templog(
-                f"Aggregator {idx}: Initialized zero_bias_hist_data as empty dict"
-            )
 
         for selector in aggregator.input_branches:
             branch_name = selector.branch.name
@@ -466,9 +455,6 @@ class PhysliteEventProcessor:
             if need_more_post_selection_samples and not model_training_failed:
                 # Use the filtered values for post-selection histogram data
                 post_selection_hist_data[branch_name] = filtered_values.copy()
-                self.logger.templog(
-                    f"Aggregator {idx}: Added post-selection hist data for {branch_name}, shape: {filtered_values.shape}"
-                )
 
             # Generate histogram data for zero-bias (all tracks, no filters)
             if need_more_zero_bias_samples:
@@ -477,9 +463,6 @@ class PhysliteEventProcessor:
                 if unfiltered_values.ndim == 1:
                     unfiltered_values = unfiltered_values.reshape(-1, 1)
                 zero_bias_hist_data[branch_name] = unfiltered_values
-                self.logger.templog(
-                    f"Aggregator {idx}: Added zero-bias hist data for {branch_name}, shape: {unfiltered_values.shape}"
-                )
 
         if not processed_feature_segments:
             self.logger.warning(f"No feature segments collected for aggregator {idx}")
@@ -541,18 +524,12 @@ class PhysliteEventProcessor:
 
         # --- Generate Histogram Data (if needed) ---
         # Post-selection histogram data: use filtered and sorted data (truncated but not zero-padded)
-        self.logger.templog(
-            f"Aggregator {idx}: Before post-processing - post_selection_hist_data: {post_selection_hist_data is not None}, zero_bias_hist_data: {zero_bias_hist_data is not None}"
-        )
 
         if (
             need_more_post_selection_samples
             and post_selection_hist_data
             and not model_training_failed
         ):
-            self.logger.templog(
-                f"Aggregator {idx}: Processing post-selection histogram data with {len(post_selection_hist_data)} branches"
-            )
             # Only generate post-selection histogram data if filtering succeeded
             for branch_name in post_selection_hist_data:
                 # Apply same sorting to histogram data but don't pad
@@ -565,21 +542,12 @@ class PhysliteEventProcessor:
                     ]
                 else:
                     post_selection_hist_data[branch_name] = sorted_hist_values
-                self.logger.templog(
-                    f"Aggregator {idx}: Post-processed post-selection hist data for {branch_name}, final shape: {post_selection_hist_data[branch_name].shape}"
-                )
         elif need_more_post_selection_samples and model_training_failed:
             # Clear post-selection data if model training failed (not enough tracks after filtering)
             post_selection_hist_data = None
-            self.logger.templog(
-                f"Aggregator {idx}: Cleared post-selection hist data due to model training failure"
-            )
 
         # Apply sorting to zero-bias histogram data (no truncation, no padding)
         if need_more_zero_bias_samples and zero_bias_hist_data:
-            self.logger.templog(
-                f"Aggregator {idx}: Processing zero-bias histogram data with {len(zero_bias_hist_data)} branches"
-            )
             # For zero-bias, we need to sort the unfiltered data
             all_tracks_mask = np.ones(post_conversion_length, dtype=bool)
             if aggregator.sort_by_branch and sort_value is not None:
@@ -591,17 +559,7 @@ class PhysliteEventProcessor:
                 hist_values = zero_bias_hist_data[branch_name]
                 sorted_hist_values = hist_values[zero_bias_sort_indices]
                 zero_bias_hist_data[branch_name] = sorted_hist_values
-                self.logger.templog(
-                    f"Aggregator {idx}: Post-processed zero-bias hist data for {branch_name}, final shape: {zero_bias_hist_data[branch_name].shape}"
-                )
-        elif need_more_zero_bias_samples:
-            self.logger.templog(
-                f"Aggregator {idx}: Need zero-bias samples but zero_bias_hist_data is None or empty"
-            )
 
-        self.logger.templog(
-            f"Aggregator {idx}: Final return - post_selection_hist_data: {post_selection_hist_data is not None}, zero_bias_hist_data: {zero_bias_hist_data is not None}"
-        )
         return (
             aggregator_result_array,
             n_valid,
@@ -652,9 +610,6 @@ class PhysliteEventProcessor:
         # Create zero-filled array with correct shape
         zero_array = np.zeros((aggregator.max_length, total_features), dtype=np.float32)
 
-        self.logger.templog(
-            f"_create_zero_aggregator called for aggregator {idx} - returning None histogram data"
-        )
         return zero_array, 0, None, None
 
     def get_required_branches(self, task_config: TaskConfig) -> set:
@@ -830,9 +785,6 @@ class PhysliteEventProcessor:
             need_more_post_selection_samples and passed_filters,
         )
         if input_result is None:
-            self.logger.templog(
-                f"_process_selection_config returned None for event, need_zero_bias={need_more_zero_bias_samples}, need_post_selection={need_more_post_selection_samples and passed_filters}"
-            )
             return None, passed_filters
 
         # Process each label config if present (only for filtered events going to dataset)
@@ -847,9 +799,6 @@ class PhysliteEventProcessor:
                 )
                 if label_result is None:
                     # If any label processing fails for a supervised task, reject the event
-                    self.logger.templog(
-                        "_process_selection_config failed for label processing"
-                    )
                     return None, passed_filters
                 label_results.append(label_result)
 
@@ -884,17 +833,6 @@ class PhysliteEventProcessor:
 
             final_result["aggregated_features"][agg_key] = aggregator_data_object
 
-            # Debug: confirm histogram data is included in final result
-            post_hist_included = (
-                aggregator_data_object.get("post_selection_hist_data") is not None
-            )
-            zero_hist_included = (
-                aggregator_data_object.get("zero_bias_hist_data") is not None
-            )
-            self.logger.templog(
-                f"Added to final_result {agg_key}: post_hist={post_hist_included}, zero_hist={zero_hist_included}"
-            )
-
         # Set num_tracks_for_plot from the first input aggregator if available
         if (
             first_input_agg_key
@@ -923,28 +861,6 @@ class PhysliteEventProcessor:
                     label_aggregator_data_object
                 )
             final_result["label_features"].append(processed_label)
-
-        # Add templog statements to verify new histogram data format
-        if plotting_enabled:
-            for agg_key, agg_data in final_result["aggregated_features"].items():
-                post_hist = agg_data.get("post_selection_hist_data")
-                zero_hist = agg_data.get("zero_bias_hist_data")
-                self.logger.templog(
-                    f"Aggregator {agg_key} - Post-selection hist data: {list(post_hist.keys()) if post_hist else None}"
-                )
-                self.logger.templog(
-                    f"Aggregator {agg_key} - Zero-bias hist data: {list(zero_hist.keys()) if zero_hist else None}"
-                )
-                if post_hist:
-                    for branch_name, data in post_hist.items():
-                        self.logger.templog(
-                            f"  Post-selection {branch_name}: shape {data.shape}"
-                        )
-                if zero_hist:
-                    for branch_name, data in zero_hist.items():
-                        self.logger.templog(
-                            f"  Zero-bias {branch_name}: shape {data.shape}"
-                        )
 
         # Return both the processed result and filter status
         return final_result, passed_filters

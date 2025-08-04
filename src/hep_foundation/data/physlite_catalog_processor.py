@@ -186,6 +186,78 @@ class PhysliteCatalogProcessor:
 
         self.logger.info(f"Saved {data_type_name} histogram data to {json_file_path}")
 
+    def _collect_histogram_data(
+        self,
+        result: dict,
+        data_type: str,
+        scalar_features_dict: dict,
+        aggregated_features_dict: dict,
+        event_n_tracks_list: list,
+    ) -> Optional[int]:
+        """
+        Collect histogram data from a processed event result.
+
+        Args:
+            result: The processed event result dictionary
+            data_type: Either "zero_bias" or "post_selection"
+            scalar_features_dict: Dictionary to accumulate scalar features
+            aggregated_features_dict: Dictionary to accumulate aggregated features
+            event_n_tracks_list: List to accumulate track counts
+
+        Returns:
+            Number of tracks for the first aggregator, or None if no aggregators
+        """
+        # Collect scalar features
+        for name, value in result["scalar_features"].items():
+            scalar_features_dict[name].append(value)
+
+        # Get first aggregator key for track counting
+        first_agg_key = next(iter(result["aggregated_features"].keys()), None)
+        num_tracks = None
+
+        # Collect aggregated features
+        for agg_key, agg_data_with_plot_names in result["aggregated_features"].items():
+            if data_type == "zero_bias":
+                # For zero-bias, use all data as-is but extract the array for histogram stacking
+                aggregated_features_dict[agg_key].append(
+                    agg_data_with_plot_names["array"]
+                )
+            else:
+                # For post-selection, handle clipped data if available
+                if "clipped_histogram_data" in agg_data_with_plot_names:
+                    # Use clipped data - extract the clipped features array
+                    clipped_hist_data = agg_data_with_plot_names[
+                        "clipped_histogram_data"
+                    ]
+                    aggregated_features_dict[agg_key].append(
+                        clipped_hist_data["clipped_features"]
+                    )
+
+                    # Use clipped track count from first aggregator
+                    if agg_key == first_agg_key:
+                        num_tracks = clipped_hist_data["clipped_num_tracks"]
+                else:
+                    # Fallback to original data - extract the array
+                    aggregated_features_dict[agg_key].append(
+                        agg_data_with_plot_names["array"]
+                    )
+
+                    # Use original track count from first aggregator
+                    if agg_key == first_agg_key:
+                        num_tracks = result.get("num_tracks_for_plot")
+
+        # For zero-bias, get track count from first aggregator
+        if data_type == "zero_bias" and first_agg_key:
+            num_tracks = result["aggregated_features"][first_agg_key].get(
+                "n_valid_elements"
+            )
+
+        # Add track count to list
+        if num_tracks is not None:
+            event_n_tracks_list.append(num_tracks)
+
+        return num_tracks
+
     def process_catalogs(
         self,
         task_config: TaskConfig,
@@ -324,9 +396,6 @@ class PhysliteCatalogProcessor:
         sampled_event_n_tracks_list = (
             [] if plotting_enabled else None
         )  # For track multiplicity
-        raw_histogram_data_for_file = (
-            {} if plotting_enabled else None
-        )  # To store hist data for saving
 
         # Zero-bias data
         zero_bias_scalar_features = defaultdict(list) if plotting_enabled else None
@@ -334,9 +403,6 @@ class PhysliteCatalogProcessor:
         zero_bias_event_n_tracks_list = (
             [] if plotting_enabled else None
         )  # For track multiplicity
-        zero_bias_histogram_data_for_file = (
-            {} if plotting_enabled else None
-        )  # To store hist data for saving
         # --- End Plotting Setup ---
 
         # --- Main Processing Loop ---
@@ -462,34 +528,14 @@ class PhysliteCatalogProcessor:
                                         and current_catalog_samples_zero_bias_count
                                         < samples_per_catalog
                                     ):
-                                        # Accumulate zero-bias data
-                                        for name, value in result[
-                                            "scalar_features"
-                                        ].items():
-                                            zero_bias_scalar_features[name].append(
-                                                value
-                                            )
-
-                                        for agg_key, agg_data_with_plot_names in result[
-                                            "aggregated_features"
-                                        ].items():
-                                            zero_bias_aggregated_features[
-                                                agg_key
-                                            ].append(agg_data_with_plot_names)
-
-                                        # Get first aggregator's track count for zero-bias
-                                        first_agg_key = next(
-                                            iter(result["aggregated_features"].keys()),
-                                            None,
+                                        # Collect zero-bias histogram data using extracted method
+                                        self._collect_histogram_data(
+                                            result,
+                                            "zero_bias",
+                                            zero_bias_scalar_features,
+                                            zero_bias_aggregated_features,
+                                            zero_bias_event_n_tracks_list,
                                         )
-                                        if first_agg_key:
-                                            num_tracks = result["aggregated_features"][
-                                                first_agg_key
-                                            ].get("n_valid_elements")
-                                        if num_tracks is not None:
-                                            zero_bias_event_n_tracks_list.append(
-                                                num_tracks
-                                            )
 
                                         current_catalog_samples_zero_bias_count += 1
                                         total_zero_bias_samples_count += 1
@@ -560,76 +606,14 @@ class PhysliteCatalogProcessor:
                                             and current_catalog_samples_count
                                             < samples_per_catalog
                                         ):
-                                            # Append scalar features
-                                            for name, value in result[
-                                                "scalar_features"
-                                            ].items():
-                                                sampled_scalar_features[name].append(
-                                                    value
-                                                )
-
-                                            # Append aggregated features using clipped data (after clipping, before padding)
-                                            first_agg_key = None
-                                            for (
-                                                agg_key,
-                                                agg_data_with_plot_names,
-                                            ) in result["aggregated_features"].items():
-                                                if first_agg_key is None:
-                                                    first_agg_key = agg_key  # Capture first aggregator key
-
-                                            # Use clipped histogram data if available, otherwise fall back to original
-                                            if (
-                                                "clipped_histogram_data"
-                                                in agg_data_with_plot_names
-                                            ):
-                                                # Extract clipped features array and flatten track-by-track for histogram
-                                                clipped_hist_data = (
-                                                    agg_data_with_plot_names[
-                                                        "clipped_histogram_data"
-                                                    ]
-                                                )
-                                                clipped_array = clipped_hist_data[
-                                                    "clipped_features"
-                                                ]  # Shape: (n_tracks, n_features)
-                                                plot_feature_names = clipped_hist_data[
-                                                    "plot_feature_names"
-                                                ]
-
-                                                # Create a modified aggregator data structure that matches the original format
-                                                # but with individual track features flattened for histogram collection
-                                                modified_agg_data = {
-                                                    "array": clipped_array,  # This will be handled differently in histogram generation
-                                                    "plot_feature_names": plot_feature_names,
-                                                    "n_valid_elements": clipped_hist_data[
-                                                        "clipped_num_tracks"
-                                                    ],
-                                                }
-                                                sampled_aggregated_features[
-                                                    agg_key
-                                                ].append(modified_agg_data)
-
-                                                # Use clipped track count for plotting from first aggregator only
-                                                if agg_key == first_agg_key:
-                                                    sampled_event_n_tracks_list.append(
-                                                        clipped_hist_data[
-                                                            "clipped_num_tracks"
-                                                        ]
-                                                    )
-                                            else:
-                                                # Fallback to original behavior if clipped data not available
-                                                sampled_aggregated_features[
-                                                    agg_key
-                                                ].append(agg_data_with_plot_names)
-
-                                                # Append num_tracks_for_plot if available (fallback) from first aggregator only
-                                                if agg_key == first_agg_key:
-                                                    num_tracks = result.get(
-                                                        "num_tracks_for_plot"
-                                                    )
-                                                    if num_tracks is not None:
-                                                        sampled_event_n_tracks_list.append(
-                                                            num_tracks
-                                                        )
+                                            # Collect post-selection histogram data using extracted method
+                                            self._collect_histogram_data(
+                                                result,
+                                                "post_selection",
+                                                sampled_scalar_features,
+                                                sampled_aggregated_features,
+                                                sampled_event_n_tracks_list,
+                                            )
 
                                             current_catalog_samples_count += 1
                                             total_plot_samples_count += 1
