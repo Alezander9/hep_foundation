@@ -180,7 +180,7 @@ class HistogramManager:
                         "timestamp": datetime.now().isoformat(),
                     }
 
-                    # Save to disk and update global cache
+                    # Save to disk
                     self._save_physlite_percentiles(current_file_percentiles)
 
                     self.logger.info(
