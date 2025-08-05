@@ -158,9 +158,7 @@ class VAELayer(keras.layers.Layer):
 
         # Use softplus for numerical stability instead of exp
         variance = tf.nn.softplus(z_log_var) + 1e-6
-        kl_loss = -0.5 * tf.reduce_mean(
-            z_log_var - tf.square(z_mean) - variance + tf.math.log(variance)
-        )
+        kl_loss = -0.5 * tf.reduce_mean(1 + z_log_var - tf.square(z_mean) - variance)
 
         # Ensure beta has the same dtype as losses for mixed precision compatibility
         beta_cast = tf.cast(self.beta, reconstruction_loss.dtype)

@@ -126,7 +126,7 @@ class AnomalyDetectionEvaluator:
             kl_losses_batch = (
                 -0.5
                 * tf.reduce_sum(
-                    z_log_var - tf.square(z_mean) - variance + tf.math.log(variance),
+                    1 + z_log_var - tf.square(z_mean) - variance,
                     axis=1,
                 ).numpy()
             )

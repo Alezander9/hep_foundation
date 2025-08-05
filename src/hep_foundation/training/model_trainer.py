@@ -64,7 +64,9 @@ class TrainingProgressCallback(tf.keras.callbacks.Callback):
             # Check for NaN/Inf in training metrics (consistent with evaluation)
             invalid_metrics = []
             for key, value in logs.items():
-                if not np.isfinite(value):
+                if value is None or not isinstance(value, (int, float, np.number)):
+                    invalid_metrics.append(f"{key}={value}")
+                elif not np.isfinite(value):
                     invalid_metrics.append(f"{key}={value}")
 
             if invalid_metrics:
@@ -643,8 +645,14 @@ class ModelTrainer:
         # Check for any invalid final metrics (consistent with evaluation)
         invalid_final_metrics = []
         for metric, values in self.metrics_history.items():
-            if values and not np.isfinite(values[-1]):
-                invalid_final_metrics.append(f"{metric}={values[-1]}")
+            if values:
+                final_value = values[-1]
+                if final_value is None or not isinstance(
+                    final_value, (int, float, np.number)
+                ):
+                    invalid_final_metrics.append(f"{metric}={final_value}")
+                elif not np.isfinite(final_value):
+                    invalid_final_metrics.append(f"{metric}={final_value}")
 
         if invalid_final_metrics:
             self.logger.warning(
