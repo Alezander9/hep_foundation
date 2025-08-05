@@ -118,19 +118,15 @@ class AnomalyDetectionEvaluator:
             # Clip reconstruction losses to prevent extreme values from out-of-distribution signal data
             recon_losses_batch = np.clip(recon_losses_batch, 0.0, 1e8)
 
-            # Calculate KL losses with enhanced overflow protection
-            # More aggressive clipping for out-of-distribution signal data
-            z_log_var_clipped = tf.clip_by_value(z_log_var, -20.0, 20.0)
-            z_mean_clipped = tf.clip_by_value(z_mean, -10.0, 10.0)
+            # Calculate KL losses using softplus for numerical stability
+            # Use softplus instead of exp to prevent overflow
+            variance = tf.nn.softplus(z_log_var) + 1e-6
 
-            # Calculate KL divergence with additional safety
+            # Calculate KL divergence with numerical stability
             kl_losses_batch = (
                 -0.5
                 * tf.reduce_sum(
-                    1
-                    + z_log_var_clipped
-                    - tf.square(z_mean_clipped)
-                    - tf.exp(z_log_var_clipped),
+                    1 + z_log_var - tf.square(z_mean) - variance,
                     axis=1,
                 ).numpy()
             )

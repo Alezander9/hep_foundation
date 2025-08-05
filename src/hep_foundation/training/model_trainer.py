@@ -61,6 +61,19 @@ class TrainingProgressCallback(tf.keras.callbacks.Callback):
         # For "silent", never log individual epochs
 
         if should_log and logs is not None:
+            # Check for NaN/Inf in training metrics (consistent with evaluation)
+            invalid_metrics = []
+            for key, value in logs.items():
+                if value is None or not isinstance(value, (int, float, np.number)):
+                    invalid_metrics.append(f"{key}={value}")
+                elif not np.isfinite(value):
+                    invalid_metrics.append(f"{key}={value}")
+
+            if invalid_metrics:
+                self.logger.warning(
+                    f"Epoch {epoch + 1}: Found invalid metrics: {', '.join(invalid_metrics)}"
+                )
+
             metrics = " - ".join(f"{k}: {v:.6f}" for k, v in logs.items())
             self.logger.info(
                 f"Epoch {epoch + 1}/{self.epochs} completed in {time_taken:.1f}s - {metrics}"
@@ -111,9 +124,14 @@ class ModelTrainer:
 
         # Set up optimizer and loss
         self.optimizer = optimizer or tf.keras.optimizers.Adam(
-            learning_rate=training_config.get("learning_rate", 0.001)
+            learning_rate=training_config.get("learning_rate", 0.001),
+            clipnorm=training_config.get("gradient_clip_norm", 1.0),
         )
         self.loss = loss or tf.keras.losses.MeanSquaredError()
+
+        # Log gradient clipping configuration
+        gradient_clip_norm = training_config.get("gradient_clip_norm", 1.0)
+        self.logger.info(f"Gradient clipping enabled with norm={gradient_clip_norm}")
 
         # Training history
         self.history = None
@@ -623,6 +641,23 @@ class ModelTrainer:
         # Update metrics history
         for metric, values in history.history.items():
             self.metrics_history[metric] = [float(v) for v in values]
+
+        # Check for any invalid final metrics (consistent with evaluation)
+        invalid_final_metrics = []
+        for metric, values in self.metrics_history.items():
+            if values:
+                final_value = values[-1]
+                if final_value is None or not isinstance(
+                    final_value, (int, float, np.number)
+                ):
+                    invalid_final_metrics.append(f"{metric}={final_value}")
+                elif not np.isfinite(final_value):
+                    invalid_final_metrics.append(f"{metric}={final_value}")
+
+        if invalid_final_metrics:
+            self.logger.warning(
+                f"Training completed with invalid final metrics: {', '.join(invalid_final_metrics)}"
+            )
 
         final_metrics_str = ", ".join(
             f"{metric}: {values[-1]:.6f}"

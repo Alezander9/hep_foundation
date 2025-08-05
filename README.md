@@ -97,26 +97,30 @@ The pipeline automatically runs the full sequence: foundation model training →
 ### Key Directories
 
 ```
-src/hep_foundation/          # Main package source code
-├── config/                  # Configuration loading and validation
-├── data/                    # Dataset management, PhysLite data system
-├── models/                  # Model architectures (VAE, DNN, etc.)
-├── training/                # ModelTrainer and training utilities
-└── utils/                   # Plotting, logging, and utility functions
+src/hep_foundation/            # Main package source code
+├── config/                    # Configuration loading and validation
+├── data/                      # Dataset management, PhysLite data system
+├── models/                    # Model architectures (VAE, DNN, etc.)
+├── pipeline/                  # FoundationModelPipeline and helpers
+├── plots/                     # Plotting code and HistogramManager
+├── training/                  # ModelTrainer and training utilities
+└── utils/                     # Plotting, logging, and utility functions
 
-scripts/                     # Execution and utility scripts
-├── run_pipelines.py         # Main pipeline runner
-├── create_datasets.py       # Local dataset creation
-└── transfer_*.py            # Remote transfer utilities
+scripts/                       # Execution and utility scripts
+├── run_pipelines.py           # Main pipeline runner
+├── create_datasets.py         # Local dataset creation
+└── transfer_*.py              # Remote transfer utilities
 
-tests/                       # Test suite and test configurations
-jobs/                        # SLURM job submission scripts
-logs/                        # Pipeline execution logs
+tests/                         # Test suite and test configurations
+jobs/                          # SLURM job submission scripts
+└── debug_pipeline.sh          # Check and log environment info
+└── submit_pipeline_simple.sh  # Run full pipeline on all catalogs
+logs/                          # Pipeline execution logs
 
-_experiment_config_stack/    # Input: YAML configs to process
-_foundation_experiments/     # Output: Experiment results
-_processed_datasets/         # Cached datasets (HDF5 files)
-_test_results/              # Test outputs (cleaned each run)
+_experiment_config_stack/      # Input: YAML configs to process
+_foundation_experiments/       # Output: Experiment results
+_processed_datasets/           # Cached datasets (HDF5 files)
+_test_results/                 # Test outputs (cleaned each run)
 ```
 
 ### Configuration Files
@@ -155,8 +159,11 @@ Each experiment folder contains:
 ### Development Utilities
 
 **Code quality:**
-- `.pre-commit-config.yaml` - Automated code formatting (ruff) and quality checks
+- `.pre-commit-config.yaml` - Automated code formatting (ruff) and quality checks (vulture)
 - `uv` package management with `pyproject.toml` configuration
+
+**Visual Interface:**
+- `launch_gradio.py` - Opens webpage with result viewer UI
 
 **Development tools:**
 - `.devcontainer/` - Docker container for consistent development environment
