@@ -53,6 +53,20 @@ class HistogramManager:
 
         return _physlite_percentiles_data
 
+    def _load_current_file_percentiles(self) -> dict:
+        """Load current percentiles data directly from file (bypassing cache)."""
+        file_path = Path(__file__).parent.parent / "data" / "physlite_percentiles.json"
+
+        try:
+            if file_path.exists():
+                with open(file_path) as f:
+                    return json.load(f)
+            else:
+                return {}
+        except Exception as e:
+            self.logger.error(f"Failed to load current percentiles from file: {e}")
+            return {}
+
     def _save_physlite_percentiles(self, data: dict) -> None:
         """Save the physlite percentiles data to the JSON file."""
         file_path = Path(__file__).parent.parent / "data" / "physlite_percentiles.json"
@@ -158,15 +172,16 @@ class HistogramManager:
                     new_max = max(current_p999, bin_max)
 
                     # Update file (but not session cache to avoid invalidating current session)
-                    updated_file_percentiles = self._file_percentiles_data.copy()
-                    updated_file_percentiles[key] = {
+                    # Reload current file contents to avoid race conditions
+                    current_file_percentiles = self._load_current_file_percentiles()
+                    current_file_percentiles[key] = {
                         "0.1": new_min,
                         "99.9": new_max,
                         "timestamp": datetime.now().isoformat(),
                     }
 
-                    # Save to disk only
-                    self._save_physlite_percentiles(updated_file_percentiles)
+                    # Save to disk and update global cache
+                    self._save_physlite_percentiles(current_file_percentiles)
 
                     self.logger.info(
                         f"Updated FILE percentiles for {key}: "

@@ -468,11 +468,6 @@ class PhysliteEventProcessor:
             self.logger.warning(f"No feature segments collected for aggregator {idx}")
             return self._create_zero_aggregator(event_data, aggregator, idx)
 
-        # Get num_cols per segment
-        num_cols_per_segment = [
-            seg.shape[1] if seg.ndim == 2 else 1 for seg in processed_feature_segments
-        ]
-
         # --- Stack features horizontally ---
         try:
             features = np.hstack(processed_feature_segments)
@@ -549,7 +544,6 @@ class PhysliteEventProcessor:
         # Apply sorting to zero-bias histogram data (no truncation, no padding)
         if need_more_zero_bias_samples and zero_bias_hist_data:
             # For zero-bias, we need to sort the unfiltered data
-            all_tracks_mask = np.ones(post_conversion_length, dtype=bool)
             if aggregator.sort_by_branch and sort_value is not None:
                 zero_bias_sort_indices = np.argsort(sort_value)[::-1]
             else:
