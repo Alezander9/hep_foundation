@@ -121,9 +121,9 @@ class Sampling(keras.layers.Layer):
         dim = tf.shape(z_mean)[1]
         # Ensure epsilon has the same dtype as inputs (for mixed precision compatibility)
         epsilon = tf.keras.backend.random_normal(shape=(batch, dim), dtype=z_mean.dtype)
-        # Clip z_log_var to prevent overflow in exp operation
-        z_log_var_clipped = tf.clip_by_value(z_log_var, -20.0, 20.0)
-        return z_mean + tf.exp(0.5 * z_log_var_clipped) * epsilon
+        # Use softplus for numerical stability instead of exp
+        variance = tf.nn.softplus(z_log_var) + 1e-6
+        return z_mean + tf.sqrt(variance) * epsilon
 
 
 class VAELayer(keras.layers.Layer):
@@ -156,10 +156,10 @@ class VAELayer(keras.layers.Layer):
             keras.losses.mse(flat_inputs, flat_reconstruction)
         )
 
-        # Clip z_log_var to prevent overflow in exp operation during training
-        z_log_var_clipped = tf.clip_by_value(z_log_var, -20.0, 20.0)
+        # Use softplus for numerical stability instead of exp
+        variance = tf.nn.softplus(z_log_var) + 1e-6
         kl_loss = -0.5 * tf.reduce_mean(
-            1 + z_log_var_clipped - tf.square(z_mean) - tf.exp(z_log_var_clipped)
+            z_log_var - tf.square(z_mean) - variance + tf.math.log(variance)
         )
 
         # Ensure beta has the same dtype as losses for mixed precision compatibility
