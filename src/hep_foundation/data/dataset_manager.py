@@ -296,11 +296,14 @@ class DatasetManager:
                 data_type_label = (
                     f"ATLAS_BACKGROUND(runs={len(dataset_config.run_numbers)})"
                 )
-                # Create plot_data directory if plotting is enabled
+                # Create plot_data and sample_data directories if plotting is enabled
                 plot_data_dir = None
+                sample_data_dir = None
                 if dataset_config.plot_distributions and plot_output:
                     plot_data_dir = dataset_dir / "plot_data"
                     plot_data_dir.mkdir(parents=True, exist_ok=True)
+                    sample_data_dir = dataset_dir / "sample_data"
+                    sample_data_dir.mkdir(parents=True, exist_ok=True)
 
                 result = self.feature_processor.process_catalogs(
                     task_config=dataset_config.task_config,
@@ -312,6 +315,7 @@ class DatasetManager:
                     plot_output=plot_output,
                     first_event_logged=False,
                     plot_data_dir=plot_data_dir,
+                    sample_data_dir=sample_data_dir,
                 )
                 inputs, labels, stats = result
                 all_inputs.extend(inputs)
@@ -493,14 +497,17 @@ class DatasetManager:
                         f"event_limit={dataset_config.event_limit}, using={signal_event_limit_to_use}"
                     )
 
-                    # Create plot_data directory if plotting is enabled
+                    # Create plot_data and sample_data directories if plotting is enabled
                     signal_plot_data_dir = None
+                    signal_sample_data_dir = None
                     if (
                         dataset_config.plot_distributions
                         and plot_output_for_signal_json
                     ):
                         signal_plot_data_dir = dataset_dir / "plot_data"
                         signal_plot_data_dir.mkdir(parents=True, exist_ok=True)
+                        signal_sample_data_dir = dataset_dir / "sample_data"
+                        signal_sample_data_dir.mkdir(parents=True, exist_ok=True)
 
                     data_type_label = f"SIGNAL({signal_key})"
                     inputs, labels, stats = self.feature_processor.process_catalogs(
@@ -513,6 +520,7 @@ class DatasetManager:
                         plot_output=plot_output_for_signal_json,  # Pass path for JSON saving
                         first_event_logged=first_event_logged,
                         plot_data_dir=signal_plot_data_dir,
+                        sample_data_dir=signal_sample_data_dir,
                     )
                     first_event_logged = True
                     if not inputs:
@@ -895,8 +903,11 @@ class DatasetManager:
         shuffle_buffer: int = 10000,
         include_labels: bool = False,
         delete_catalogs: bool = True,
-    ) -> tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
-        """Load and split dataset into train/val/test."""
+        split: bool = True,
+    ) -> Union[
+        tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset], tf.data.Dataset
+    ]:
+        """Load dataset and optionally split into train/val/test."""
         self.logger.info("Loading datasets")
         try:
             # Generate dataset ID and load/create dataset file
@@ -939,6 +950,10 @@ class DatasetManager:
                     features_dict, norm_params, labels_dict
                 )
 
+                if not split:
+                    # Return full dataset with batching
+                    return dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+
                 # Create splits
                 train_size = n_events - int(
                     (validation_fraction + test_fraction) * n_events
@@ -973,11 +988,18 @@ class DatasetManager:
     def load_signal_datasets(
         self,
         dataset_config: DatasetConfig,
+        validation_fraction: float = 0.15,
+        test_fraction: float = 0.15,
         batch_size: int = 1000,
+        shuffle_buffer: int = 10000,
         include_labels: bool = False,
         background_hist_data_path: Optional[Path] = None,
-    ) -> dict[str, tf.data.Dataset]:
-        """Load signal datasets for evaluation."""
+        split: bool = False,
+    ) -> Union[
+        dict[str, tf.data.Dataset],
+        dict[str, tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]],
+    ]:
+        """Load signal datasets and optionally split into train/val/test."""
         self.logger.info("Loading signal datasets")
         try:
             # Generate dataset ID and load/create dataset file
@@ -1001,25 +1023,101 @@ class DatasetManager:
                 for signal_key in f.keys():
                     signal_group = f[signal_key]
 
-                    # Use helper function to load and normalize dataset
-                    dataset = self._load_and_normalize_dataset_from_group(
-                        features_group=signal_group["features"],
-                        labels_group=signal_group.get("labels")
-                        if (
-                            include_labels
-                            and "labels" in signal_group
-                            and signal_group.attrs.get("has_labels", False)
+                    if not split:
+                        # Return full dataset (original behavior)
+                        dataset = self._load_and_normalize_dataset_from_group(
+                            features_group=signal_group["features"],
+                            labels_group=signal_group.get("labels")
+                            if (
+                                include_labels
+                                and "labels" in signal_group
+                                and signal_group.attrs.get("has_labels", False)
+                            )
+                            else None,
+                            include_labels=include_labels,
+                            batch_size=batch_size,
                         )
-                        else None,
-                        include_labels=include_labels,
-                        batch_size=batch_size,
-                    )
+                        signal_datasets[signal_key] = dataset
+                    else:
+                        # Split the dataset (new behavior)
+                        # Get number of events for this signal
+                        features_group = signal_group["features"]
+                        first_feature_key = next(iter(features_group.keys()))
+                        first_feature_dataset = features_group[first_feature_key]
+                        # Handle nested structure - if it's a group, get the first dataset inside
+                        if isinstance(first_feature_dataset, h5py.Group):
+                            nested_key = next(iter(first_feature_dataset.keys()))
+                            n_events = first_feature_dataset[nested_key].shape[0]
+                        else:
+                            n_events = first_feature_dataset.shape[0]
 
-                    signal_datasets[signal_key] = dataset
+                        self.logger.info(
+                            f"Signal {signal_key}: {n_events} events total"
+                        )
 
-            self.logger.info(
-                f"Successfully loaded {len(signal_datasets)} signal datasets"
-            )
+                        # Create unbatched dataset for splitting
+                        dataset = self._load_and_normalize_dataset_from_group(
+                            features_group=signal_group["features"],
+                            labels_group=signal_group.get("labels")
+                            if (
+                                include_labels
+                                and "labels" in signal_group
+                                and signal_group.attrs.get("has_labels", False)
+                            )
+                            else None,
+                            include_labels=include_labels,
+                            batch_size=None,  # No batching for splitting
+                            apply_batching=False,  # Don't apply batching yet
+                        )
+
+                        # Create splits using the same logic as ATLAS datasets
+                        train_size = n_events - int(
+                            (validation_fraction + test_fraction) * n_events
+                        )
+                        val_size = int(validation_fraction * n_events)
+                        test_size = n_events - train_size - val_size
+
+                        self.logger.info(
+                            f"Signal {signal_key} splits: train={train_size}, val={val_size}, test={test_size}"
+                        )
+
+                        # Apply splits and batching
+                        train_dataset = (
+                            dataset.take(train_size)
+                            .shuffle(
+                                buffer_size=shuffle_buffer,
+                                reshuffle_each_iteration=True,
+                            )
+                            .batch(batch_size)
+                            .prefetch(tf.data.AUTOTUNE)
+                        )
+
+                        remaining = dataset.skip(train_size)
+                        val_dataset = (
+                            remaining.take(val_size)
+                            .batch(batch_size)
+                            .prefetch(tf.data.AUTOTUNE)
+                        )
+                        test_dataset = (
+                            remaining.skip(val_size)
+                            .batch(batch_size)
+                            .prefetch(tf.data.AUTOTUNE)
+                        )
+
+                        signal_datasets[signal_key] = (
+                            train_dataset,
+                            val_dataset,
+                            test_dataset,
+                        )
+
+            if split:
+                self.logger.info(
+                    f"Successfully loaded {len(signal_datasets)} signal datasets with splits"
+                )
+            else:
+                self.logger.info(
+                    f"Successfully loaded {len(signal_datasets)} signal datasets"
+                )
             return signal_datasets
 
         except Exception as e:

@@ -898,6 +898,7 @@ class FoundationModelPipeline:
                     batch_size=batch_size,
                     include_labels=False,
                     background_hist_data_path=background_hist_data_path_for_comparison,  # Pass the path here
+                    split=False,  # Anomaly detection uses full signal datasets
                 )
                 self.logger.info(
                     f"Reloaded {len(signal_datasets)} signal datasets for evaluation."
@@ -1803,22 +1804,26 @@ class FoundationModelPipeline:
                     f"Background histogram data for comparison not found at {potential_background_hist_path}. Comparison plot may be skipped by DatasetManager."
                 )
 
-            # 3. Load first signal dataset (later we will repeat this for all signal keys)
+            # 3. Load first signal dataset with proper train/val/test splits
             signal_key = dataset_config.signal_keys[0]
-            self.logger.info(f"Loading signal dataset: {signal_key}")
+            self.logger.info(f"Loading signal dataset with splits: {signal_key}")
 
-            signal_datasets = data_manager.load_signal_datasets(
+            signal_datasets_splits = data_manager.load_signal_datasets(
                 dataset_config=dataset_config,
+                validation_fraction=dataset_config.validation_fraction,
+                test_fraction=dataset_config.test_fraction,
                 batch_size=dnn_training_config.batch_size,
+                shuffle_buffer=dataset_config.shuffle_buffer,
                 include_labels=False,  # No labels needed for signals
                 background_hist_data_path=background_hist_data_path_for_comparison,  # Pass the path here
+                split=True,  # Enable splitting
             )
 
-            if signal_key not in signal_datasets:
+            if signal_key not in signal_datasets_splits:
                 self.logger.error(f"Signal dataset '{signal_key}' not found")
                 return False
 
-            signal_dataset = signal_datasets[signal_key]
+            signal_train, signal_val, signal_test = signal_datasets_splits[signal_key]
 
             # 4. Create balanced labeled datasets
             self.logger.info("Creating balanced labeled datasets...")
@@ -1844,15 +1849,15 @@ class FoundationModelPipeline:
                 # Rebatch
                 return combined.batch(dnn_training_config.batch_size)
 
-            # Create balanced train, validation, and test datasets
+            # Create balanced train, validation, and test datasets using proper signal splits
             labeled_train_dataset = create_balanced_labeled_dataset(
-                background_train, signal_dataset
+                background_train, signal_train
             )
             labeled_val_dataset = create_balanced_labeled_dataset(
-                background_val, signal_dataset
+                background_val, signal_val
             )
             labeled_test_dataset = create_balanced_labeled_dataset(
-                background_test, signal_dataset
+                background_test, signal_test
             )
 
             # Count total training events

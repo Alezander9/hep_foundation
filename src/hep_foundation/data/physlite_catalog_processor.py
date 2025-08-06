@@ -136,9 +136,9 @@ class PhysliteCatalogProcessor:
             if values_list and len(values_list) > 0:
                 # Apply custom label mapping if available
                 display_name = self.custom_label_map.get(feature_name, feature_name)
-                
+
                 # Convert to list if it's a numpy array
-                if hasattr(values_list, 'tolist'):
+                if hasattr(values_list, "tolist"):
                     histogram_data[display_name] = values_list.tolist()
                 else:
                     histogram_data[display_name] = list(values_list)
@@ -178,6 +178,7 @@ class PhysliteCatalogProcessor:
         scalar_features_dict: dict,
         aggregated_features_dict: dict,
         event_n_tracks_list: list,
+        raw_samples_list: Optional[list] = None,
     ) -> Optional[int]:
         """
         Collect histogram data from a processed event result using the proper histogram data format.
@@ -188,6 +189,7 @@ class PhysliteCatalogProcessor:
             scalar_features_dict: Dictionary to accumulate scalar features (branch_name -> list of values)
             aggregated_features_dict: Dictionary to accumulate aggregated features (NOT USED - kept for compatibility)
             event_n_tracks_list: List to accumulate track counts
+            raw_samples_list: Optional list to accumulate complete raw event samples
 
         Returns:
             Number of tracks for the first aggregator, or None if no aggregators
@@ -205,18 +207,22 @@ class PhysliteCatalogProcessor:
             # Get the histogram data for the appropriate data type
             hist_data_key = f"{data_type}_hist_data"
             hist_data = agg_data.get(hist_data_key)
-            
+
             if hist_data:
                 # hist_data is a dict: {"branch_name": array_of_values, ...}
                 for branch_name, branch_values in hist_data.items():
                     # Flatten the branch values and extend the accumulated list
-                    flattened_values = branch_values.flatten() if hasattr(branch_values, 'flatten') else branch_values
+                    flattened_values = (
+                        branch_values.flatten()
+                        if hasattr(branch_values, "flatten")
+                        else branch_values
+                    )
                     scalar_features_dict[branch_name].extend(flattened_values)
-            
+
             # Get track count from first aggregator
             if agg_key == first_agg_key:
                 num_tracks = agg_data.get("n_valid_elements")
-                
+
                 # Add aggregator track count as a special histogram feature
                 if num_tracks is not None:
                     track_count_key = f"{agg_key}_valid_tracks"
@@ -226,7 +232,97 @@ class PhysliteCatalogProcessor:
         if num_tracks is not None:
             event_n_tracks_list.append(num_tracks)
 
+        # Collect complete raw sample if requested
+        if raw_samples_list is not None:
+            # Create a serializable copy of the result
+            raw_sample = self._prepare_raw_sample_for_storage(result)
+            raw_samples_list.append(raw_sample)
+
         return num_tracks
+
+    def _prepare_raw_sample_for_storage(self, result: dict) -> dict:
+        """
+        Prepare a processed event result for JSON serialization and storage.
+
+        Args:
+            result: The processed event result dictionary
+
+        Returns:
+            A serializable dictionary suitable for JSON storage
+        """
+
+        def convert_numpy_types(obj):
+            """Convert numpy types to Python native types"""
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, (np.integer, np.int64, np.int32)):
+                return int(obj)
+            elif isinstance(obj, (np.floating, np.float64, np.float32)):
+                return float(obj)
+            elif isinstance(obj, dict):
+                return {key: convert_numpy_types(value) for key, value in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_numpy_types(item) for item in obj]
+            else:
+                return obj
+
+        # Create a copy and convert all numpy types
+        serializable_result = convert_numpy_types(result)
+
+        return serializable_result
+
+    def _save_raw_samples(
+        self,
+        raw_samples_list: list,
+        data_type_name: str,
+        plot_output: Path,
+        sample_data_dir: Optional[Path] = None,
+    ) -> None:
+        """
+        Save raw event samples to JSON files for later reuse.
+
+        Args:
+            raw_samples_list: List of raw event samples
+            data_type_name: Either "post_selection" or "zero_bias"
+            plot_output: Path for determining JSON file location
+            sample_data_dir: Optional directory where raw sample data should be saved
+        """
+        if not raw_samples_list:
+            self.logger.warning(f"No raw samples to save for {data_type_name}")
+            return
+
+        # Determine file path - use provided sample_data_dir or derive from plot_output
+        if sample_data_dir is None:
+            sample_data_dir = plot_output.parent.parent / "sample_data"
+        sample_data_dir.mkdir(parents=True, exist_ok=True)
+
+        if data_type_name == "zero_bias":
+            json_file_path = sample_data_dir / (
+                plot_output.stem + "_zero_bias_raw_samples.json"
+            )
+        else:
+            json_file_path = sample_data_dir / (plot_output.stem + "_raw_samples.json")
+
+        # Save raw samples with metadata
+        raw_samples_data = {
+            "metadata": {
+                "data_type": data_type_name,
+                "num_samples": len(raw_samples_list),
+                "creation_date": str(datetime.now()),
+                "format_version": "1.0",
+            },
+            "samples": raw_samples_list,
+        }
+
+        try:
+            with open(json_file_path, "w") as f:
+                json.dump(raw_samples_data, f, indent=2)
+
+            self.logger.info(
+                f"Saved {len(raw_samples_list)} {data_type_name} raw samples to {json_file_path}"
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to save raw samples to {json_file_path}: {e}")
 
     def process_catalogs(
         self,
@@ -239,6 +335,7 @@ class PhysliteCatalogProcessor:
         plot_output: Optional[Path] = None,
         first_event_logged: bool = True,
         plot_data_dir: Optional[Path] = None,
+        sample_data_dir: Optional[Path] = None,
     ) -> tuple[
         list[dict[str, np.ndarray]], list[dict[str, np.ndarray]], dict, Optional[dict]
     ]:
@@ -255,6 +352,7 @@ class PhysliteCatalogProcessor:
             plot_output: Optional complete path (including filename) for saving plots
             first_event_logged: Whether the first event has been logged
             plot_data_dir: Optional directory where plot data JSON files should be saved
+            sample_data_dir: Optional directory where raw sample JSON files should be saved
 
         Returns:
             Tuple containing:
@@ -366,6 +464,9 @@ class PhysliteCatalogProcessor:
         sampled_event_n_tracks_list = (
             [] if plotting_enabled else None
         )  # For track multiplicity
+        sampled_raw_events = (
+            [] if plotting_enabled else None
+        )  # Raw samples for post-selection
 
         # Zero-bias data
         zero_bias_scalar_features = defaultdict(list) if plotting_enabled else None
@@ -373,6 +474,9 @@ class PhysliteCatalogProcessor:
         zero_bias_event_n_tracks_list = (
             [] if plotting_enabled else None
         )  # For track multiplicity
+        zero_bias_raw_events = (
+            [] if plotting_enabled else None
+        )  # Raw samples for zero-bias
         # --- End Plotting Setup ---
 
         # --- Main Processing Loop ---
@@ -505,6 +609,7 @@ class PhysliteCatalogProcessor:
                                             zero_bias_scalar_features,
                                             zero_bias_aggregated_features,
                                             zero_bias_event_n_tracks_list,
+                                            zero_bias_raw_events,
                                         )
 
                                         current_catalog_samples_zero_bias_count += 1
@@ -583,6 +688,7 @@ class PhysliteCatalogProcessor:
                                                 sampled_scalar_features,
                                                 sampled_aggregated_features,
                                                 sampled_event_n_tracks_list,
+                                                sampled_raw_events,
                                             )
 
                                             current_catalog_samples_count += 1
@@ -731,6 +837,32 @@ class PhysliteCatalogProcessor:
                 plot_output,
                 plot_data_dir,
             )
+
+        # Save raw samples alongside histogram data
+        if plotting_enabled and plot_output:
+            # Save post-selection raw samples
+            if total_plot_samples_count > 0 and sampled_raw_events:
+                self.logger.info(
+                    f"Saving post-selection raw samples from {len(sampled_raw_events)} events"
+                )
+                self._save_raw_samples(
+                    sampled_raw_events,
+                    "post_selection",
+                    plot_output,
+                    sample_data_dir,
+                )
+
+            # Save zero-bias raw samples
+            if total_zero_bias_samples_count > 0 and zero_bias_raw_events:
+                self.logger.info(
+                    f"Saving zero-bias raw samples from {len(zero_bias_raw_events)} events"
+                )
+                self._save_raw_samples(
+                    zero_bias_raw_events,
+                    "zero_bias",
+                    plot_output,
+                    sample_data_dir,
+                )
 
         # --- End of Histogram Data Generation ---
 
