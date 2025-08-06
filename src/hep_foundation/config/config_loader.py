@@ -219,9 +219,6 @@ class PipelineConfigLoader:
                 "signal_classification_data_sizes", regression_data_sizes
             ),
             fixed_epochs=evaluation_dict.get("fixed_epochs", 10),
-            anomaly_eval_batch_size=evaluation_dict.get(
-                "anomaly_eval_batch_size", 1024
-            ),
         )
 
     def _create_vae_model_config(self, vae_dict: dict[str, Any]) -> VAEConfig:

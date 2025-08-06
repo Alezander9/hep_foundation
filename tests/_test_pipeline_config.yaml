@@ -96,7 +96,7 @@ models:
 training:
   vae:
     batch_size: 1024
-    learning_rate: 0.001
+    learning_rate: 0.001  # Learning rate for VAE training
     epochs: 10  # Short training for testing
     early_stopping:
       patience: 2
@@ -105,7 +105,7 @@ training:
 
   dnn:
     batch_size: 1024
-    learning_rate: 0.001
+    learning_rate: 0.0005  # Different learning rate for DNN training
     epochs: 0 # This gets overridden by the evaluation config
     early_stopping:
       patience: 2
@@ -117,7 +117,6 @@ evaluation:
   regression_data_sizes: [500, 1000]  # Small sizes for testing
   signal_classification_data_sizes: [500, 1000]  # Small sizes for testing
   fixed_epochs: 3  # Very few epochs for testing
-  anomaly_eval_batch_size: 512  # Smaller for testing
 
 # Pipeline Settings - test-specific paths
 pipeline:
