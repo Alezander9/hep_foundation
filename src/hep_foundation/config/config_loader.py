@@ -185,6 +185,7 @@ class PipelineConfigLoader:
             test_fraction=dataset_dict["test_fraction"],
             shuffle_buffer=dataset_dict["shuffle_buffer"],
             plot_distributions=dataset_dict.get("plot_distributions", True),
+            save_raw_samples=dataset_dict.get("save_raw_samples", True),
             include_labels=dataset_dict.get("include_labels", True),
             hdf5_compression=dataset_dict.get(
                 "hdf5_compression", True

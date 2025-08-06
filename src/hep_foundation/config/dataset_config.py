@@ -15,6 +15,7 @@ class DatasetConfig:
     test_fraction: float
     shuffle_buffer: int
     plot_distributions: bool
+    save_raw_samples: bool = True  # Whether to save raw event samples
     event_limit: Optional[int] = None
     signal_event_limit: Optional[int] = None  # Separate event limit for signal data
     include_labels: bool = True
@@ -48,6 +49,7 @@ class DatasetConfig:
             "test_fraction": self.test_fraction,
             "shuffle_buffer": self.shuffle_buffer,
             "plot_distributions": self.plot_distributions,
+            "save_raw_samples": self.save_raw_samples,
             "include_labels": self.include_labels,
             "hdf5_compression": self.hdf5_compression,
             "task_config": self.task_config.to_dict() if self.task_config else None,

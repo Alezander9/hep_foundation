@@ -312,6 +312,7 @@ class DatasetManager:
                     event_limit=dataset_config.event_limit,
                     delete_catalogs=delete_catalogs,
                     plot_distributions=dataset_config.plot_distributions,
+                    save_raw_samples=dataset_config.save_raw_samples,
                     plot_output=plot_output,
                     first_event_logged=False,
                     plot_data_dir=plot_data_dir,
@@ -517,6 +518,7 @@ class DatasetManager:
                         event_limit=signal_event_limit_to_use,
                         delete_catalogs=False,  # Always keep signal catalogs
                         plot_distributions=dataset_config.plot_distributions,
+                        save_raw_samples=dataset_config.save_raw_samples,
                         plot_output=plot_output_for_signal_json,  # Pass path for JSON saving
                         first_event_logged=first_event_logged,
                         plot_data_dir=signal_plot_data_dir,

@@ -331,6 +331,7 @@ class PhysliteCatalogProcessor:
         data_type_label: str,
         event_limit: Optional[int] = None,
         plot_distributions: bool = False,
+        save_raw_samples: bool = True,
         delete_catalogs: bool = True,
         plot_output: Optional[Path] = None,
         first_event_logged: bool = True,
@@ -465,7 +466,7 @@ class PhysliteCatalogProcessor:
             [] if plotting_enabled else None
         )  # For track multiplicity
         sampled_raw_events = (
-            [] if plotting_enabled else None
+            [] if (plotting_enabled and save_raw_samples) else None
         )  # Raw samples for post-selection
 
         # Zero-bias data
@@ -475,7 +476,7 @@ class PhysliteCatalogProcessor:
             [] if plotting_enabled else None
         )  # For track multiplicity
         zero_bias_raw_events = (
-            [] if plotting_enabled else None
+            [] if (plotting_enabled and save_raw_samples) else None
         )  # Raw samples for zero-bias
         # --- End Plotting Setup ---
 
@@ -839,7 +840,7 @@ class PhysliteCatalogProcessor:
             )
 
         # Save raw samples alongside histogram data
-        if plotting_enabled and plot_output:
+        if plotting_enabled and save_raw_samples and plot_output:
             # Save post-selection raw samples
             if total_plot_samples_count > 0 and sampled_raw_events:
                 self.logger.info(
