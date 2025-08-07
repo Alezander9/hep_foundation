@@ -136,9 +136,9 @@ class PhysliteCatalogProcessor:
             if values_list and len(values_list) > 0:
                 # Apply custom label mapping if available
                 display_name = self.custom_label_map.get(feature_name, feature_name)
-                
+
                 # Convert to list if it's a numpy array
-                if hasattr(values_list, 'tolist'):
+                if hasattr(values_list, "tolist"):
                     histogram_data[display_name] = values_list.tolist()
                 else:
                     histogram_data[display_name] = list(values_list)
@@ -205,18 +205,22 @@ class PhysliteCatalogProcessor:
             # Get the histogram data for the appropriate data type
             hist_data_key = f"{data_type}_hist_data"
             hist_data = agg_data.get(hist_data_key)
-            
+
             if hist_data:
                 # hist_data is a dict: {"branch_name": array_of_values, ...}
                 for branch_name, branch_values in hist_data.items():
                     # Flatten the branch values and extend the accumulated list
-                    flattened_values = branch_values.flatten() if hasattr(branch_values, 'flatten') else branch_values
+                    flattened_values = (
+                        branch_values.flatten()
+                        if hasattr(branch_values, "flatten")
+                        else branch_values
+                    )
                     scalar_features_dict[branch_name].extend(flattened_values)
-            
+
             # Get track count from first aggregator
             if agg_key == first_agg_key:
                 num_tracks = agg_data.get("n_valid_elements")
-                
+
                 # Add aggregator track count as a special histogram feature
                 if num_tracks is not None:
                     track_count_key = f"{agg_key}_valid_tracks"

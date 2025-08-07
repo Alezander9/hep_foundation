@@ -8,7 +8,7 @@ with advanced features like learning rate scheduling and gradient clipping.
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Optional, Union
 
 import numpy as np
 import tensorflow as tf
@@ -34,7 +34,7 @@ class StandaloneTrainer:
         training_config: StandaloneTrainingConfig,
         optimizer: Optional[tf.keras.optimizers.Optimizer] = None,
         loss: Optional[tf.keras.losses.Loss] = None,
-        metrics: Optional[List[Union[str, tf.keras.metrics.Metric]]] = None,
+        metrics: Optional[list[Union[str, tf.keras.metrics.Metric]]] = None,
     ):
         """
         Initialize StandaloneTrainer.
@@ -157,8 +157,8 @@ class StandaloneTrainer:
     def _create_callbacks(
         self,
         validation_data: Optional[tf.data.Dataset] = None,
-        custom_callbacks: Optional[List[tf.keras.callbacks.Callback]] = None,
-    ) -> List[tf.keras.callbacks.Callback]:
+        custom_callbacks: Optional[list[tf.keras.callbacks.Callback]] = None,
+    ) -> list[tf.keras.callbacks.Callback]:
         """
         Create training callbacks including early stopping and learning rate scheduling.
 
@@ -204,7 +204,7 @@ class StandaloneTrainer:
         self,
         dataset: tf.data.Dataset,
         validation_data: Optional[tf.data.Dataset] = None,
-        callbacks: Optional[List[tf.keras.callbacks.Callback]] = None,
+        callbacks: Optional[list[tf.keras.callbacks.Callback]] = None,
         training_history_dir: Optional[Path] = None,
         model_name: str = "standalone_dnn",
         dataset_id: str = "unknown",
@@ -354,7 +354,7 @@ class StandaloneTrainer:
         self,
         dataset: tf.data.Dataset,
         verbose: str = "auto",
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Evaluate the trained model.
 
@@ -415,7 +415,7 @@ class StandaloneTrainer:
             self.logger.error(f"Prediction failed: {type(e).__name__}: {str(e)}")
             return np.array([])
 
-    def get_training_history(self) -> Dict[str, List[float]]:
+    def get_training_history(self) -> dict[str, list[float]]:
         """Get training history metrics."""
         return self.metrics_history.copy()
 

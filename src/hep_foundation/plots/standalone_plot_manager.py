@@ -6,7 +6,7 @@ including training history, prediction analysis, and error analysis visualizatio
 """
 
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -65,7 +65,7 @@ class StandalonePlotManager:
 
     def create_training_history_plot(
         self,
-        history_data: Dict[str, List[float]],
+        history_data: dict[str, list[float]],
         output_path: Path,
         title_prefix: str = "Standalone DNN Training",
     ) -> None:
@@ -85,7 +85,6 @@ class StandalonePlotManager:
                 return
 
             # Determine number of subplots based on available data
-            has_val_data = any(key.startswith("val_") for key in history_data.keys())
             has_lr_data = "lr" in history_data
             n_subplots = 2 + (1 if has_lr_data else 0)
 
@@ -196,7 +195,7 @@ class StandalonePlotManager:
 
     def create_data_efficiency_plot(
         self,
-        results_data: Dict[str, Any],
+        results_data: dict[str, Any],
         output_path: Path,
         title_prefix: str = "Standalone DNN Data Efficiency",
     ) -> None:
@@ -384,7 +383,6 @@ class StandalonePlotManager:
             axes[1, 0].grid(True, alpha=0.3)
 
             # Plot 4: Q-Q plot for residual normality
-            from scipy import stats
 
             stats.probplot(residuals.flatten(), dist="norm", plot=axes[1, 1])
             axes[1, 1].set_title(
@@ -428,7 +426,6 @@ class StandalonePlotManager:
             # Calculate errors
             absolute_errors = np.abs(predictions - targets)
             relative_errors = np.abs(predictions - targets) / (np.abs(targets) + 1e-8)
-            squared_errors = (predictions - targets) ** 2
 
             # Create 2x2 subplot
             fig, axes = plt.subplots(2, 2, figsize=get_figure_size("double", ratio=1.0))
@@ -548,7 +545,7 @@ class StandalonePlotManager:
 
     def create_multi_size_comparison_plot(
         self,
-        multi_size_data: Dict[int, Dict[str, np.ndarray]],
+        multi_size_data: dict[int, dict[str, np.ndarray]],
         output_path: Path,
         title_prefix: str = "Multi-Size Prediction Comparison",
         max_samples_per_plot: int = 500,

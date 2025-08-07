@@ -8,7 +8,7 @@ for regression tasks without requiring foundation model pretraining.
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any
 
 import numpy as np
 import tensorflow as tf
@@ -62,7 +62,7 @@ class StandaloneRegressionPipeline:
 
     def run_complete_pipeline(
         self,
-        config_dict: Dict[str, Any],
+        config_dict: dict[str, Any],
         delete_catalogs: bool = False,
     ) -> bool:
         """
@@ -153,8 +153,8 @@ class StandaloneRegressionPipeline:
     def _save_experiment_config(
         self,
         experiment_dir: Path,
-        original_config: Dict[str, Any],
-        processed_config: Dict[str, Any],
+        original_config: dict[str, Any],
+        processed_config: dict[str, Any],
     ) -> None:
         """Save experiment configuration for reproducibility."""
         try:
@@ -185,7 +185,7 @@ class StandaloneRegressionPipeline:
         except Exception as e:
             self.logger.error(f"Failed to save experiment configuration: {e}")
 
-    def _extract_dataset_configs(self, config: Dict[str, Any]) -> Tuple[Any, Any]:
+    def _extract_dataset_configs(self, config: dict[str, Any]) -> tuple[Any, Any]:
         """Extract dataset and task configurations."""
         # Import here to avoid circular imports
         from hep_foundation.config.config_loader import load_pipeline_config
@@ -206,7 +206,7 @@ class StandaloneRegressionPipeline:
         dataset_config: Any,
         task_config: Any,
         delete_catalogs: bool,
-    ) -> Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
+    ) -> tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
         """Load or create datasets."""
         self.logger.info("Loading datasets...")
 
@@ -225,7 +225,7 @@ class StandaloneRegressionPipeline:
 
     def _create_model(
         self,
-        model_config_dict: Dict[str, Any],
+        model_config_dict: dict[str, Any],
         train_dataset: tf.data.Dataset,
     ) -> StandaloneDNNRegressor:
         """Create and build standalone DNN model."""
@@ -374,7 +374,7 @@ class StandaloneRegressionPipeline:
         test_dataset: tf.data.Dataset,
         data_size: int,
         eval_dir: Path,
-    ) -> Tuple[bool, Dict[str, Any], Dict[str, np.ndarray]]:
+    ) -> tuple[bool, dict[str, Any], dict[str, np.ndarray]]:
         """Train and evaluate model for a single data size."""
         try:
             # Create fresh model instance (reset weights)
@@ -456,10 +456,10 @@ class StandaloneRegressionPipeline:
 
     def _create_comprehensive_plots(
         self,
-        main_results: Dict[str, Any],
-        main_predictions: Dict[str, np.ndarray],
-        all_results: Dict[int, Dict[str, Any]],
-        all_predictions: Dict[int, Dict[str, np.ndarray]],
+        main_results: dict[str, Any],
+        main_predictions: dict[str, np.ndarray],
+        all_results: dict[int, dict[str, Any]],
+        all_predictions: dict[int, dict[str, np.ndarray]],
         eval_dir: Path,
         evaluation_config: StandaloneEvaluationConfig,
         total_train_events: int,
@@ -531,8 +531,8 @@ class StandaloneRegressionPipeline:
 
     def _create_summary_comparison_plot(
         self,
-        main_results: Dict[str, Any],
-        all_results: Dict[int, Dict[str, Any]],
+        main_results: dict[str, Any],
+        all_results: dict[int, dict[str, Any]],
         plots_dir: Path,
         total_train_events: int,
     ) -> None:
@@ -612,8 +612,8 @@ class StandaloneRegressionPipeline:
 
     def _save_comprehensive_results(
         self,
-        main_results: Dict[str, Any],
-        all_results: Dict[int, Dict[str, Any]],
+        main_results: dict[str, Any],
+        all_results: dict[int, dict[str, Any]],
         eval_dir: Path,
     ) -> None:
         """Save comprehensive results including main model and efficiency study."""
@@ -691,7 +691,7 @@ class StandaloneRegressionPipeline:
         total_train_events: int,
         main_model_dir: Path,
         eval_dir: Path,
-    ) -> Tuple[bool, Dict[str, Any], Dict[str, np.ndarray]]:
+    ) -> tuple[bool, dict[str, Any], dict[str, np.ndarray]]:
         """Train main model with full training data."""
         try:
             # Create fresh model instance
@@ -776,7 +776,7 @@ class StandaloneRegressionPipeline:
         test_dataset: tf.data.Dataset,
         total_train_events: int,
         eval_dir: Path,
-    ) -> Tuple[bool, Dict[int, Dict[str, Any]], Dict[int, Dict[str, np.ndarray]]]:
+    ) -> tuple[bool, dict[int, dict[str, Any]], dict[int, dict[str, np.ndarray]]]:
         """Run data efficiency study with different training data sizes."""
 
         # Filter data sizes to available events

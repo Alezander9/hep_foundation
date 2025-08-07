@@ -44,7 +44,7 @@ def get_run_numbers() -> list[str]:
     """Get the list of ATLAS run numbers.
 
     Returns:
-        List[str]: A list of ATLAS run numbers.
+        list[str]: A list of ATLAS run numbers.
     """
     atlas_data = _load_atlas_index()
     # Get the keys from the catalog_counts dictionary as run numbers
@@ -91,7 +91,7 @@ def get_signal_catalog_keys() -> list[str]:
     """Get all available signal catalog keys.
 
     Returns:
-        List[str]: A list of signal catalog keys.
+        list[str]: A list of signal catalog keys.
     """
     atlas_data = _load_atlas_index()
     return list(atlas_data["signal_catalogs"].keys())

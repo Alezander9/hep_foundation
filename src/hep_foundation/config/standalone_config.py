@@ -6,7 +6,7 @@ standalone regression tasks without foundation model dependencies.
 """
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Union
+from typing import Any, Optional, Union
 
 from hep_foundation.config.logging_config import get_logger
 
@@ -22,7 +22,7 @@ class StandaloneTrainingConfig:
     early_stopping_min_delta: float = 1e-4
     plot_training: bool = True
     gradient_clip_norm: Optional[float] = None
-    lr_scheduler: Optional[Dict[str, Any]] = None
+    lr_scheduler: Optional[dict[str, Any]] = None
 
     def __init__(
         self,
@@ -33,7 +33,7 @@ class StandaloneTrainingConfig:
         early_stopping_min_delta: float = 1e-4,
         plot_training: bool = True,
         gradient_clip_norm: Optional[float] = None,
-        lr_scheduler: Optional[Dict[str, Any]] = None,
+        lr_scheduler: Optional[dict[str, Any]] = None,
     ):
         """
         Initialize standalone training configuration.
@@ -82,7 +82,7 @@ class StandaloneTrainingConfig:
         if self.lr_scheduler:
             self._validate_lr_scheduler_config(self.lr_scheduler)
 
-    def _validate_lr_scheduler_config(self, lr_config: Dict[str, Any]) -> None:
+    def _validate_lr_scheduler_config(self, lr_config: dict[str, Any]) -> None:
         """Validate learning rate scheduler configuration"""
         scheduler_type = lr_config.get("type", "reduce_on_plateau")
 
@@ -124,7 +124,7 @@ class StandaloneTrainingConfig:
         else:
             raise ValueError(f"Unsupported scheduler type: {scheduler_type}")
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert StandaloneTrainingConfig to dictionary for serialization"""
         return {
             "batch_size": self.batch_size,
@@ -194,7 +194,7 @@ class StandaloneEvaluationConfig:
         if self.prediction_sample_size <= 0:
             raise ValueError("prediction_sample_size must be positive")
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert StandaloneEvaluationConfig to dictionary for serialization"""
         return {
             "regression_data_sizes": self.regression_data_sizes,
@@ -216,7 +216,7 @@ class StandaloneConfigLoader:
     def __init__(self):
         self.logger = get_logger(__name__)
 
-    def load_config(self, config_dict: Dict[str, Any]) -> Dict[str, Any]:
+    def load_config(self, config_dict: dict[str, Any]) -> dict[str, Any]:
         """
         Load standalone configuration from dictionary.
 
@@ -260,7 +260,7 @@ class StandaloneConfigLoader:
         }
 
     def _create_training_config(
-        self, training_dict: Dict[str, Any]
+        self, training_dict: dict[str, Any]
     ) -> StandaloneTrainingConfig:
         """Create StandaloneTrainingConfig from dictionary."""
         return StandaloneTrainingConfig(
@@ -279,7 +279,7 @@ class StandaloneConfigLoader:
         )
 
     def _create_evaluation_config(
-        self, eval_dict: Dict[str, Any]
+        self, eval_dict: dict[str, Any]
     ) -> StandaloneEvaluationConfig:
         """Create StandaloneEvaluationConfig from dictionary."""
         return StandaloneEvaluationConfig(
@@ -296,7 +296,7 @@ class StandaloneConfigLoader:
         )
 
 
-def load_standalone_config(config_path: Union[str, Any]) -> Dict[str, Any]:
+def load_standalone_config(config_path: Union[str, Any]) -> dict[str, Any]:
     """
     Load standalone configuration from YAML file or dictionary.
 

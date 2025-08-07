@@ -15,7 +15,6 @@ import argparse
 import sys
 import time
 from pathlib import Path
-from typing import List
 
 import yaml
 
@@ -23,8 +22,8 @@ import yaml
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from hep_foundation.config.logging_config import get_logger
-from hep_foundation.pipeline.standalone_regression_pipeline import (
+from hep_foundation.config.logging_config import get_logger  # noqa: E402  # noqa: E402
+from hep_foundation.pipeline.standalone_regression_pipeline import (  # noqa: E402  # noqa: E402
     StandaloneRegressionPipeline,
 )
 
@@ -173,7 +172,7 @@ def run_single_config(
         return False
 
 
-def find_config_files(config_stack_dir: Path) -> List[Path]:
+def find_config_files(config_stack_dir: Path) -> list[Path]:
     """
     Find all YAML configuration files in the config stack directory.
 

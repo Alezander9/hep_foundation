@@ -15,7 +15,6 @@ import argparse
 import sys
 import time
 from pathlib import Path
-from typing import List
 
 import yaml
 
@@ -173,7 +172,7 @@ def run_single_config(
         return False
 
 
-def find_config_files(config_stack_dir: Path) -> List[Path]:
+def find_config_files(config_stack_dir: Path) -> list[Path]:
     """
     Find all YAML configuration files in the config stack directory.
 

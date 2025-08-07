@@ -31,3 +31,4 @@ build/
 
 # Output txt files in root directory
 *.txt
+.ipynb_checkpoints/
