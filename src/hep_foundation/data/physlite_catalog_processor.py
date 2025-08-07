@@ -604,12 +604,6 @@ class PhysliteCatalogProcessor:
                                 )
 
                                 # --- Process Event (unified method handles both filtered and zero-bias data) ---
-                                # Determine if we need more post-selection samples
-                                need_more_post_selection_samples = (
-                                    plotting_enabled
-                                    and current_catalog_samples_count
-                                    < samples_per_catalog
-                                )
 
                                 result, passed_filters = (
                                     self.event_processor.process_event(
@@ -617,7 +611,6 @@ class PhysliteCatalogProcessor:
                                         task_config,
                                         plotting_enabled,
                                         need_more_zero_bias_samples,
-                                        need_more_post_selection_samples,
                                     )
                                 )
 

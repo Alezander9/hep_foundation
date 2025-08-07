@@ -173,7 +173,6 @@ class PhysliteEventProcessor:
         event_data: dict[str, np.ndarray],
         selection_config: PhysliteSelectionConfig,
         need_more_zero_bias_samples: bool = False,
-        need_more_post_selection_samples: bool = False,
     ) -> Optional[dict[str, Any]]:
         """
         Process an event according to a selection configuration.
@@ -209,16 +208,16 @@ class PhysliteEventProcessor:
                         n_valid_elements,
                         post_selection_hist_data,
                         zero_bias_hist_data,
+                        aggregator_passed_filters,
                     ) = self._process_single_aggregator(
                         event_data,
                         aggregator,
                         idx,
                         need_more_zero_bias_samples,
-                        need_more_post_selection_samples,
                     )
 
-                    # Check if this aggregator failed a filter (indicated by None return)
-                    if aggregator_result_array is None:
+                    # Check if this aggregator failed filters or returned None (early termination)
+                    if aggregator_result_array is None or not aggregator_passed_filters:
                         # Filter failed - reject entire event
                         is_passing_filters = False
                         break
@@ -234,7 +233,7 @@ class PhysliteEventProcessor:
 
                 except Exception as e:
                     self.logger.warning(f"Error processing aggregator {idx}: {e}")
-                    # On error, create zero-filled array with correct shape
+                    # On error, create zero-filled array with correct shape and mark as failed
                     (
                         zero_array,
                         zero_n_valid,
@@ -247,6 +246,9 @@ class PhysliteEventProcessor:
                         "post_selection_hist_data": zero_post_hist_data,
                         "zero_bias_hist_data": zero_zero_bias_hist_data,
                     }
+                    # Mark as filter failure since this is an error condition
+                    is_passing_filters = False
+                    break
 
         # If any aggregator failed filters, reject the entire event
         if not is_passing_filters:
@@ -283,16 +285,16 @@ class PhysliteEventProcessor:
         aggregator: PhysliteFeatureArrayAggregator,
         idx: int,
         need_more_zero_bias_samples: bool = False,
-        need_more_post_selection_samples: bool = False,
-    ) -> tuple[Optional[np.ndarray], int, Optional[dict], Optional[dict]]:
+    ) -> tuple[Optional[np.ndarray], int, Optional[dict], Optional[dict], bool]:
         """
         Process a single aggregator, always returning correctly shaped arrays.
 
         Returns:
-            - aggregator_result_array: Always (max_length, num_features) or None if filter failed
+            - aggregator_result_array: Always (max_length, num_features) array, or None if early termination
             - n_valid_elements: Number of valid elements before padding
             - post_selection_hist_data: Dict of {branch_name: list_of_arrays} for post-selection plotting (if needed)
             - zero_bias_hist_data: Dict of {branch_name: list_of_arrays} for zero-bias plotting (if needed)
+            - passed_filters: Boolean indicating whether this aggregator passed min_length requirements
         """
         # --- Check Requirements and Get Input Arrays ---
         array_features = {}  # Stores input arrays for aggregation
@@ -393,8 +395,8 @@ class PhysliteEventProcessor:
             self.logger.debug(
                 f"Aggregator {idx}: n_valid ({n_valid}) < min_length ({aggregator.min_length})"
             )
-            # If we can't meet minimum requirements and don't need histogram data, exit early
-            if not (need_more_zero_bias_samples or need_more_post_selection_samples):
+            # If we can't meet minimum requirements and don't need zero-bias data, exit early
+            if not need_more_zero_bias_samples:
                 return self._create_zero_aggregator(event_data, aggregator, idx)
 
         # Initialize histogram data containers
@@ -419,7 +421,8 @@ class PhysliteEventProcessor:
         processed_feature_segments = []
 
         # Initialize histogram data dictionaries if needed
-        if need_more_post_selection_samples:
+        # Post-selection data only collected when filters pass
+        if not model_training_failed:
             post_selection_hist_data = {}
         if need_more_zero_bias_samples:
             zero_bias_hist_data = {}
@@ -452,7 +455,7 @@ class PhysliteEventProcessor:
             processed_feature_segments.append(filtered_values)
 
             # Generate histogram data for post-selection (before zero-padding, after truncation)
-            if need_more_post_selection_samples and not model_training_failed:
+            if not model_training_failed and post_selection_hist_data is not None:
                 # Use the filtered values for post-selection histogram data
                 post_selection_hist_data[branch_name] = filtered_values.copy()
 
@@ -520,11 +523,7 @@ class PhysliteEventProcessor:
         # --- Generate Histogram Data (if needed) ---
         # Post-selection histogram data: use filtered and sorted data (truncated but not zero-padded)
 
-        if (
-            need_more_post_selection_samples
-            and post_selection_hist_data
-            and not model_training_failed
-        ):
+        if post_selection_hist_data and not model_training_failed:
             # Only generate post-selection histogram data if filtering succeeded
             for branch_name in post_selection_hist_data:
                 # Apply same sorting to histogram data but don't pad
@@ -537,7 +536,7 @@ class PhysliteEventProcessor:
                     ]
                 else:
                     post_selection_hist_data[branch_name] = sorted_hist_values
-        elif need_more_post_selection_samples and model_training_failed:
+        elif model_training_failed:
             # Clear post-selection data if model training failed (not enough tracks after filtering)
             post_selection_hist_data = None
 
@@ -559,6 +558,7 @@ class PhysliteEventProcessor:
             n_valid,
             post_selection_hist_data,
             zero_bias_hist_data,
+            not model_training_failed,  # passed_filters
         )
 
     def _create_zero_aggregator(
@@ -604,7 +604,7 @@ class PhysliteEventProcessor:
         # Create zero-filled array with correct shape
         zero_array = np.zeros((aggregator.max_length, total_features), dtype=np.float32)
 
-        return zero_array, 0, None, None
+        return zero_array, 0, None, None, False
 
     def get_required_branches(self, task_config: TaskConfig) -> set:
         """
@@ -723,7 +723,6 @@ class PhysliteEventProcessor:
         task_config: TaskConfig,
         plotting_enabled: bool = False,
         need_more_zero_bias_samples: bool = False,
-        need_more_post_selection_samples: bool = False,
     ) -> tuple[Optional[dict[str, np.ndarray]], bool]:
         """
         Process a single event using the task configuration.
@@ -776,7 +775,6 @@ class PhysliteEventProcessor:
             event_data,
             task_config.input,
             need_more_zero_bias_samples,
-            need_more_post_selection_samples and passed_filters,
         )
         if input_result is None:
             return None, passed_filters
@@ -788,8 +786,7 @@ class PhysliteEventProcessor:
                 label_result = self._process_selection_config(
                     event_data,
                     label_config,
-                    False,
-                    True,  # Labels: no zero-bias, only post-selection
+                    False,  # Labels: no zero-bias sampling needed
                 )
                 if label_result is None:
                     # If any label processing fails for a supervised task, reject the event
