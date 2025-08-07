@@ -22,8 +22,8 @@ import yaml
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from hep_foundation.config.logging_config import get_logger  # noqa: E402  # noqa: E402
-from hep_foundation.pipeline.standalone_regression_pipeline import (  # noqa: E402  # noqa: E402
+from hep_foundation.config.logging_config import get_logger  # noqa: E402
+from hep_foundation.pipeline.standalone_regression_pipeline import (  # noqa: E402
     StandaloneRegressionPipeline,
 )
 
