@@ -244,11 +244,13 @@ class PhysliteCatalogProcessor:
         """
         Prepare a processed event result for JSON serialization and storage.
 
+        Removes histogram data to reduce file size while keeping essential event data.
+
         Args:
             result: The processed event result dictionary
 
         Returns:
-            A serializable dictionary suitable for JSON storage
+            A serializable dictionary suitable for JSON storage with histogram data removed
         """
 
         def convert_numpy_types(obj):
@@ -266,8 +268,32 @@ class PhysliteCatalogProcessor:
             else:
                 return obj
 
-        # Create a copy and convert all numpy types
-        serializable_result = convert_numpy_types(result)
+        def remove_histogram_data(obj):
+            """Remove histogram data from aggregated features to reduce storage size"""
+            if isinstance(obj, dict):
+                # Create a new dictionary without histogram data
+                cleaned = {}
+                for key, value in obj.items():
+                    if key in ["post_selection_hist_data", "zero_bias_hist_data"]:
+                        # Skip histogram data
+                        continue
+                    elif isinstance(value, dict):
+                        # Recursively clean nested dictionaries
+                        cleaned[key] = remove_histogram_data(value)
+                    elif isinstance(value, list):
+                        # Recursively clean lists
+                        cleaned[key] = [remove_histogram_data(item) for item in value]
+                    else:
+                        cleaned[key] = value
+                return cleaned
+            elif isinstance(obj, list):
+                return [remove_histogram_data(item) for item in obj]
+            else:
+                return obj
+
+        # First remove histogram data, then convert numpy types
+        cleaned_result = remove_histogram_data(result)
+        serializable_result = convert_numpy_types(cleaned_result)
 
         return serializable_result
 
