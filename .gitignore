@@ -3,6 +3,7 @@ experiments
 notebooks
 logs
 _foundation_experiments
+_standalone_experiments
 _processed_datasets
 _test_results
 _experiment_config_stack/*.yaml
@@ -31,3 +32,4 @@ build/
 
 # Output txt files in root directory
 *.txt
+**/.ipynb_checkpoints/
