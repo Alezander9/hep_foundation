@@ -33,3 +33,6 @@ build/
 # Output txt files in root directory
 *.txt
 **/.ipynb_checkpoints/
+
+# Auto-generated percentiles file
+src/hep_foundation/data/physlite_percentiles.json
