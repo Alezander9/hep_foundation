@@ -235,22 +235,23 @@ class PhysliteCatalogProcessor:
         # Collect complete raw sample if requested
         if raw_samples_list is not None:
             # Create a serializable copy of the result
-            raw_sample = self._prepare_raw_sample_for_storage(result)
+            raw_sample = self._prepare_raw_sample_for_storage(result, data_type)
             raw_samples_list.append(raw_sample)
 
         return num_tracks
 
-    def _prepare_raw_sample_for_storage(self, result: dict) -> dict:
+    def _prepare_raw_sample_for_storage(self, result: dict, data_type: str) -> dict:
         """
         Prepare a processed event result for JSON serialization and storage.
 
-        Removes histogram data to reduce file size while keeping essential event data.
+        Removes training arrays but keeps relevant histogram data for analysis.
 
         Args:
             result: The processed event result dictionary
+            data_type: Either "zero_bias" or "post_selection" to determine which histogram data to keep
 
         Returns:
-            A serializable dictionary suitable for JSON storage with histogram data removed
+            A serializable dictionary suitable for JSON storage with relevant histogram data
         """
 
         def convert_numpy_types(obj):
@@ -268,31 +269,48 @@ class PhysliteCatalogProcessor:
             else:
                 return obj
 
-        def remove_histogram_data(obj):
-            """Remove histogram data from aggregated features to reduce storage size"""
+        def remove_training_arrays_keep_histogram_data(obj, data_type):
+            """Remove training arrays but keep histogram data for raw samples"""
             if isinstance(obj, dict):
-                # Create a new dictionary without histogram data
+                # Create a new dictionary without training arrays but with histogram data
                 cleaned = {}
                 for key, value in obj.items():
-                    if key in ["post_selection_hist_data", "zero_bias_hist_data"]:
-                        # Skip histogram data
+                    if key == "array":
+                        # Skip training arrays - they're already in the dataset HDF5
+                        continue
+                    elif (
+                        key == "post_selection_hist_data"
+                        and data_type != "post_selection"
+                    ):
+                        # Only keep post_selection_hist_data for post-selection samples
+                        continue
+                    elif key == "zero_bias_hist_data" and data_type != "zero_bias":
+                        # Only keep zero_bias_hist_data for zero-bias samples
                         continue
                     elif isinstance(value, dict):
                         # Recursively clean nested dictionaries
-                        cleaned[key] = remove_histogram_data(value)
+                        cleaned[key] = remove_training_arrays_keep_histogram_data(
+                            value, data_type
+                        )
                     elif isinstance(value, list):
                         # Recursively clean lists
-                        cleaned[key] = [remove_histogram_data(item) for item in value]
+                        cleaned[key] = [
+                            remove_training_arrays_keep_histogram_data(item, data_type)
+                            for item in value
+                        ]
                     else:
                         cleaned[key] = value
                 return cleaned
             elif isinstance(obj, list):
-                return [remove_histogram_data(item) for item in obj]
+                return [
+                    remove_training_arrays_keep_histogram_data(item, data_type)
+                    for item in obj
+                ]
             else:
                 return obj
 
-        # First remove histogram data, then convert numpy types
-        cleaned_result = remove_histogram_data(result)
+        # First remove training arrays but keep relevant histogram data, then convert numpy types
+        cleaned_result = remove_training_arrays_keep_histogram_data(result, data_type)
         serializable_result = convert_numpy_types(cleaned_result)
 
         return serializable_result
@@ -650,8 +668,23 @@ class PhysliteCatalogProcessor:
                                                 for agg_key, agg_data in result[
                                                     "aggregated_features"
                                                 ].items()
+                                                if agg_data["array"]
+                                                is not None  # Filter out None arrays (failed min_length)
                                             },
                                         }
+
+                                        # Check if we actually have useful aggregated features for the dataset
+                                        # If all aggregators failed min_length, we shouldn't count this as passed
+                                        has_useful_aggregated_features = bool(
+                                            input_features_for_dataset[
+                                                "aggregated_features"
+                                            ]
+                                        )
+
+                                        if not has_useful_aggregated_features:
+                                            # Event passed scalar filters but failed all aggregator min_length requirements
+                                            # Don't include in dataset, but continue for potential zero-bias data collection
+                                            continue
                                         # Process labels similarly for the dataset
                                         label_features_for_dataset = []
                                         for label_set in result["label_features"]:
@@ -666,6 +699,8 @@ class PhysliteCatalogProcessor:
                                                     for agg_key, agg_data in label_set[
                                                         "aggregated_features"
                                                     ].items()
+                                                    if agg_data["array"]
+                                                    is not None  # Filter out None arrays (failed min_length)
                                                 },
                                             }
                                             label_features_for_dataset.append(
@@ -734,7 +769,10 @@ class PhysliteCatalogProcessor:
                                                     ][first_aggregator_key]
                                                 )
                                                 # Ensure the aggregator output is not empty before checking shape
-                                                if first_aggregator.size > 0:
+                                                if (
+                                                    first_aggregator is not None
+                                                    and first_aggregator.size > 0
+                                                ):
                                                     try:
                                                         # Check for non-zero elements along the feature axis
                                                         stats["total_features"] += (
