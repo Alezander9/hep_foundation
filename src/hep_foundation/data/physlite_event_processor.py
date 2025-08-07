@@ -218,29 +218,30 @@ class PhysliteEventProcessor:
                     if not aggregator_passed_filters:
                         all_aggregators_passed_filters = False
 
-                    # Check for fatal errors (None return for array)
-                    if (
-                        aggregator_result_array is None
-                        and not need_more_zero_bias_samples
-                    ):
-                        # Fatal error and we don't need zero-bias data, exit immediately
-                        self.logger.debug(
-                            f"Fatal error in aggregator {idx}, early exit"
-                        )
-                        return None
-                    elif (
-                        aggregator_result_array is None and need_more_zero_bias_samples
-                    ):
-                        # Aggregator failed min_length but we need zero-bias data
-                        # Store the histogram data even though there's no training array
-                        all_aggregators_passed_filters = False
-                        aggregated_features[agg_key] = {
-                            "array": None,  # No training array since min_length failed
-                            "n_valid_elements": n_valid_elements,
-                            "post_selection_hist_data": post_selection_hist_data,  # Should be None since filters failed
-                            "zero_bias_hist_data": zero_bias_hist_data,  # Should contain actual data
-                        }
-                        continue
+                    # Check for errors when aggregator_result_array is None
+                    if aggregator_result_array is None:
+                        if n_valid_elements == 0:
+                            # Fatal error: no tracks at all, skip this event entirely
+                            self.logger.debug(
+                                f"Fatal error in aggregator {idx}: no tracks found, skipping event"
+                            )
+                            return None
+                        elif need_more_zero_bias_samples:
+                            # Filter failure: has tracks but failed min_length, collect zero-bias data
+                            all_aggregators_passed_filters = False
+                            aggregated_features[agg_key] = {
+                                "array": None,  # No training array since min_length failed
+                                "n_valid_elements": n_valid_elements,
+                                "post_selection_hist_data": post_selection_hist_data,  # Should be None since filters failed
+                                "zero_bias_hist_data": zero_bias_hist_data,  # Should contain actual data
+                            }
+                            continue
+                        else:
+                            # Filter failure and we don't need zero-bias data, exit
+                            self.logger.debug(
+                                f"Aggregator {idx} failed min_length ({n_valid_elements} < min_length), early exit"
+                            )
+                            return None
 
                     # Store aggregator result (for successful aggregators)
                     if aggregator_result_array is not None:
@@ -301,8 +302,8 @@ class PhysliteEventProcessor:
         Process a single aggregator.
 
         Returns:
-            - aggregator_result_array: (max_length, num_features) array for dataset, or None if fatal error/early termination
-            - n_valid_elements: Number of valid elements before padding
+            - aggregator_result_array: (max_length, num_features) array for dataset, or None if error/filter failure
+            - n_valid_elements: Number of valid elements before padding (0 = fatal error, >0 but <min_length = filter failure)
             - post_selection_hist_data: Dict of {branch_name: array} for post-selection plotting (only if filters pass)
             - zero_bias_hist_data: Dict of {branch_name: array} for zero-bias plotting (if needed)
             - passed_filters: Boolean indicating whether this aggregator passed min_length requirements
