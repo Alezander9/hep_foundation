@@ -22,6 +22,7 @@ import yaml
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+from hep_foundation.config.config_loader import PipelineConfigLoader  # noqa: E402
 from hep_foundation.config.logging_config import get_logger  # noqa: E402
 from hep_foundation.pipeline.standalone_regression_pipeline import (  # noqa: E402
     StandaloneRegressionPipeline,
@@ -36,7 +37,7 @@ def setup_logging():
 
 def load_yaml_config(config_path: Path) -> dict:
     """
-    Load YAML configuration file.
+    Load YAML configuration file with Python extensions support.
 
     Args:
         config_path: Path to YAML configuration file
@@ -46,17 +47,19 @@ def load_yaml_config(config_path: Path) -> dict:
 
     Raises:
         FileNotFoundError: If config file doesn't exist
-        yaml.YAMLError: If config file is invalid YAML
+        Exception: If config file is invalid or cannot be processed
     """
     if not config_path.exists():
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
 
     try:
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
+        # Use the project's config loader that supports !python extensions
+        loader = PipelineConfigLoader()
+        config = loader.load_config(config_path)
         return config
-    except yaml.YAMLError as e:
-        raise yaml.YAMLError(f"Invalid YAML in {config_path}: {e}")
+    except Exception as e:
+        # Catch any exception from the config loader
+        raise Exception(f"Failed to load config from {config_path}: {e}")
 
 
 def validate_config(config: dict, logger) -> bool:
@@ -82,7 +85,7 @@ def validate_config(config: dict, logger) -> bool:
         return False
 
     # Check for standalone_dnn model configuration
-    if "standalone_dnn" not in config.get("models", {}):
+    if "models" not in config or "standalone_dnn" not in config.get("models", {}):
         logger.error("Configuration must include 'models.standalone_dnn' section")
         return False
 
@@ -117,57 +120,27 @@ def run_single_config(
     try:
         # Load configuration
         config = load_yaml_config(config_path)
-
+        
         # Validate configuration
         if not validate_config(config, logger):
+            logger.error(f"❌ Configuration validation failed for {config_path.name}")
             return False
 
-        # Extract pipeline settings
-        pipeline_settings = config.get("pipeline", {})
-        delete_catalogs = pipeline_settings.get("delete_catalogs", False)
-
-        # Log configuration summary
-        logger.info("Configuration Summary:")
-        logger.info(f"  Name: {config.get('name', 'Unknown')}")
-        logger.info(f"  Description: {config.get('description', 'No description')}")
-        logger.info(
-            f"  Model: {config['models']['standalone_dnn']['architecture']['hidden_layers']}"
-        )
-        logger.info(f"  Data sizes: {config['evaluation']['regression_data_sizes']}")
-
-        # Check for learning rate scheduler
-        lr_scheduler = (
-            config.get("training", {}).get("standalone_dnn", {}).get("lr_scheduler")
-        )
-        if lr_scheduler:
-            logger.info(
-                f"  LR Scheduler: {lr_scheduler.get('type', 'none')} "
-                f"(factor={lr_scheduler.get('factor', 'N/A')}, "
-                f"patience={lr_scheduler.get('patience', 'N/A')})"
-            )
-
         # Run pipeline
-        start_time = time.time()
         success = pipeline.run_complete_pipeline(
-            config, delete_catalogs=delete_catalogs
+            config_dict=config,
+            delete_catalogs=False,
         )
-        elapsed_time = time.time() - start_time
 
         if success:
-            logger.info(
-                f"✅ Configuration {config_path.name} completed successfully in {elapsed_time:.1f}s"
-            )
+            logger.info(f"✅ Successfully completed {config_path.name}")
         else:
-            logger.error(
-                f"❌ Configuration {config_path.name} failed after {elapsed_time:.1f}s"
-            )
+            logger.error(f"❌ Pipeline execution failed for {config_path.name}")
 
         return success
 
     except Exception as e:
-        logger.error(
-            f"❌ Failed to process {config_path.name}: {type(e).__name__}: {str(e)}"
-        )
+        logger.error(f"❌ Failed to process {config_path.name}: {type(e).__name__}: {str(e)}")
         logger.exception("Detailed traceback:")
         return False
 
@@ -279,37 +252,39 @@ def create_example_config(output_path: Path, logger) -> None:
                             "min": -5.0,
                             "max": 5.0,
                         },
-                        {
-                            "branch": "InDetTrackParticlesAuxDyn.z0",
-                            "min": -100.0,
-                            "max": 100.0,
-                        },
                     ],
-                    "sort_by_branch": {"branch": "InDetTrackParticlesAuxDyn.qOverP"},
-                    "min_length": 5,
                     "max_length": 20,
+                    "min_length": 5,
+                    "sort_by_branch": {
+                        "branch": "InDetTrackParticlesAuxDyn.qOverP",
+                    },
                 }
             ],
-            "label_features": [[]],
             "label_array_aggregators": [
                 [
                     {
                         "input_branches": ["AnalysisJetsAuxDyn.pt"],
                         "filter_branches": [
-                            {"branch": "AnalysisJetsAuxDyn.pt", "min": 20.0}
+                            {
+                                "branch": "AnalysisJetsAuxDyn.pt",
+                                "min": 20.0,
+                            }
                         ],
-                        "sort_by_branch": {"branch": "AnalysisJetsAuxDyn.pt"},
-                        "min_length": 1,
                         "max_length": 1,
+                        "min_length": 1,
+                        "sort_by_branch": {
+                            "branch": "AnalysisJetsAuxDyn.pt",
+                        },
                     }
                 ]
             ],
+            "label_features": [[]],
         },
         "models": {
             "standalone_dnn": {
                 "model_type": "standalone_dnn_regressor",
                 "architecture": {
-                    "hidden_layers": [64, 32, 16],
+                    "hidden_layers": [256, 128, 64, 32],
                     "activation": "relu",
                     "output_activation": "linear",
                     "name": "example_regressor",
@@ -460,35 +435,32 @@ Examples:
 
         if success:
             logger.info("🎉 Standalone regression completed successfully!")
-            sys.exit(0)
         else:
             logger.error("💥 Standalone regression failed!")
             sys.exit(1)
 
     elif args.config_stack:
         # Config stack mode
-        successful_count, total_count = run_config_stack(
-            args.config_stack_dir, pipeline, logger
-        )
-        elapsed_time = time.time() - start_time
-
-        logger.info("=" * 100)
-        logger.info("STANDALONE REGRESSION BATCH PROCESSING SUMMARY")
-        logger.info("=" * 100)
-        logger.info(f"Total configurations processed: {total_count}")
-        logger.info(f"Successful: {successful_count}")
-        logger.info(f"Failed: {total_count - successful_count}")
-        logger.info(f"Total time: {elapsed_time:.1f} seconds")
-
-        if successful_count == total_count:
-            logger.info("🎉 All configurations completed successfully!")
-            sys.exit(0)
-        elif successful_count > 0:
-            logger.warning("⚠️  Some configurations failed, but others succeeded")
-            sys.exit(0)
-        else:
-            logger.error("💥 All configurations failed!")
+        config_stack_dir = args.config_stack_dir
+        if not config_stack_dir.exists():
+            logger.error(f"Config stack directory not found: {config_stack_dir}")
             sys.exit(1)
+
+        successful, total = run_config_stack(config_stack_dir, pipeline, logger)
+
+        logger.info(f"📊 Processing complete: {successful}/{total} configurations successful")
+
+        if successful == total and total > 0:
+            logger.info("🎉 All standalone regressions completed successfully!")
+        elif successful > 0:
+            logger.warning(f"⚠️  {total - successful} configurations failed")
+        else:
+            logger.error("💥 All standalone regressions failed!")
+            sys.exit(1)
+
+    # Log execution time
+    elapsed_time = time.time() - start_time
+    logger.info(f"⏱️  Total execution time: {elapsed_time:.2f} seconds")
 
 
 if __name__ == "__main__":

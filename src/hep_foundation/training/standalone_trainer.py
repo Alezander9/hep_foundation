@@ -27,6 +27,30 @@ class StandaloneTrainer:
     - Early stopping
     - Comprehensive training monitoring
     """
+    def _make_json_serializable(self, obj):
+        """Convert numpy/tensorflow objects to JSON serializable types."""
+        import numpy as np
+        import tensorflow as tf
+        
+        if isinstance(obj, dict):
+            return {key: self._make_json_serializable(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [self._make_json_serializable(item) for item in obj]
+        elif isinstance(obj, tuple):
+            return [self._make_json_serializable(item) for item in obj]
+        elif isinstance(obj, (np.integer, np.int64, np.int32)):
+            return int(obj)
+        elif isinstance(obj, (np.floating, np.float64, np.float32)):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, tf.TensorShape):
+            return obj.as_list()
+        elif hasattr(obj, 'numpy'):  # TensorFlow tensor
+            return obj.numpy().tolist()
+        else:
+            return obj
+
 
     def __init__(
         self,
@@ -343,7 +367,7 @@ class StandaloneTrainer:
 
             # Save to file
             with open(history_path, "w") as f:
-                json.dump(history_data, f, indent=2)
+                json.dump(self._make_json_serializable(history_data), f, indent=2)
 
             self.logger.info(f"Training history saved to: {history_path}")
 

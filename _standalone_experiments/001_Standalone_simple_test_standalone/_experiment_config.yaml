@@ -1,47 +1,41 @@
-name: "standalone_leading_jet_regression"
-description: "Standalone DNN regression for leading jet pT prediction"
-version: "1.0"
-created_by: "Liangyu"
-
-
+_source_config_file: /pscratch/sd/l/liangyu/hep_foundation/test_standalone.yaml
+created_by: Liangyu
 dataset:
-  catalog_limit: 20
+  catalog_limit: 2
   include_labels: true
   plot_distributions: true
-  run_numbers: !python get_run_numbers()[-2:]  # ATLAS run numbers to process
-  shuffle_buffer: 50000
-  signal_keys: ["zprime_tt", "wprime_taunu", "DMA", "leptoquark", "dm_4top_scalar"]  # Signal types for anomaly detection
-  test_fraction: 0.15
-  validation_fraction: 0.15
-
+  run_numbers:
+  - 00311481
+  shuffle_buffer: 1000
+  signal_keys:
+  - zprime_tt
+  test_fraction: 0.2
+  validation_fraction: 0.2
+description: Quick test of standalone DNN regression pipeline
 evaluation:
   create_detailed_plots: true
-  error_analysis_bins: 100
-  fixed_epochs: 30
+  error_analysis_bins: 50
+  fixed_epochs: 5
   include_feature_importance: false
-  prediction_sample_size: 1000
+  prediction_sample_size: 500
   regression_data_sizes:
+  - 500
   - 1000
-  - 2000
-  - 5000
 models:
   standalone_dnn:
     architecture:
       activation: relu
       hidden_layers:
-      - 128
-      - 128
       - 64
-      - 48
       - 32
-      name: example_regressor
+      name: simple_test_regressor
       output_activation: linear
     hyperparameters:
       batch_normalization: true
-      dropout_rate: 0.2
-      l2_regularization: 0.001
+      dropout_rate: 0.1
+      l2_regularization: 0.0
     model_type: standalone_dnn_regressor
-name: example_standalone_regression
+name: simple_test_standalone
 pipeline:
   delete_catalogs: false
   experiments_output_dir: _standalone_experiments
@@ -52,20 +46,16 @@ task:
     - branch: InDetTrackParticlesAuxDyn.d0
       max: 5.0
       min: -5.0
-    - branch: InDetTrackParticlesAuxDyn.z0
-      max: 100.0
-      min: -100.0
     input_branches:
     - InDetTrackParticlesAuxDyn.d0
     - InDetTrackParticlesAuxDyn.z0
     - InDetTrackParticlesAuxDyn.phi
     - derived.InDetTrackParticlesAuxDyn.eta
     - derived.InDetTrackParticlesAuxDyn.pt
-    - derived.InDetTrackParticlesAuxDyn.reducedChiSquared
-    max_length: 20
-    min_length: 5
+    max_length: 30
+    min_length: 10
     sort_by_branch:
-      branch: InDetTrackParticlesAuxDyn.qOverP
+      branch: derived.InDetTrackParticlesAuxDyn.pt
   input_features: []
   label_array_aggregators:
   - - filter_branches:
@@ -81,18 +71,19 @@ task:
   - []
 training:
   standalone_dnn:
-    batch_size: 512
+    batch_size: 256
     early_stopping:
-      min_delta: 0.0001
-      patience: 15
-    epochs: 50
+      min_delta: 0.001
+      patience: 3
+    epochs: 10
     gradient_clip_norm: 1.0
     learning_rate: 0.001
     lr_scheduler:
-      factor: 0.5
-      min_lr: 1.0e-06
+      factor: 0.7
+      min_lr: 1.0e-05
       monitor: val_loss
-      patience: 8
+      patience: 2
       type: reduce_on_plateau
       verbose: true
     plot_training: true
+version: '1.0'

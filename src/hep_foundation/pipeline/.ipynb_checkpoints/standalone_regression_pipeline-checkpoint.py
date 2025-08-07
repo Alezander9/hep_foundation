@@ -27,6 +27,9 @@ from hep_foundation.models.standalone_dnn_regressor import (
 from hep_foundation.plots.standalone_plot_manager import StandalonePlotManager
 from hep_foundation.training.standalone_trainer import StandaloneTrainer
 
+from hep_foundation.config.dataset_config import DatasetConfig
+from hep_foundation.config.task_config import TaskConfig
+
 
 class StandaloneRegressionPipeline:
     """
@@ -186,19 +189,41 @@ class StandaloneRegressionPipeline:
             self.logger.error(f"Failed to save experiment configuration: {e}")
 
     def _extract_dataset_configs(self, config: dict[str, Any]) -> tuple[Any, Any]:
-        """Extract dataset and task configurations."""
-        # Import here to avoid circular imports
-        from hep_foundation.config.config_loader import load_pipeline_config
-
-        # Create temporary config for existing pipeline components
-        temp_config = {
-            "dataset": config["dataset_settings"],
-            "task": config["task_settings"],
-        }
-
-        # Use existing config loader functionality
-        pipeline_config = load_pipeline_config(temp_config)
-        return pipeline_config["dataset_config"], pipeline_config["task_config"]
+    
+        try:
+            # Create dataset config object
+            dataset_dict = config["dataset_settings"]
+            dataset_config = DatasetConfig(
+                run_numbers=dataset_dict["run_numbers"],
+                signal_keys=dataset_dict["signal_keys"],
+                catalog_limit=dataset_dict.get("catalog_limit", 10),
+                validation_fraction=dataset_dict.get("validation_fraction", 0.15),
+                test_fraction=dataset_dict.get("test_fraction", 0.15),
+                shuffle_buffer=dataset_dict.get("shuffle_buffer", 10000),
+                plot_distributions=dataset_dict.get("plot_distributions", True),
+                include_labels=dataset_dict.get("include_labels", True),
+            )
+            
+            # Create task config object
+            task_dict = config["task_settings"]
+            task_config = TaskConfig(
+                event_filters=task_dict.get("event_filters", {}),
+                input_features=task_dict.get("input_features", []),
+                input_array_aggregators=task_dict.get("input_array_aggregators", []),
+                label_features=task_dict.get("label_features", []),
+                label_array_aggregators=task_dict.get("label_array_aggregators", []),
+            )
+            
+            # Validate configs
+            dataset_config.validate()
+            task_config.validate()
+            
+            self.logger.info("Dataset and task configurations created successfully")
+            return dataset_config, task_config
+            
+        except Exception as e:
+            self.logger.error(f"Failed to create dataset/task configs: {e}")
+            raise
 
     def _load_datasets(
         self,

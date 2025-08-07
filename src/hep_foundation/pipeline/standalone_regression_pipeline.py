@@ -60,6 +60,30 @@ class StandaloneRegressionPipeline:
         self.logger.info(f"Processed datasets directory: {self.processed_datasets_dir}")
         self.logger.info(f"Experiments output directory: {self.experiments_output_dir}")
 
+    def _make_json_serializable(self, obj):
+        """Convert numpy/tensorflow objects to JSON serializable types."""
+        import numpy as np
+        import tensorflow as tf
+        
+        if isinstance(obj, dict):
+            return {key: self._make_json_serializable(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [self._make_json_serializable(item) for item in obj]
+        elif isinstance(obj, tuple):
+            return [self._make_json_serializable(item) for item in obj]
+        elif isinstance(obj, (np.integer, np.int64, np.int32)):
+            return int(obj)
+        elif isinstance(obj, (np.floating, np.float64, np.float32)):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, tf.TensorShape):
+            return obj.as_list()
+        elif hasattr(obj, 'numpy'):  # TensorFlow tensor
+            return obj.numpy().tolist()
+        else:
+            return obj
+
     def run_complete_pipeline(
         self,
         config_dict: dict[str, Any],
@@ -177,7 +201,7 @@ class StandaloneRegressionPipeline:
             }
 
             with open(info_path, "w") as f:
-                json.dump(experiment_info, f, indent=2)
+                json.dump(self._make_json_serializable(experiment_info), f, indent=2)
 
             self.logger.info(f"Experiment configuration saved to: {config_path}")
             self.logger.info(f"Experiment info saved to: {info_path}")
@@ -188,17 +212,43 @@ class StandaloneRegressionPipeline:
     def _extract_dataset_configs(self, config: dict[str, Any]) -> tuple[Any, Any]:
         """Extract dataset and task configurations."""
         # Import here to avoid circular imports
-        from hep_foundation.config.config_loader import load_pipeline_config
-
-        # Create temporary config for existing pipeline components
-        temp_config = {
-            "dataset": config["dataset_settings"],
-            "task": config["task_settings"],
-        }
-
-        # Use existing config loader functionality
-        pipeline_config = load_pipeline_config(temp_config)
-        return pipeline_config["dataset_config"], pipeline_config["task_config"]
+        from hep_foundation.config.dataset_config import DatasetConfig
+        from hep_foundation.config.task_config import TaskConfig
+        
+        try:
+            # Create task config object FIRST
+            task_dict = config["task_settings"]
+            task_config = TaskConfig.create_from_branch_names(
+                event_filter_dict=task_dict.get("event_filters", {}),
+                input_features=task_dict.get("input_features", []),
+                input_array_aggregators=task_dict.get("input_array_aggregators", []),
+                label_features=task_dict.get("label_features", []),
+                label_array_aggregators=task_dict.get("label_array_aggregators", []),
+            )
+            
+            # Create dataset config object with task_config
+            dataset_dict = config["dataset_settings"]
+            dataset_config = DatasetConfig(
+                run_numbers=dataset_dict["run_numbers"],
+                signal_keys=dataset_dict["signal_keys"],
+                catalog_limit=dataset_dict.get("catalog_limit", 10),
+                validation_fraction=dataset_dict.get("validation_fraction", 0.15),
+                test_fraction=dataset_dict.get("test_fraction", 0.15),
+                shuffle_buffer=dataset_dict.get("shuffle_buffer", 10000),
+                plot_distributions=dataset_dict.get("plot_distributions", True),
+                include_labels=dataset_dict.get("include_labels", True),
+                task_config=task_config,
+            )
+            
+            # Validate configs
+            dataset_config.validate()
+            
+            self.logger.info("Dataset and task configurations created successfully")
+            return dataset_config, task_config
+            
+        except Exception as e:
+            self.logger.error(f"Failed to create dataset/task configs: {e}")
+            raise
 
     def _load_datasets(
         self,
@@ -364,6 +414,149 @@ class StandaloneRegressionPipeline:
         self.logger.info("Two-stage regression evaluation completed successfully")
         return True
 
+    def _train_main_model(
+        self,
+        model: StandaloneDNNRegressor,
+        training_config: StandaloneTrainingConfig,
+        train_dataset: tf.data.Dataset,
+        val_dataset: tf.data.Dataset,
+        test_dataset: tf.data.Dataset,
+        total_train_events: int,
+        main_model_dir: Path,
+        eval_dir: Path,
+    ) -> tuple[bool, dict[str, Any], dict[str, np.ndarray]]:
+        """Train main model with full training data."""
+        try:
+            # Create fresh model instance using the same config as the original model
+            config_dict = model.get_config()
+            fresh_config = StandaloneDNNConfig(
+                model_type="standalone_dnn_regressor",
+                architecture={
+                    "input_shape": config_dict["input_shape"],
+                    "output_shape": config_dict["output_shape"],
+                    "hidden_layers": config_dict["hidden_layers"],
+                    "activation": config_dict["activation"],
+                    "output_activation": config_dict["output_activation"],
+                    "name": config_dict["name"],
+                },
+                hyperparameters={
+                    "dropout_rate": config_dict["dropout_rate"],
+                    "l2_regularization": config_dict["l2_regularization"],
+                    "batch_normalization": config_dict["batch_normalization"],
+                },
+            )
+            main_model = StandaloneDNNRegressor(fresh_config)
+            main_model.build(model.input_shape)
+
+            # Create trainer for main model
+            trainer = StandaloneTrainer(main_model.model, training_config)
+
+            # Train with full dataset
+            self.logger.info(f"Training main model with {total_train_events} events...")
+            success = trainer.train(
+                dataset=train_dataset,
+                validation_data=val_dataset,
+                training_history_dir=eval_dir / "training_histories",
+                model_name="main_model",
+                dataset_id=f"full_{total_train_events}_events",
+                experiment_id="standalone_regression_main",
+                save_individual_history=True,
+            )
+
+            if not success:
+                return False, {}, {}
+
+            # Save main model
+            model_save_path = main_model_dir / "model_weights.h5"
+            trainer.save_model(model_save_path)
+
+            # Save model config
+            config_path = main_model_dir / "model_config.json"
+            with open(config_path, "w") as f:
+                json.dump(self._make_json_serializable(main_model.get_config()), f, indent=2)
+
+            # Evaluate on test set
+            test_results = trainer.evaluate(test_dataset)
+
+            # Generate predictions for analysis
+            predictions = trainer.predict(test_dataset)
+
+            # Extract true labels from test dataset
+            true_labels = []
+            for batch in test_dataset:
+                if isinstance(batch, tuple):
+                    _, labels = batch
+                    if isinstance(labels, (list, tuple)):
+                        true_labels.append(labels[0].numpy())
+                    else:
+                        true_labels.append(labels.numpy())
+
+            true_labels = np.concatenate(true_labels, axis=0)
+
+            # Prepare results
+            results = {
+                "model_type": "main_model",
+                "data_size": total_train_events,
+                "test_metrics": test_results,
+                "training_history": trainer.get_training_history(),
+                "total_parameters": main_model.model.count_params(),
+            }
+
+            predictions_dict = {
+                "predictions": predictions,
+                "targets": true_labels,
+            }
+
+            self.logger.info("Main model training completed successfully")
+            return True, results, predictions_dict
+
+        except Exception as e:
+            self.logger.error(f"Main model training failed: {e}")
+            return False, {}, {}
+
+    def _run_data_efficiency_study(
+        self,
+        model: StandaloneDNNRegressor,
+        training_config: StandaloneTrainingConfig,
+        evaluation_config: StandaloneEvaluationConfig,
+        train_dataset: tf.data.Dataset,
+        val_dataset: tf.data.Dataset,
+        test_dataset: tf.data.Dataset,
+        total_train_events: int,
+        eval_dir: Path,
+    ) -> tuple[bool, dict[int, dict[str, Any]], dict[int, dict[str, np.ndarray]]]:
+        """Run data efficiency study across different training data sizes."""
+        data_sizes = evaluation_config.regression_data_sizes
+        self.logger.info(f"Running data efficiency study for sizes: {data_sizes}")
+
+        all_results = {}
+        all_predictions = {}
+
+        for data_size in data_sizes:
+            self.logger.info("=" * 50)
+            self.logger.info(f"Training with {data_size} events")
+            self.logger.info("=" * 50)
+
+            success, results, predictions = self._train_and_evaluate_single_size(
+                model,
+                training_config,
+                evaluation_config,
+                train_dataset,
+                val_dataset,
+                test_dataset,
+                data_size,
+                eval_dir,
+            )
+
+            if success:
+                all_results[data_size] = results
+                all_predictions[data_size] = predictions
+            else:
+                self.logger.warning(f"Failed to train model with {data_size} events")
+
+        self.logger.info("Data efficiency study completed")
+        return True, all_results, all_predictions
+
     def _train_and_evaluate_single_size(
         self,
         model: StandaloneDNNRegressor,
@@ -377,8 +570,25 @@ class StandaloneRegressionPipeline:
     ) -> tuple[bool, dict[str, Any], dict[str, np.ndarray]]:
         """Train and evaluate model for a single data size."""
         try:
-            # Create fresh model instance (reset weights)
-            fresh_model = StandaloneDNNRegressor(model.get_config())
+            # Create fresh model with proper config
+            config_dict = model.get_config()
+            fresh_config = StandaloneDNNConfig(
+                model_type="standalone_dnn_regressor",
+                architecture={
+                    "input_shape": config_dict["input_shape"],
+                    "output_shape": config_dict["output_shape"],
+                    "hidden_layers": config_dict["hidden_layers"],
+                    "activation": config_dict["activation"],
+                    "output_activation": config_dict["output_activation"],
+                    "name": config_dict["name"],
+                },
+                hyperparameters={
+                    "dropout_rate": config_dict["dropout_rate"],
+                    "l2_regularization": config_dict["l2_regularization"],
+                    "batch_normalization": config_dict["batch_normalization"],
+                },
+            )
+            fresh_model = StandaloneDNNRegressor(fresh_config)
             fresh_model.build(model.input_shape)
 
             # Create trainer with fixed epochs
@@ -386,8 +596,7 @@ class StandaloneRegressionPipeline:
                 batch_size=training_config.batch_size,
                 learning_rate=training_config.learning_rate,
                 epochs=evaluation_config.fixed_epochs,
-                early_stopping_patience=evaluation_config.fixed_epochs
-                + 1,  # Disable early stopping
+                early_stopping_patience=evaluation_config.fixed_epochs + 1,  # Disable early stopping
                 early_stopping_min_delta=0,
                 plot_training=training_config.plot_training,
                 gradient_clip_norm=training_config.gradient_clip_norm,
@@ -430,7 +639,7 @@ class StandaloneRegressionPipeline:
                 if isinstance(batch, tuple):
                     _, labels = batch
                     if isinstance(labels, (list, tuple)):
-                        true_labels.append(labels[0].numpy())  # Use first label set
+                        true_labels.append(labels[0].numpy())
                     else:
                         true_labels.append(labels.numpy())
 
@@ -464,29 +673,19 @@ class StandaloneRegressionPipeline:
         evaluation_config: StandaloneEvaluationConfig,
         total_train_events: int,
     ) -> None:
-        """Create comprehensive plots including main model and efficiency study."""
-        self.logger.info("Creating comprehensive evaluation plots...")
-
-        plots_dir = eval_dir / "plots"
-        plots_dir.mkdir(parents=True, exist_ok=True)
-
+        """Create comprehensive plots combining main model and efficiency study results."""
         try:
-            # Main model detailed analysis
-            if main_predictions:
+            plots_dir = eval_dir / "plots"
+            plots_dir.mkdir(parents=True, exist_ok=True)
+
+            # Main model prediction analysis
+            if main_predictions and "predictions" in main_predictions:
                 self.plot_manager.create_prediction_quality_plot(
                     main_predictions["predictions"],
                     main_predictions["targets"],
-                    plots_dir / "main_model_prediction_quality.png",
-                    f"Main Model Prediction Quality ({total_train_events} events)",
+                    plots_dir / "main_model_predictions.png",
+                    f"Main Model Predictions ({total_train_events} events)",
                     evaluation_config.prediction_sample_size,
-                )
-
-                self.plot_manager.create_error_analysis_plot(
-                    main_predictions["predictions"],
-                    main_predictions["targets"],
-                    plots_dir / "main_model_error_analysis.png",
-                    f"Main Model Error Analysis ({total_train_events} events)",
-                    evaluation_config.error_analysis_bins,
                 )
 
             # Main model training history
@@ -512,7 +711,6 @@ class StandaloneRegressionPipeline:
                     plots_dir / "data_efficiency_with_main_model.png",
                     "Data Efficiency (Including Main Model)",
                 )
-
                 # Multi-size prediction comparison (efficiency models only)
                 if evaluation_config.create_detailed_plots and all_predictions:
                     self.plot_manager.create_multi_size_comparison_plot(
@@ -520,6 +718,27 @@ class StandaloneRegressionPipeline:
                         plots_dir / "efficiency_models_comparison.png",
                         "Data Efficiency Models Comparison",
                     )
+
+            # Individual model error analysis plots for different data sizes
+            if all_predictions and evaluation_config.create_detailed_plots:
+                for data_size, predictions_dict in all_predictions.items():
+                    self.plot_manager.create_error_analysis_plot(
+                        predictions_dict["predictions"],
+                        predictions_dict["targets"],
+                        plots_dir / f"error_analysis_{data_size}_events.png",
+                        f"Error Analysis ({data_size} events)",
+                        evaluation_config.error_analysis_bins,
+                    )
+
+            # Main model error analysis
+            if main_predictions and "predictions" in main_predictions:
+                self.plot_manager.create_error_analysis_plot(
+                    main_predictions["predictions"],
+                    main_predictions["targets"],
+                    plots_dir / "main_model_error_analysis.png",
+                    f"Main Model Error Analysis ({total_train_events} events)",
+                    evaluation_config.error_analysis_bins,
+                )
 
             # Summary comparison plot
             self._create_summary_comparison_plot(
@@ -634,7 +853,7 @@ class StandaloneRegressionPipeline:
             }
 
             with open(main_results_file, "w") as f:
-                json.dump(main_serializable, f, indent=2)
+                json.dump(self._make_json_serializable(main_serializable), f, indent=2)
 
             # Save efficiency study results
             if all_results:
@@ -651,7 +870,7 @@ class StandaloneRegressionPipeline:
                     }
 
                 with open(efficiency_results_file, "w") as f:
-                    json.dump(efficiency_serializable, f, indent=2)
+                    json.dump(self._make_json_serializable(efficiency_serializable), f, indent=2)
 
             # Save combined summary
             summary_file = eval_dir / "evaluation_summary.json"
@@ -669,7 +888,7 @@ class StandaloneRegressionPipeline:
             }
 
             with open(summary_file, "w") as f:
-                json.dump(summary, f, indent=2)
+                json.dump(self._make_json_serializable(summary), f, indent=2)
 
             self.logger.info(f"Main model results saved to: {main_results_file}")
             if all_results:
@@ -680,142 +899,3 @@ class StandaloneRegressionPipeline:
 
         except Exception as e:
             self.logger.error(f"Failed to save comprehensive results: {e}")
-
-    def _train_main_model(
-        self,
-        model: StandaloneDNNRegressor,
-        training_config: StandaloneTrainingConfig,
-        train_dataset: tf.data.Dataset,
-        val_dataset: tf.data.Dataset,
-        test_dataset: tf.data.Dataset,
-        total_train_events: int,
-        main_model_dir: Path,
-        eval_dir: Path,
-    ) -> tuple[bool, dict[str, Any], dict[str, np.ndarray]]:
-        """Train main model with full training data."""
-        try:
-            # Create fresh model instance
-            main_model = StandaloneDNNRegressor(model.get_config())
-            main_model.build(model.input_shape)
-
-            # Create trainer for main model
-            trainer = StandaloneTrainer(main_model.model, training_config)
-
-            # Train with full dataset
-            self.logger.info(f"Training main model with {total_train_events} events...")
-            success = trainer.train(
-                dataset=train_dataset,
-                validation_data=val_dataset,
-                training_history_dir=eval_dir / "training_histories",
-                model_name="main_model",
-                dataset_id=f"full_{total_train_events}_events",
-                experiment_id="standalone_regression_main",
-                save_individual_history=True,
-            )
-
-            if not success:
-                return False, {}, {}
-
-            # Save main model
-            model_save_path = main_model_dir / "model_weights.h5"
-            trainer.save_model(model_save_path)
-
-            # Save model config
-            config_save_path = main_model_dir / "model_config.json"
-            with open(config_save_path, "w") as f:
-                json.dump(main_model.get_config(), f, indent=2)
-
-            # Evaluate on test set
-            test_results = trainer.evaluate(test_dataset)
-
-            # Generate predictions for analysis
-            predictions = trainer.predict(test_dataset)
-
-            # Extract true labels from test dataset
-            true_labels = []
-            for batch in test_dataset:
-                if isinstance(batch, tuple):
-                    _, labels = batch
-                    if isinstance(labels, (list, tuple)):
-                        true_labels.append(labels[0].numpy())
-                    else:
-                        true_labels.append(labels.numpy())
-
-            true_labels = np.concatenate(true_labels, axis=0)
-
-            # Prepare results
-            results = {
-                "model_type": "main_model",
-                "data_size": total_train_events,
-                "test_metrics": test_results,
-                "training_history": trainer.get_training_history(),
-                "total_parameters": main_model.model.count_params(),
-            }
-
-            predictions_dict = {
-                "predictions": predictions,
-                "targets": true_labels,
-            }
-
-            self.logger.info("Main model training completed successfully")
-            self.logger.info(f"Test metrics: {test_results}")
-
-            return True, results, predictions_dict
-
-        except Exception as e:
-            self.logger.error(f"Main model training failed: {e}")
-            return False, {}, {}
-
-    def _run_data_efficiency_study(
-        self,
-        model: StandaloneDNNRegressor,
-        training_config: StandaloneTrainingConfig,
-        evaluation_config: StandaloneEvaluationConfig,
-        train_dataset: tf.data.Dataset,
-        val_dataset: tf.data.Dataset,
-        test_dataset: tf.data.Dataset,
-        total_train_events: int,
-        eval_dir: Path,
-    ) -> tuple[bool, dict[int, dict[str, Any]], dict[int, dict[str, np.ndarray]]]:
-        """Run data efficiency study with different training data sizes."""
-
-        # Filter data sizes to available events
-        valid_data_sizes = [
-            size
-            for size in evaluation_config.regression_data_sizes
-            if size <= total_train_events
-        ]
-        self.logger.info(f"Data efficiency study sizes: {valid_data_sizes}")
-
-        if not valid_data_sizes:
-            self.logger.warning("No valid data sizes for efficiency study")
-            return True, {}, {}  # Not a failure, just skip efficiency study
-
-        # Store results for all data sizes
-        all_results = {}
-        all_predictions = {}
-
-        # Train and evaluate for each data size
-        for data_size in valid_data_sizes:
-            self.logger.info(f"Training efficiency model with {data_size} events...")
-
-            success, results, predictions = self._train_and_evaluate_single_size(
-                model,
-                training_config,
-                evaluation_config,
-                train_dataset,
-                val_dataset,
-                test_dataset,
-                data_size,
-                eval_dir,
-            )
-
-            if success:
-                all_results[data_size] = results
-                all_predictions[data_size] = predictions
-            else:
-                self.logger.warning(
-                    f"Efficiency training failed for data size {data_size}"
-                )
-
-        return True, all_results, all_predictions
