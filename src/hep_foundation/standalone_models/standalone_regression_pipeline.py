@@ -14,18 +14,20 @@ import numpy as np
 import tensorflow as tf
 
 from hep_foundation.config.logging_config import get_logger
-from hep_foundation.config.standalone_config import (
+from hep_foundation.data.dataset_manager import DatasetManager
+from hep_foundation.standalone_models.standalone_config import (
     StandaloneEvaluationConfig,
     StandaloneTrainingConfig,
     load_standalone_config,
 )
-from hep_foundation.data.dataset_manager import DatasetManager
-from hep_foundation.models.standalone_dnn_regressor import (
+from hep_foundation.standalone_models.standalone_dnn_regressor import (
     StandaloneDNNConfig,
     StandaloneDNNRegressor,
 )
-from hep_foundation.plots.standalone_plot_manager import StandalonePlotManager
-from hep_foundation.training.standalone_trainer import StandaloneTrainer
+from hep_foundation.standalone_models.standalone_plot_manager import (
+    StandalonePlotManager,
+)
+from hep_foundation.standalone_models.standalone_trainer import StandaloneTrainer
 
 
 class StandaloneRegressionPipeline:
@@ -64,9 +66,11 @@ class StandaloneRegressionPipeline:
         """Convert numpy/tensorflow objects to JSON serializable types."""
         import numpy as np
         import tensorflow as tf
-        
+
         if isinstance(obj, dict):
-            return {key: self._make_json_serializable(value) for key, value in obj.items()}
+            return {
+                key: self._make_json_serializable(value) for key, value in obj.items()
+            }
         elif isinstance(obj, list):
             return [self._make_json_serializable(item) for item in obj]
         elif isinstance(obj, tuple):
@@ -79,7 +83,7 @@ class StandaloneRegressionPipeline:
             return obj.tolist()
         elif isinstance(obj, tf.TensorShape):
             return obj.as_list()
-        elif hasattr(obj, 'numpy'):  # TensorFlow tensor
+        elif hasattr(obj, "numpy"):  # TensorFlow tensor
             return obj.numpy().tolist()
         else:
             return obj
@@ -214,7 +218,7 @@ class StandaloneRegressionPipeline:
         # Import here to avoid circular imports
         from hep_foundation.config.dataset_config import DatasetConfig
         from hep_foundation.config.task_config import TaskConfig
-        
+
         try:
             # Create task config object FIRST
             task_dict = config["task_settings"]
@@ -225,7 +229,7 @@ class StandaloneRegressionPipeline:
                 label_features=task_dict.get("label_features", []),
                 label_array_aggregators=task_dict.get("label_array_aggregators", []),
             )
-            
+
             # Create dataset config object with task_config
             dataset_dict = config["dataset_settings"]
             dataset_config = DatasetConfig(
@@ -239,13 +243,13 @@ class StandaloneRegressionPipeline:
                 include_labels=dataset_dict.get("include_labels", True),
                 task_config=task_config,
             )
-            
+
             # Validate configs
             dataset_config.validate()
-            
+
             self.logger.info("Dataset and task configurations created successfully")
             return dataset_config, task_config
-            
+
         except Exception as e:
             self.logger.error(f"Failed to create dataset/task configs: {e}")
             raise
@@ -384,7 +388,7 @@ class StandaloneRegressionPipeline:
         self.logger.info("STAGE 2: DATA EFFICIENCY STUDY")
         self.logger.info("=" * 60)
 
-        efficiency_success, all_results, all_predictions = (
+        _efficiency_success, all_results, all_predictions = (
             self._run_data_efficiency_study(
                 model,
                 training_config,
@@ -473,7 +477,9 @@ class StandaloneRegressionPipeline:
             # Save model config
             config_path = main_model_dir / "model_config.json"
             with open(config_path, "w") as f:
-                json.dump(self._make_json_serializable(main_model.get_config()), f, indent=2)
+                json.dump(
+                    self._make_json_serializable(main_model.get_config()), f, indent=2
+                )
 
             # Evaluate on test set
             test_results = trainer.evaluate(test_dataset)
@@ -596,7 +602,8 @@ class StandaloneRegressionPipeline:
                 batch_size=training_config.batch_size,
                 learning_rate=training_config.learning_rate,
                 epochs=evaluation_config.fixed_epochs,
-                early_stopping_patience=evaluation_config.fixed_epochs + 1,  # Disable early stopping
+                early_stopping_patience=evaluation_config.fixed_epochs
+                + 1,  # Disable early stopping
                 early_stopping_min_delta=0,
                 plot_training=training_config.plot_training,
                 gradient_clip_norm=training_config.gradient_clip_norm,
@@ -759,7 +766,7 @@ class StandaloneRegressionPipeline:
         try:
             import matplotlib.pyplot as plt
 
-            from hep_foundation.plots.standalone_plot_manager import (
+            from hep_foundation.standalone_models.standalone_plot_manager import (
                 FONT_SIZES,
                 LINE_WIDTHS,
                 MARKER_SIZES,
@@ -870,7 +877,11 @@ class StandaloneRegressionPipeline:
                     }
 
                 with open(efficiency_results_file, "w") as f:
-                    json.dump(self._make_json_serializable(efficiency_serializable), f, indent=2)
+                    json.dump(
+                        self._make_json_serializable(efficiency_serializable),
+                        f,
+                        indent=2,
+                    )
 
             # Save combined summary
             summary_file = eval_dir / "evaluation_summary.json"

@@ -24,7 +24,7 @@ sys.path.insert(0, str(project_root))
 
 from hep_foundation.config.config_loader import PipelineConfigLoader  # noqa: E402
 from hep_foundation.config.logging_config import get_logger  # noqa: E402
-from hep_foundation.pipeline.standalone_regression_pipeline import (  # noqa: E402
+from hep_foundation.standalone_models.standalone_regression_pipeline import (  # noqa: E402
     StandaloneRegressionPipeline,
 )
 
@@ -120,7 +120,7 @@ def run_single_config(
     try:
         # Load configuration
         config = load_yaml_config(config_path)
-        
+
         # Validate configuration
         if not validate_config(config, logger):
             logger.error(f"❌ Configuration validation failed for {config_path.name}")
@@ -140,7 +140,9 @@ def run_single_config(
         return success
 
     except Exception as e:
-        logger.error(f"❌ Failed to process {config_path.name}: {type(e).__name__}: {str(e)}")
+        logger.error(
+            f"❌ Failed to process {config_path.name}: {type(e).__name__}: {str(e)}"
+        )
         logger.exception("Detailed traceback:")
         return False
 
@@ -448,7 +450,9 @@ Examples:
 
         successful, total = run_config_stack(config_stack_dir, pipeline, logger)
 
-        logger.info(f"📊 Processing complete: {successful}/{total} configurations successful")
+        logger.info(
+            f"📊 Processing complete: {successful}/{total} configurations successful"
+        )
 
         if successful == total and total > 0:
             logger.info("🎉 All standalone regressions completed successfully!")

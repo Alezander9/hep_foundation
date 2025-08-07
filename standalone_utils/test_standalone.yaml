@@ -4,24 +4,24 @@ version: "1.0"
 created_by: "Liangyu"
 
 dataset:
-  catalog_limit: 2  
+  catalog_limit: 2
   include_labels: true
   plot_distributions: true
   run_numbers: !python get_run_numbers()[-1:]
-  shuffle_buffer: 1000 
-  signal_keys: ["zprime_tt"] 
+  shuffle_buffer: 1000
+  signal_keys: ["zprime_tt"]
   test_fraction: 0.2
   validation_fraction: 0.2
 
 evaluation:
   create_detailed_plots: true
   error_analysis_bins: 50
-  fixed_epochs: 5  
+  fixed_epochs: 5
   include_feature_importance: false
   prediction_sample_size: 500
   regression_data_sizes:
-  - 500   
-  - 1000 
+  - 500
+  - 1000
 
 
 models:
@@ -29,18 +29,18 @@ models:
     architecture:
       activation: relu
       hidden_layers:
-      - 64  
+      - 64
       - 32
       name: simple_test_regressor
       output_activation: linear
     hyperparameters:
-      batch_normalization: true  
+      batch_normalization: true
       dropout_rate: 0.1
-      l2_regularization: 0.0 
+      l2_regularization: 0.0
     model_type: standalone_dnn_regressor
 
 pipeline:
-  delete_catalogs: false  
+  delete_catalogs: false
   experiments_output_dir: _standalone_experiments
 
 
@@ -63,7 +63,7 @@ task:
       branch: derived.InDetTrackParticlesAuxDyn.pt
   input_features: []
 
-  
+
   label_array_aggregators:
   - - input_branches:
       - AnalysisJetsAuxDyn.pt
@@ -80,11 +80,11 @@ task:
 
 training:
   standalone_dnn:
-    batch_size: 256 
+    batch_size: 256
     early_stopping:
       min_delta: 0.001
       patience: 3
-    epochs: 10 
+    epochs: 10
     gradient_clip_norm: 1.0
     learning_rate: 0.001
     lr_scheduler:

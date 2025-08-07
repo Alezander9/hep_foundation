@@ -14,7 +14,7 @@ import numpy as np
 import tensorflow as tf
 
 from hep_foundation.config.logging_config import get_logger
-from hep_foundation.config.standalone_config import StandaloneTrainingConfig
+from hep_foundation.standalone_models.standalone_config import StandaloneTrainingConfig
 
 
 class StandaloneTrainer:
@@ -27,13 +27,16 @@ class StandaloneTrainer:
     - Early stopping
     - Comprehensive training monitoring
     """
+
     def _make_json_serializable(self, obj):
         """Convert numpy/tensorflow objects to JSON serializable types."""
         import numpy as np
         import tensorflow as tf
-        
+
         if isinstance(obj, dict):
-            return {key: self._make_json_serializable(value) for key, value in obj.items()}
+            return {
+                key: self._make_json_serializable(value) for key, value in obj.items()
+            }
         elif isinstance(obj, list):
             return [self._make_json_serializable(item) for item in obj]
         elif isinstance(obj, tuple):
@@ -46,11 +49,10 @@ class StandaloneTrainer:
             return obj.tolist()
         elif isinstance(obj, tf.TensorShape):
             return obj.as_list()
-        elif hasattr(obj, 'numpy'):  # TensorFlow tensor
+        elif hasattr(obj, "numpy"):  # TensorFlow tensor
             return obj.numpy().tolist()
         else:
             return obj
-
 
     def __init__(
         self,

@@ -104,7 +104,7 @@ training:
     learning_rate: 0.001
     epochs: 0 # This gets overridden by the data size
     early_stopping:
-      patience: 10 # This shouldnt be overridden by the data size, but doesnt seem to be working
+      patience: 10 # This shouldn't be overridden by the data size, but doesn't seem to be working
       min_delta: 0.0001
     plot_training: true
 

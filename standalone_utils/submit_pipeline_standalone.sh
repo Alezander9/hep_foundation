@@ -82,7 +82,7 @@ echo "Command: python run_standalone_regression.py --config-stack"
 echo "Time started: $(date)"
 
 # Run with output capture and timestamping
-python scripts/run_standalone_regression.py --config-stack 2>&1 | while IFS= read -r line; do
+python standalone_utils/run_standalone_regression.py --config-stack 2>&1 | while IFS= read -r line; do
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $line"
 done
 

@@ -60,7 +60,7 @@ line-ending = "auto"
 
 [tool.vulture]
 # Check both source code and scripts to understand usage patterns, plus whitelist
-paths = ["src/", "scripts/", "vulture_whitelist.py"]
+paths = ["src/", "scripts/", "standalone_utils/", "vulture_whitelist.py"]
 # Set minimum confidence to 50%
 min_confidence = 50
 # Sort results by size to prioritize larger chunks of dead code
