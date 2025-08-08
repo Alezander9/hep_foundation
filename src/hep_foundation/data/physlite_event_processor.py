@@ -173,17 +173,14 @@ class PhysliteEventProcessor:
         event_data: dict[str, np.ndarray],
         selection_config: PhysliteSelectionConfig,
         need_more_zero_bias_samples: bool = False,
-        need_more_post_selection_samples: bool = False,
     ) -> Optional[dict[str, Any]]:
         """
         Process an event according to a selection configuration.
 
-        New approach:
-        - Each aggregator ALWAYS returns correctly shaped arrays (max_length x num_features)
-        - If aggregator fails, return zeros with correct shape
-        - If any aggregator fails a filter, reject entire event
-        - Concatenate all aggregator results at the end
-        - Skip event if all aggregators are zero
+        Approach:
+        - For dataset creation: aggregators must pass min_length filter or entire event is rejected
+        - For zero-bias sampling: process histogram data even if min_length fails
+        - Return None if aggregators fail for dataset creation, but may still collect histogram data
         """
         # Extract scalar features
         scalar_features = {}
@@ -192,9 +189,9 @@ class PhysliteEventProcessor:
                 event_data, selection_config.feature_selectors
             )
 
-        # Process aggregators with new approach
+        # Process aggregators
         aggregated_features = {}
-        is_passing_filters = True  # Track if event passes all filters
+        all_aggregators_passed_filters = True  # Track if ALL aggregators pass filters
 
         if selection_config.feature_array_aggregators:
             for idx, aggregator in enumerate(
@@ -202,72 +199,89 @@ class PhysliteEventProcessor:
             ):
                 agg_key = f"aggregator_{idx}"
 
-                # Try to process this aggregator
+                # Process this aggregator
                 try:
                     (
                         aggregator_result_array,
                         n_valid_elements,
                         post_selection_hist_data,
                         zero_bias_hist_data,
+                        aggregator_passed_filters,
                     ) = self._process_single_aggregator(
                         event_data,
                         aggregator,
                         idx,
                         need_more_zero_bias_samples,
-                        need_more_post_selection_samples,
                     )
 
-                    # Check if this aggregator failed a filter (indicated by None return)
-                    if aggregator_result_array is None:
-                        # Filter failed - reject entire event
-                        is_passing_filters = False
-                        break
+                    # Check if this aggregator passed filters for dataset creation
+                    if not aggregator_passed_filters:
+                        all_aggregators_passed_filters = False
 
-                    # Store successful aggregator result
-                    aggregated_features[agg_key] = {
-                        "array": aggregator_result_array,
-                        "n_valid_elements": n_valid_elements,
-                        "post_selection_hist_data": post_selection_hist_data,
-                        "zero_bias_hist_data": zero_bias_hist_data,
-                        # Note: input_branch_details removed - now using histogram data for plot names
-                    }
+                    # Check for errors when aggregator_result_array is None
+                    if aggregator_result_array is None:
+                        if n_valid_elements == 0:
+                            # Fatal error: no tracks at all, skip this event entirely
+                            self.logger.debug(
+                                f"Fatal error in aggregator {idx}: no tracks found, skipping event"
+                            )
+                            return None
+                        elif need_more_zero_bias_samples:
+                            # Filter failure: has tracks but failed min_length, collect zero-bias data
+                            all_aggregators_passed_filters = False
+                            aggregated_features[agg_key] = {
+                                "array": None,  # No training array since min_length failed
+                                "n_valid_elements": n_valid_elements,
+                                "post_selection_hist_data": post_selection_hist_data,  # Should be None since filters failed
+                                "zero_bias_hist_data": zero_bias_hist_data,  # Should contain actual data
+                            }
+                            continue
+                        else:
+                            # Filter failure and we don't need zero-bias data, exit
+                            self.logger.debug(
+                                f"Aggregator {idx} failed min_length ({n_valid_elements} < min_length), early exit"
+                            )
+                            return None
+
+                    # Store aggregator result (for successful aggregators)
+                    if aggregator_result_array is not None:
+                        aggregated_features[agg_key] = {
+                            "array": aggregator_result_array,
+                            "n_valid_elements": n_valid_elements,
+                            "post_selection_hist_data": post_selection_hist_data,
+                            "zero_bias_hist_data": zero_bias_hist_data,
+                        }
 
                 except Exception as e:
                     self.logger.warning(f"Error processing aggregator {idx}: {e}")
-                    # On error, create zero-filled array with correct shape
-                    (
-                        zero_array,
-                        zero_n_valid,
-                        zero_post_hist_data,
-                        zero_zero_bias_hist_data,
-                    ) = self._create_zero_aggregator(event_data, aggregator, idx)
-                    aggregated_features[agg_key] = {
-                        "array": zero_array,
-                        "n_valid_elements": zero_n_valid,
-                        "post_selection_hist_data": zero_post_hist_data,
-                        "zero_bias_hist_data": zero_zero_bias_hist_data,
-                    }
+                    # Fatal error - mark as failed and potentially stop
+                    all_aggregators_passed_filters = False
+                    if not need_more_zero_bias_samples:
+                        return None
+                    # If we need zero-bias data, continue with other aggregators
 
-        # If any aggregator failed filters, reject the entire event
-        if not is_passing_filters:
+        # Decision logic:
+        # 1. If this is for dataset creation (not need_more_zero_bias_samples) and any aggregator failed min_length, reject event
+        # 2. If this is for zero-bias sampling (need_more_zero_bias_samples), always return data for histogram collection
+
+        # For dataset creation (when filters must pass)
+        if not all_aggregators_passed_filters and not need_more_zero_bias_samples:
             self.logger.debug(
-                "Event rejected due to filter failure in one or more aggregators"
+                "Event rejected: one or more aggregators failed min_length requirement"
             )
             return None
 
-        # Check if all aggregators are zero (no useful data)
-        if aggregated_features:
-            all_zero = True
-            for agg_data in aggregated_features.values():
-                if agg_data["n_valid_elements"] > 0:
-                    all_zero = False
-                    break
+        # For zero-bias sampling: always return data even if no valid aggregators for dataset
+        # This ensures histogram data can be collected from failed events
+        if need_more_zero_bias_samples:
+            # Return whatever we have, even if aggregated_features is empty
+            # The histogram data is stored within each aggregator's data
+            return {
+                "scalar_features": scalar_features,
+                "aggregated_features": aggregated_features,
+            }
 
-            if all_zero:
-                self.logger.debug("Event rejected: all aggregators returned zero data")
-                return None
-
-        # Return results if we have anything
+        # For normal dataset creation: check if we have valid data
         if not scalar_features and not aggregated_features:
             self.logger.debug("No scalar features and no aggregated features found")
             return None
@@ -283,16 +297,16 @@ class PhysliteEventProcessor:
         aggregator: PhysliteFeatureArrayAggregator,
         idx: int,
         need_more_zero_bias_samples: bool = False,
-        need_more_post_selection_samples: bool = False,
-    ) -> tuple[Optional[np.ndarray], int, Optional[dict], Optional[dict]]:
+    ) -> tuple[Optional[np.ndarray], int, Optional[dict], Optional[dict], bool]:
         """
-        Process a single aggregator, always returning correctly shaped arrays.
+        Process a single aggregator.
 
         Returns:
-            - aggregator_result_array: Always (max_length, num_features) or None if filter failed
-            - n_valid_elements: Number of valid elements before padding
-            - post_selection_hist_data: Dict of {branch_name: list_of_arrays} for post-selection plotting (if needed)
-            - zero_bias_hist_data: Dict of {branch_name: list_of_arrays} for zero-bias plotting (if needed)
+            - aggregator_result_array: (max_length, num_features) array for dataset, or None if error/filter failure
+            - n_valid_elements: Number of valid elements before padding (0 = fatal error, >0 but <min_length = filter failure)
+            - post_selection_hist_data: Dict of {branch_name: array} for post-selection plotting (only if filters pass)
+            - zero_bias_hist_data: Dict of {branch_name: array} for zero-bias plotting (if needed)
+            - passed_filters: Boolean indicating whether this aggregator passed min_length requirements
         """
         # --- Check Requirements and Get Input Arrays ---
         array_features = {}  # Stores input arrays for aggregation
@@ -302,14 +316,13 @@ class PhysliteEventProcessor:
         if aggregator.sort_by_branch:
             required_for_agg.add(aggregator.sort_by_branch.branch.name)
 
-        # Check if all required branches exist
+        # Check if all required branches exist - fatal error
         if not all(branch_name in event_data for branch_name in required_for_agg):
             missing = required_for_agg - set(event_data.keys())
             self.logger.debug(
                 f"Missing required branches for aggregator {idx}: {missing}"
             )
-            # Return zero-filled array with correct shape
-            return self._create_zero_aggregator(event_data, aggregator, idx)
+            return None, 0, None, None, False
 
         # --- Check length consistency on RAW arrays ---
         initial_length = -1
@@ -324,20 +337,20 @@ class PhysliteEventProcessor:
                 self.logger.warning(
                     f"Could not get length of raw data for branch '{branch_name}' in aggregator {idx}"
                 )
-                return self._create_zero_aggregator(event_data, aggregator, idx)
+                return None, 0, None, None, False
 
             if initial_length == -1:
                 initial_length = current_length
             elif initial_length != current_length:
                 self.logger.warning(f"RAW array length mismatch in aggregator {idx}")
-                return self._create_zero_aggregator(event_data, aggregator, idx)
+                return None, 0, None, None, False
 
-        # If no length found or zero length
+        # If no length found or zero length - fatal error
         if initial_length <= 0:
             self.logger.debug(
                 f"Initial length is {initial_length} for aggregator {idx}"
             )
-            return self._create_zero_aggregator(event_data, aggregator, idx)
+            return None, 0, None, None, False
 
         # --- Convert STL Vectors and prepare arrays ---
         array_features = {}
@@ -345,33 +358,36 @@ class PhysliteEventProcessor:
         sort_value = None
         post_conversion_length = -1
 
-        for branch_name in required_for_agg:
-            converted_array = self._convert_stl_vector_array(
-                branch_name, raw_array_features[branch_name]
-            )
+        try:
+            for branch_name in required_for_agg:
+                converted_array = self._convert_stl_vector_array(
+                    branch_name, raw_array_features[branch_name]
+                )
 
-            is_input_branch = branch_name in (
-                s.branch.name for s in aggregator.input_branches
-            )
-            is_filter_branch = branch_name in filter_branch_names
-            is_sort_branch = (
-                aggregator.sort_by_branch
-                and branch_name == aggregator.sort_by_branch.branch.name
-            )
+                is_input_branch = branch_name in (
+                    s.branch.name for s in aggregator.input_branches
+                )
+                is_filter_branch = branch_name in filter_branch_names
+                is_sort_branch = (
+                    aggregator.sort_by_branch
+                    and branch_name == aggregator.sort_by_branch.branch.name
+                )
 
-            if is_input_branch:
-                array_features[branch_name] = converted_array
-            if is_filter_branch:
-                filter_arrays[branch_name] = converted_array
-            if is_sort_branch:
-                sort_value = converted_array
+                if is_input_branch:
+                    array_features[branch_name] = converted_array
+                if is_filter_branch:
+                    filter_arrays[branch_name] = converted_array
+                if is_sort_branch:
+                    sort_value = converted_array
 
-            if post_conversion_length == -1:
-                if is_sort_branch or is_filter_branch or is_input_branch:
-                    post_conversion_length = len(converted_array)
+                if post_conversion_length == -1:
+                    if is_sort_branch or is_filter_branch or is_input_branch:
+                        post_conversion_length = len(converted_array)
+        except Exception as e:
+            self.logger.error(f"Error during STL conversion in aggregator {idx}: {e}")
+            return None, 0, None, None, False
 
-        # --- Apply Filters for Model Training Data (ALWAYS) ---
-        # Model training data always needs proper filtering, regardless of histogram needs
+        # --- Apply Filters ---
         valid_mask = np.ones(post_conversion_length, dtype=bool)
         for filter_config in aggregator.filter_branches:
             filter_name = filter_config.branch.name
@@ -387,224 +403,158 @@ class PhysliteEventProcessor:
 
         # Check if we meet minimum length requirement after filtering
         n_valid = np.sum(valid_mask)
-        model_training_failed = n_valid < aggregator.min_length
+        passed_aggregator_filters = n_valid >= aggregator.min_length
 
-        if model_training_failed:
+        # Early exit logic: if filters fail and we don't need zero-bias data, return None immediately
+        if not passed_aggregator_filters and not need_more_zero_bias_samples:
             self.logger.debug(
-                f"Aggregator {idx}: n_valid ({n_valid}) < min_length ({aggregator.min_length})"
+                f"Aggregator {idx}: n_valid ({n_valid}) < min_length ({aggregator.min_length}) - early exit"
             )
-            # If we can't meet minimum requirements and don't need histogram data, exit early
-            if not (need_more_zero_bias_samples or need_more_post_selection_samples):
-                return self._create_zero_aggregator(event_data, aggregator, idx)
+            return None, n_valid, None, None, False
 
         # Initialize histogram data containers
         post_selection_hist_data = None
         zero_bias_hist_data = None
 
-        # --- Determine Sorting Indices ---
-        if aggregator.sort_by_branch and sort_value is not None:
-            if len(sort_value) != post_conversion_length:
-                self.logger.warning(f"Sort array length mismatch in aggregator {idx}")
-                return self._create_zero_aggregator(event_data, aggregator, idx)
-
-            masked_sort_value = sort_value[valid_mask]
-            if len(masked_sort_value) == 0:
-                sort_indices = np.array([], dtype=int)
-            else:
-                sort_indices = np.argsort(masked_sort_value)[::-1]
-        else:
-            sort_indices = np.arange(n_valid)
-
-        # --- Apply Aggregation and Generate Histogram Data ---
-        processed_feature_segments = []
-
-        # Initialize histogram data dictionaries if needed
-        if need_more_post_selection_samples:
-            post_selection_hist_data = {}
-        if need_more_zero_bias_samples:
-            zero_bias_hist_data = {}
-
-        for selector in aggregator.input_branches:
-            branch_name = selector.branch.name
-            values = array_features.get(branch_name)
-            if values is None:
-                self.logger.warning(
-                    f"Input branch '{branch_name}' not found for aggregator {idx}"
-                )
-                return self._create_zero_aggregator(event_data, aggregator, idx)
-
-            # Apply mask and reshape for model training
-            filtered_values = values[valid_mask]
-            if filtered_values.shape[0] != n_valid:
-                self.logger.warning(
-                    f"Filtered array shape mismatch for '{branch_name}' in aggregator {idx}"
-                )
-                return self._create_zero_aggregator(event_data, aggregator, idx)
-
-            if filtered_values.ndim == 1:
-                filtered_values = filtered_values.reshape(-1, 1)
-            elif filtered_values.ndim != 2:
-                self.logger.warning(
-                    f"Unexpected array dimension for '{branch_name}' in aggregator {idx}"
-                )
-                return self._create_zero_aggregator(event_data, aggregator, idx)
-
-            processed_feature_segments.append(filtered_values)
-
-            # Generate histogram data for post-selection (before zero-padding, after truncation)
-            if need_more_post_selection_samples and not model_training_failed:
-                # Use the filtered values for post-selection histogram data
-                post_selection_hist_data[branch_name] = filtered_values.copy()
-
-            # Generate histogram data for zero-bias (all tracks, no filters)
+        # --- Process data for histogram collection (only if we need zero-bias or if filters pass) ---
+        if passed_aggregator_filters or need_more_zero_bias_samples:
+            # Initialize histogram data dictionaries based on what we need
+            if passed_aggregator_filters:
+                post_selection_hist_data = {}
             if need_more_zero_bias_samples:
-                # Use original unfiltered values for zero-bias histogram data
-                unfiltered_values = values.copy()
-                if unfiltered_values.ndim == 1:
-                    unfiltered_values = unfiltered_values.reshape(-1, 1)
-                zero_bias_hist_data[branch_name] = unfiltered_values
+                zero_bias_hist_data = {}
 
-        if not processed_feature_segments:
-            self.logger.warning(f"No feature segments collected for aggregator {idx}")
-            return self._create_zero_aggregator(event_data, aggregator, idx)
+            # Process histogram data for each input branch
+            for selector in aggregator.input_branches:
+                branch_name = selector.branch.name
+                values = array_features.get(branch_name)
+                if values is None:
+                    self.logger.warning(
+                        f"Input branch '{branch_name}' not found for aggregator {idx}"
+                    )
+                    return None, n_valid, None, None, False
 
-        # --- Stack features horizontally ---
-        try:
-            features = np.hstack(processed_feature_segments)
-        except ValueError as e:
-            self.logger.error(f"Error during np.hstack in aggregator {idx}: {e}")
-            return self._create_zero_aggregator(event_data, aggregator, idx)
+                # Generate histogram data for post-selection (filtered values)
+                if passed_aggregator_filters and post_selection_hist_data is not None:
+                    filtered_values = values[valid_mask]
+                    # Store as flat list for proper histogram format
+                    post_selection_hist_data[branch_name] = (
+                        filtered_values.flatten().tolist()
+                    )
 
-        # --- Apply sorting ---
-        if len(sort_indices) != n_valid:
-            self.logger.warning(f"Sort indices length mismatch in aggregator {idx}")
-            return self._create_zero_aggregator(event_data, aggregator, idx)
+                # Generate histogram data for zero-bias (all values, no filters)
+                if need_more_zero_bias_samples:
+                    unfiltered_values = values.copy()
+                    # Store as flat list for proper histogram format
+                    zero_bias_hist_data[branch_name] = (
+                        unfiltered_values.flatten().tolist()
+                    )
 
-        try:
-            sort_indices = np.asarray(sort_indices, dtype=int)
-            sorted_features = features[sort_indices]
-        except (IndexError, Exception) as e:
-            self.logger.error(f"Error applying sort_indices in aggregator {idx}: {e}")
-            return self._create_zero_aggregator(event_data, aggregator, idx)
+            # No need to sort histogram data - histograms are order-independent
+            # Sorting is only needed for training arrays where truncation matters
 
-        # --- Handle Model Training Data ---
-        if model_training_failed:
-            # Model training failed, but we might still want histogram data
-            # Return zero array for model training
-            total_features = sum(
-                seg.shape[1] if seg.ndim == 2 else 1
-                for seg in processed_feature_segments
-            )
-            aggregator_result_array = np.zeros(
-                (aggregator.max_length, total_features), dtype=np.float32
-            )
-        else:
-            # Normal case: apply length requirements for model training (padding/truncation)
-            num_selected_tracks = sorted_features.shape[0]
-            num_features_per_track = sorted_features.shape[1]
+        # --- Create model training data (only if filters pass) ---
+        aggregator_result_array = None
 
-            # Always apply max_length limits and padding for model training data
-            if num_selected_tracks > aggregator.max_length:
-                aggregator_result_array = sorted_features[: aggregator.max_length, :]
-            elif num_selected_tracks < aggregator.max_length:
-                # Pad with zeros for model training
-                num_padding_tracks = aggregator.max_length - num_selected_tracks
-                padding = np.zeros(
-                    (num_padding_tracks, num_features_per_track),
-                    dtype=sorted_features.dtype,
-                )
-                aggregator_result_array = np.vstack([sorted_features, padding])
-            else:
-                aggregator_result_array = sorted_features
+        if passed_aggregator_filters:
+            try:
+                processed_feature_segments = []
 
-        # --- Generate Histogram Data (if needed) ---
-        # Post-selection histogram data: use filtered and sorted data (truncated but not zero-padded)
+                for selector in aggregator.input_branches:
+                    branch_name = selector.branch.name
+                    values = array_features.get(branch_name)
+                    if values is None:
+                        self.logger.warning(
+                            f"Input branch '{branch_name}' not found for aggregator {idx}"
+                        )
+                        return None, n_valid, None, None, False
 
-        if (
-            need_more_post_selection_samples
-            and post_selection_hist_data
-            and not model_training_failed
-        ):
-            # Only generate post-selection histogram data if filtering succeeded
-            for branch_name in post_selection_hist_data:
-                # Apply same sorting to histogram data but don't pad
-                hist_values = post_selection_hist_data[branch_name]
-                sorted_hist_values = hist_values[sort_indices]
-                # Truncate if needed, but don't zero-pad
-                if len(sorted_hist_values) > aggregator.max_length:
-                    post_selection_hist_data[branch_name] = sorted_hist_values[
+                    # Apply mask and reshape for model training
+                    filtered_values = values[valid_mask]
+                    if filtered_values.shape[0] != n_valid:
+                        self.logger.warning(
+                            f"Filtered array shape mismatch for '{branch_name}' in aggregator {idx}"
+                        )
+                        return None, n_valid, None, None, False
+
+                    if filtered_values.ndim == 1:
+                        filtered_values = filtered_values.reshape(-1, 1)
+                    elif filtered_values.ndim != 2:
+                        self.logger.warning(
+                            f"Unexpected array dimension for '{branch_name}' in aggregator {idx}"
+                        )
+                        return None, n_valid, None, None, False
+
+                    processed_feature_segments.append(filtered_values)
+
+                if not processed_feature_segments:
+                    self.logger.warning(
+                        f"No feature segments collected for aggregator {idx}"
+                    )
+                    return None, n_valid, None, None, False
+
+                # Stack features horizontally
+                features = np.hstack(processed_feature_segments)
+
+                # Determine sorting indices for model training data
+                if aggregator.sort_by_branch and sort_value is not None:
+                    if len(sort_value) != post_conversion_length:
+                        self.logger.warning(
+                            f"Sort array length mismatch in aggregator {idx}"
+                        )
+                        return None, n_valid, None, None, False
+
+                    masked_sort_value = sort_value[valid_mask]
+                    if len(masked_sort_value) == 0:
+                        sort_indices = np.array([], dtype=int)
+                    else:
+                        sort_indices = np.argsort(masked_sort_value)[::-1]
+                else:
+                    sort_indices = np.arange(n_valid)
+
+                # Apply sorting
+                if len(sort_indices) != n_valid:
+                    self.logger.warning(
+                        f"Sort indices length mismatch in aggregator {idx}"
+                    )
+                    return None, n_valid, None, None, False
+
+                sort_indices = np.asarray(sort_indices, dtype=int)
+                sorted_features = features[sort_indices]
+
+                # Apply length requirements for model training (padding/truncation)
+                num_selected_tracks = sorted_features.shape[0]
+                num_features_per_track = sorted_features.shape[1]
+
+                # Always apply max_length limits and padding for model training data
+                if num_selected_tracks > aggregator.max_length:
+                    aggregator_result_array = sorted_features[
                         : aggregator.max_length, :
                     ]
+                elif num_selected_tracks < aggregator.max_length:
+                    # Pad with zeros for model training
+                    num_padding_tracks = aggregator.max_length - num_selected_tracks
+                    padding = np.zeros(
+                        (num_padding_tracks, num_features_per_track),
+                        dtype=sorted_features.dtype,
+                    )
+                    aggregator_result_array = np.vstack([sorted_features, padding])
                 else:
-                    post_selection_hist_data[branch_name] = sorted_hist_values
-        elif need_more_post_selection_samples and model_training_failed:
-            # Clear post-selection data if model training failed (not enough tracks after filtering)
-            post_selection_hist_data = None
+                    aggregator_result_array = sorted_features
 
-        # Apply sorting to zero-bias histogram data (no truncation, no padding)
-        if need_more_zero_bias_samples and zero_bias_hist_data:
-            # For zero-bias, we need to sort the unfiltered data
-            if aggregator.sort_by_branch and sort_value is not None:
-                zero_bias_sort_indices = np.argsort(sort_value)[::-1]
-            else:
-                zero_bias_sort_indices = np.arange(post_conversion_length)
-
-            for branch_name in zero_bias_hist_data:
-                hist_values = zero_bias_hist_data[branch_name]
-                sorted_hist_values = hist_values[zero_bias_sort_indices]
-                zero_bias_hist_data[branch_name] = sorted_hist_values
+            except Exception as e:
+                self.logger.error(
+                    f"Error creating model training data in aggregator {idx}: {e}"
+                )
+                return None, n_valid, None, None, False
 
         return (
             aggregator_result_array,
             n_valid,
             post_selection_hist_data,
             zero_bias_hist_data,
+            passed_aggregator_filters,
         )
-
-    def _create_zero_aggregator(
-        self,
-        event_data: dict[str, np.ndarray],
-        aggregator: PhysliteFeatureArrayAggregator,
-        idx: int,
-    ) -> tuple[np.ndarray, int, None, None]:
-        """
-        Create a zero-filled aggregator result with correct shape.
-
-        Returns:
-            - zero_array: (max_length, total_features) filled with zeros
-            - n_valid_elements: 0 (no valid elements for failed aggregator)
-            - post_selection_hist_data: None (no histogram data for failed aggregator)
-            - zero_bias_hist_data: None (no histogram data for failed aggregator)
-        """
-        total_features = 0
-
-        for selector in aggregator.input_branches:
-            branch_name = selector.branch.name
-
-            # Determine actual column count by conversion
-            try:
-                sample_data = event_data.get(branch_name)
-                if sample_data is not None:
-                    converted_sample = self._convert_stl_vector_array(
-                        branch_name, sample_data
-                    )
-                    if converted_sample.ndim == 1:
-                        num_cols = 1
-                    elif converted_sample.ndim == 2:
-                        num_cols = converted_sample.shape[1]
-                    else:
-                        num_cols = 1
-                else:
-                    num_cols = 1
-            except Exception:
-                num_cols = 1
-
-            total_features += num_cols
-
-        # Create zero-filled array with correct shape
-        zero_array = np.zeros((aggregator.max_length, total_features), dtype=np.float32)
-
-        return zero_array, 0, None, None
 
     def get_required_branches(self, task_config: TaskConfig) -> set:
         """
@@ -723,7 +673,6 @@ class PhysliteEventProcessor:
         task_config: TaskConfig,
         plotting_enabled: bool = False,
         need_more_zero_bias_samples: bool = False,
-        need_more_post_selection_samples: bool = False,
     ) -> tuple[Optional[dict[str, np.ndarray]], bool]:
         """
         Process a single event using the task configuration.
@@ -776,10 +725,18 @@ class PhysliteEventProcessor:
             event_data,
             task_config.input,
             need_more_zero_bias_samples,
-            need_more_post_selection_samples and passed_filters,
         )
+
+        # For zero-bias sampling, we always want to return data even if aggregators failed min_length
+        # For normal dataset creation, we reject if input_result is None
         if input_result is None:
-            return None, passed_filters
+            if need_more_zero_bias_samples:
+                # For zero-bias, create empty result but continue to potentially collect histogram data
+                # from individual aggregator processing
+                input_result = {"scalar_features": {}, "aggregated_features": {}}
+            else:
+                # For dataset creation, None means we should reject the event
+                return None, passed_filters
 
         # Process each label config if present (only for filtered events going to dataset)
         label_results = []
@@ -788,8 +745,7 @@ class PhysliteEventProcessor:
                 label_result = self._process_selection_config(
                     event_data,
                     label_config,
-                    False,
-                    True,  # Labels: no zero-bias, only post-selection
+                    False,  # Labels: no zero-bias sampling needed
                 )
                 if label_result is None:
                     # If any label processing fails for a supervised task, reject the event
@@ -828,13 +784,24 @@ class PhysliteEventProcessor:
             final_result["aggregated_features"][agg_key] = aggregator_data_object
 
         # Set num_tracks_for_plot from the first input aggregator if available
+        # This should reflect the actual number of tracks used for plotting (respecting max_length)
         if (
             first_input_agg_key
             and first_input_agg_key in final_result["aggregated_features"]
         ):
-            final_result["num_tracks_for_plot"] = final_result["aggregated_features"][
-                first_input_agg_key
-            ].get("n_valid_elements")
+            n_valid = final_result["aggregated_features"][first_input_agg_key].get(
+                "n_valid_elements", 0
+            )
+            # Get max_length from the first aggregator in task config
+            max_length = None
+            if task_config.input.feature_array_aggregators:
+                max_length = task_config.input.feature_array_aggregators[0].max_length
+
+            # Apply max_length constraint to num_tracks_for_plot
+            if max_length is not None and n_valid > max_length:
+                final_result["num_tracks_for_plot"] = max_length
+            else:
+                final_result["num_tracks_for_plot"] = n_valid
 
         # Add label results with branch names
         for i, label_res in enumerate(label_results):
