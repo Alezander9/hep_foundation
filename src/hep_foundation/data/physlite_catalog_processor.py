@@ -21,6 +21,7 @@ from hep_foundation.data.physlite_derived_features import (
     get_derived_feature,
     is_derived_feature,
 )
+from hep_foundation.data.processed_event import ProcessedEvent
 from hep_foundation.plots.histogram_manager import HistogramManager
 
 # Import plotting utilities
@@ -173,7 +174,7 @@ class PhysliteCatalogProcessor:
 
     def _collect_histogram_data(
         self,
-        result: dict,
+        result: ProcessedEvent,
         data_type: str,
         scalar_features_dict: dict,
         aggregated_features_dict: dict,
@@ -184,7 +185,7 @@ class PhysliteCatalogProcessor:
         Collect histogram data from a processed event result using the proper histogram data format.
 
         Args:
-            result: The processed event result dictionary
+            result: The ProcessedEvent instance
             data_type: Either "zero_bias" or "post_selection"
             scalar_features_dict: Dictionary to accumulate scalar features (branch_name -> list of values)
             aggregated_features_dict: Dictionary to accumulate aggregated features (NOT USED - kept for compatibility)
@@ -195,20 +196,22 @@ class PhysliteCatalogProcessor:
             Number of tracks for the first aggregator, or None if no aggregators
         """
         # Collect scalar features
-        for name, value in result["scalar_features"].items():
+        for name, value in result.scalar_features.items():
             scalar_features_dict[name].append(value)
 
         # Get track count from the properly calculated num_tracks_for_plot (which respects max_length)
-        num_tracks = result.get("num_tracks_for_plot")
+        num_tracks = result.num_tracks_for_plot
 
         # Get first aggregator key for reference
-        first_agg_key = next(iter(result["aggregated_features"].keys()), None)
+        first_agg_key = next(iter(result.aggregated_features.keys()), None)
 
         # Collect histogram data from aggregators using the properly formatted histogram data
-        for agg_key, agg_data in result["aggregated_features"].items():
+        for agg_key, agg_data in result.aggregated_features.items():
             # Get the histogram data for the appropriate data type
-            hist_data_key = f"{data_type}_hist_data"
-            hist_data = agg_data.get(hist_data_key)
+            if data_type == "post_selection":
+                hist_data = agg_data.post_selection_hist_data
+            else:  # zero_bias
+                hist_data = agg_data.zero_bias_hist_data
 
             if hist_data:
                 # hist_data is a dict: {"branch_name": array_of_values, ...}
@@ -221,10 +224,10 @@ class PhysliteCatalogProcessor:
                     )
                     scalar_features_dict[branch_name].extend(flattened_values)
 
-            # Add aggregator track count as a special histogram feature (use the truncated count)
-            if agg_key == first_agg_key and num_tracks is not None:
+            # Add aggregator track count as a special histogram feature (use the actual n_valid_elements)
+            if agg_key == first_agg_key:
                 track_count_key = f"{agg_key}_valid_tracks"
-                scalar_features_dict[track_count_key].append(num_tracks)
+                scalar_features_dict[track_count_key].append(agg_data.n_valid_elements)
 
         # Add overall track count to the event tracks list (use the truncated count)
         if num_tracks is not None:
@@ -238,14 +241,16 @@ class PhysliteCatalogProcessor:
 
         return num_tracks
 
-    def _prepare_raw_sample_for_storage(self, result: dict, data_type: str) -> dict:
+    def _prepare_raw_sample_for_storage(
+        self, result: ProcessedEvent, data_type: str
+    ) -> dict:
         """
         Prepare a processed event result for JSON serialization and storage.
 
         Removes training arrays but keeps relevant histogram data for analysis.
 
         Args:
-            result: The processed event result dictionary
+            result: The ProcessedEvent instance
             data_type: Either "zero_bias" or "post_selection" to determine which histogram data to keep
 
         Returns:
@@ -307,8 +312,25 @@ class PhysliteCatalogProcessor:
             else:
                 return obj
 
-        # First remove training arrays but keep relevant histogram data, then convert numpy types
-        cleaned_result = remove_training_arrays_keep_histogram_data(result, data_type)
+        # Convert ProcessedEvent to dictionary format manually, then remove training arrays and convert numpy types
+        result_dict = {
+            "scalar_features": result.scalar_features,
+            "aggregated_features": {
+                agg_key: {
+                    "array": agg_data.array,
+                    "n_valid_elements": agg_data.n_valid_elements,
+                    "post_selection_hist_data": agg_data.post_selection_hist_data,
+                    "zero_bias_hist_data": agg_data.zero_bias_hist_data,
+                }
+                for agg_key, agg_data in result.aggregated_features.items()
+            },
+            "label_features": result.label_features,
+            "num_tracks_for_plot": result.num_tracks_for_plot,
+            "passed_filters": result.passed_filters,
+        }
+        cleaned_result = remove_training_arrays_keep_histogram_data(
+            result_dict, data_type
+        )
         serializable_result = convert_numpy_types(cleaned_result)
 
         return serializable_result
@@ -652,22 +674,10 @@ class PhysliteCatalogProcessor:
                                     # For filtered data: collect for dataset creation when filters passed
                                     if passed_filters:
                                         # Store the result for dataset creation
-                                        # Extract only the arrays for the dataset
-                                        input_features_for_dataset = {
-                                            "scalar_features": result[
-                                                "scalar_features"
-                                            ],
-                                            "aggregated_features": {
-                                                agg_key: agg_data[
-                                                    "array"
-                                                ]  # Ensure only array is stored for dataset
-                                                for agg_key, agg_data in result[
-                                                    "aggregated_features"
-                                                ].items()
-                                                if agg_data["array"]
-                                                is not None  # Filter out None arrays (failed min_length)
-                                            },
-                                        }
+                                        # Extract only the arrays for the dataset using ProcessedEvent helper method
+                                        input_features_for_dataset = (
+                                            result.get_dataset_features()
+                                        )
 
                                         # Check if we actually have useful aggregated features for the dataset
                                         # If all aggregators failed min_length, we shouldn't count this as passed
@@ -682,26 +692,9 @@ class PhysliteCatalogProcessor:
                                             # Don't include in dataset, but continue for potential zero-bias data collection
                                             continue
                                         # Process labels similarly for the dataset
-                                        label_features_for_dataset = []
-                                        for label_set in result["label_features"]:
-                                            label_set_for_dataset = {
-                                                "scalar_features": label_set[
-                                                    "scalar_features"
-                                                ],
-                                                "aggregated_features": {
-                                                    agg_key: agg_data[
-                                                        "array"
-                                                    ]  # Ensure only array is stored for dataset
-                                                    for agg_key, agg_data in label_set[
-                                                        "aggregated_features"
-                                                    ].items()
-                                                    if agg_data["array"]
-                                                    is not None  # Filter out None arrays (failed min_length)
-                                                },
-                                            }
-                                            label_features_for_dataset.append(
-                                                label_set_for_dataset
-                                            )
+                                        label_features_for_dataset = (
+                                            result.label_features
+                                        )
 
                                         processed_inputs.append(
                                             input_features_for_dataset

@@ -332,6 +332,28 @@ EXPECTED_DATASET_STRUCTURE = {
             },
         },
     },
+    "sample_data": {
+        "type": "directory",
+        "required": True,
+        "description": "Raw sample data for each dataset type",
+        "contents": {
+            "atlas_dataset_features_raw_samples.json": {
+                "type": "file",
+                "required": True,
+                "description": "Atlas background raw samples",
+            },
+            "atlas_dataset_features_zero_bias_raw_samples.json": {
+                "type": "file",
+                "required": True,
+                "description": "Atlas background zero-bias raw samples",
+            },
+            "*_raw_samples.json": {
+                "type": "pattern",
+                "required": False,
+                "description": "Signal dataset raw sample files",
+            },
+        },
+    },
 }
 
 
