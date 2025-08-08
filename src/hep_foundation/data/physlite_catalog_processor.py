@@ -198,9 +198,11 @@ class PhysliteCatalogProcessor:
         for name, value in result["scalar_features"].items():
             scalar_features_dict[name].append(value)
 
-        # Get first aggregator key for track counting
+        # Get track count from the properly calculated num_tracks_for_plot (which respects max_length)
+        num_tracks = result.get("num_tracks_for_plot")
+
+        # Get first aggregator key for reference
         first_agg_key = next(iter(result["aggregated_features"].keys()), None)
-        num_tracks = None
 
         # Collect histogram data from aggregators using the properly formatted histogram data
         for agg_key, agg_data in result["aggregated_features"].items():
@@ -219,16 +221,12 @@ class PhysliteCatalogProcessor:
                     )
                     scalar_features_dict[branch_name].extend(flattened_values)
 
-            # Get track count from first aggregator
-            if agg_key == first_agg_key:
-                num_tracks = agg_data.get("n_valid_elements")
+            # Add aggregator track count as a special histogram feature (use the truncated count)
+            if agg_key == first_agg_key and num_tracks is not None:
+                track_count_key = f"{agg_key}_valid_tracks"
+                scalar_features_dict[track_count_key].append(num_tracks)
 
-                # Add aggregator track count as a special histogram feature
-                if num_tracks is not None:
-                    track_count_key = f"{agg_key}_valid_tracks"
-                    scalar_features_dict[track_count_key].append(num_tracks)
-
-        # Add overall track count to the event tracks list
+        # Add overall track count to the event tracks list (use the truncated count)
         if num_tracks is not None:
             event_n_tracks_list.append(num_tracks)
 
@@ -432,9 +430,7 @@ class PhysliteCatalogProcessor:
         processed_labels = []
 
         # Collect all initially required branch names (including derived ones)
-        initially_required_branches = self.event_processor.get_required_branches(
-            task_config
-        )
+        initially_required_branches = self._get_required_branches(task_config)
         self.logger.info(
             f"Initially required branches (incl. derived): {initially_required_branches}"
         )
@@ -1211,6 +1207,46 @@ class PhysliteCatalogProcessor:
             labels_dict[config_name] = config_dict
 
         return labels_dict
+
+    def _get_required_branches(self, task_config: TaskConfig) -> set:
+        """
+        Get set of all required branch names for a given task configuration.
+        This includes both real and potentially derived branches at this stage.
+
+        Args:
+            task_config: TaskConfig object containing event filters, input features, and labels
+
+        Returns:
+            set: Set of branch names required for processing (including derived ones initially)
+        """
+        required_branches = set()
+
+        # Add event filter branches
+        for filter_item in task_config.event_filters:
+            required_branches.add(filter_item.branch.name)
+
+        # Process all selection configs (input and labels)
+        for selection_config in [task_config.input, *task_config.labels]:
+            # Add feature selector branches
+            for selector in selection_config.feature_selectors:
+                required_branches.add(selector.branch.name)
+
+            # Add aggregator branches
+            for aggregator in selection_config.feature_array_aggregators:
+                self.logger.info(
+                    f"Adding aggregator branches: {aggregator.input_branches}"
+                )
+                # Add input branches
+                for selector in aggregator.input_branches:
+                    required_branches.add(selector.branch.name)
+                # Add filter branches
+                for filter_item in aggregator.filter_branches:
+                    required_branches.add(filter_item.branch.name)
+                # Add sort branch if present
+                if aggregator.sort_by_branch:
+                    required_branches.add(aggregator.sort_by_branch.branch.name)
+
+        return required_branches
 
     def _calculate_derived_features(
         self,

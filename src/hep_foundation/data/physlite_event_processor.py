@@ -556,46 +556,6 @@ class PhysliteEventProcessor:
             passed_aggregator_filters,
         )
 
-    def get_required_branches(self, task_config: TaskConfig) -> set:
-        """
-        Get set of all required branch names for a given task configuration.
-        This includes both real and potentially derived branches at this stage.
-
-        Args:
-            task_config: TaskConfig object containing event filters, input features, and labels
-
-        Returns:
-            set: Set of branch names required for processing (including derived ones initially)
-        """
-        required_branches = set()
-
-        # Add event filter branches
-        for filter_item in task_config.event_filters:
-            required_branches.add(filter_item.branch.name)
-
-        # Process all selection configs (input and labels)
-        for selection_config in [task_config.input, *task_config.labels]:
-            # Add feature selector branches
-            for selector in selection_config.feature_selectors:
-                required_branches.add(selector.branch.name)
-
-            # Add aggregator branches
-            for aggregator in selection_config.feature_array_aggregators:
-                self.logger.info(
-                    f"Adding aggregator branches: {aggregator.input_branches}"
-                )
-                # Add input branches
-                for selector in aggregator.input_branches:
-                    required_branches.add(selector.branch.name)
-                # Add filter branches
-                for filter_item in aggregator.filter_branches:
-                    required_branches.add(filter_item.branch.name)
-                # Add sort branch if present
-                if aggregator.sort_by_branch:
-                    required_branches.add(aggregator.sort_by_branch.branch.name)
-
-        return required_branches
-
     def _apply_event_filters(
         self,
         event_data: dict[str, np.ndarray],
