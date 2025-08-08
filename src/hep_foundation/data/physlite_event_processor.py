@@ -2,7 +2,6 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
-import awkward as ak
 import numpy as np
 
 from hep_foundation.config.logging_config import get_logger
@@ -14,6 +13,10 @@ from hep_foundation.config.task_config import (
     TaskConfig,
 )
 from hep_foundation.data.atlas_file_manager import ATLASFileManager
+from hep_foundation.data.physlite_utilities import (
+    convert_stl_vector_array,
+)
+from hep_foundation.data.processed_event import AggregatedFeatureData, ProcessedEvent
 
 
 class PhysliteEventProcessor:
@@ -64,109 +67,6 @@ class PhysliteEventProcessor:
                 self.logger.error(
                     f"Error loading custom plot label map from {custom_label_map_path}: {e}"
                 )
-
-    def _convert_stl_vector_array(self, branch_name: str, data: Any) -> np.ndarray:
-        """
-        Converts input data (NumPy array potentially containing STLVector objects,
-        or a single STLVector object) into a numerical NumPy array using awkward-array,
-        preserving dimensions where possible.
-
-        Args:
-            branch_name: Name of the branch (for logging)
-            data: Input data (np.ndarray or potentially STLVector object)
-
-        Returns:
-            Converted numerical NumPy array (e.g., float32) or the original data if no conversion needed/possible.
-            Returns an empty float32 array if the input represents an empty structure.
-        """
-        try:
-            is_numpy = isinstance(data, np.ndarray)
-
-            # --- Handle NumPy Array Input ---
-            if is_numpy:
-                if data.ndim == 0:
-                    # Handle 0-dimensional array (likely containing a single object)
-                    item = data.item()
-                    if "STLVector" in str(type(item)):
-                        self.logger.debug(
-                            f"Converting 0-D array item for '{branch_name}'..."
-                        )
-                        # Convert the single item
-                        ak_array = ak.Array([item])  # Wrap item for awkward conversion
-                        np_array = ak.to_numpy(ak_array)  # REMOVED .flatten()
-                    else:
-                        # 0-D array but not STLVector, return as is (or wrap if needed?)
-                        # If downstream expects at least 1D, wrap it.
-                        return np.atleast_1d(data)
-                elif data.dtype == object:
-                    # Handle N-dimensional object array
-                    if data.size == 0:
-                        return np.array(
-                            [], dtype=np.float32
-                        )  # Handle empty object array
-                    # Check first element to guess if it contains STL Vectors
-                    first_element = data.flat[0]
-                    if "STLVector" in str(type(first_element)):
-                        self.logger.debug(
-                            f"Converting N-D object array for '{branch_name}'..."
-                        )
-                        # Use awkward-array for robust conversion
-                        ak_array = ak.from_iter(data)
-                        np_array = ak.to_numpy(ak_array)  # REMOVED .flatten()
-                    else:
-                        # N-D object array, but doesn't seem to contain STL Vectors
-                        self.logger.warning(
-                            f"Branch '{branch_name}' is N-D object array but doesn't appear to be STLVector. Returning as is."
-                        )
-                        return data  # Return original object array
-                else:
-                    # Standard numerical NumPy array, return as is
-                    return data
-
-            # --- Handle Non-NumPy Input (e.g., direct STLVector) ---
-            elif "STLVector" in str(type(data)):
-                self.logger.debug(
-                    f"Converting direct STLVector object for '{branch_name}'..."
-                )
-                # Convert the single STLVector object
-                ak_array = ak.Array([data])  # Wrap object for awkward conversion
-                np_array = ak.to_numpy(ak_array)[
-                    0
-                ]  # Convert and get the single resulting array
-
-            # --- Handle Other Non-NumPy Input Types ---
-            else:
-                # E.g., could be a standard Python scalar (int, float) - ensure it's a numpy array
-                if isinstance(data, (int, float, bool)):
-                    return np.array([data])  # Return as 1-element array
-                else:
-                    # Unexpected type
-                    self.logger.warning(
-                        f"Branch '{branch_name}' has unexpected type '{type(data)}'. Returning as is."
-                    )
-                    return data  # Return original data if type is unexpected
-
-            # --- Post-Conversion Processing (applies if conversion happened) ---
-            # Check if the result of conversion is numeric and cast
-            if np.issubdtype(np_array.dtype, np.number):
-                converted_array = np_array.astype(np.float32)
-                self.logger.debug(
-                    f"Successfully converted '{branch_name}' from object dtype to {converted_array.dtype}, shape {converted_array.shape}"
-                )  # Updated log
-                return converted_array
-            else:
-                self.logger.warning(
-                    f"Branch '{branch_name}' converted, but result is not numeric ({np_array.dtype}). Returning non-flattened array."
-                )  # Updated log
-                return np_array
-
-        except Exception as e:
-            self.logger.error(
-                f"Failed to convert data for branch '{branch_name}' (type: {type(data)}): {e}",
-                exc_info=True,
-            )
-            # Return original array or raise error depending on desired handling
-            raise  # Re-raise the exception to stop processing if conversion fails
 
     def _process_selection_config(
         self,
@@ -229,12 +129,12 @@ class PhysliteEventProcessor:
                         elif need_more_zero_bias_samples:
                             # Filter failure: has tracks but failed min_length, collect zero-bias data
                             all_aggregators_passed_filters = False
-                            aggregated_features[agg_key] = {
-                                "array": None,  # No training array since min_length failed
-                                "n_valid_elements": n_valid_elements,
-                                "post_selection_hist_data": post_selection_hist_data,  # Should be None since filters failed
-                                "zero_bias_hist_data": zero_bias_hist_data,  # Should contain actual data
-                            }
+                            aggregated_features[agg_key] = AggregatedFeatureData(
+                                array=None,  # No training array since min_length failed
+                                n_valid_elements=n_valid_elements,
+                                post_selection_hist_data=post_selection_hist_data,  # Should be None since filters failed
+                                zero_bias_hist_data=zero_bias_hist_data,  # Should contain actual data
+                            )
                             continue
                         else:
                             # Filter failure and we don't need zero-bias data, exit
@@ -245,12 +145,12 @@ class PhysliteEventProcessor:
 
                     # Store aggregator result (for successful aggregators)
                     if aggregator_result_array is not None:
-                        aggregated_features[agg_key] = {
-                            "array": aggregator_result_array,
-                            "n_valid_elements": n_valid_elements,
-                            "post_selection_hist_data": post_selection_hist_data,
-                            "zero_bias_hist_data": zero_bias_hist_data,
-                        }
+                        aggregated_features[agg_key] = AggregatedFeatureData(
+                            array=aggregator_result_array,
+                            n_valid_elements=n_valid_elements,
+                            post_selection_hist_data=post_selection_hist_data,
+                            zero_bias_hist_data=zero_bias_hist_data,
+                        )
 
                 except Exception as e:
                     self.logger.warning(f"Error processing aggregator {idx}: {e}")
@@ -360,7 +260,7 @@ class PhysliteEventProcessor:
 
         try:
             for branch_name in required_for_agg:
-                converted_array = self._convert_stl_vector_array(
+                converted_array = convert_stl_vector_array(
                     branch_name, raw_array_features[branch_name]
                 )
 
@@ -633,7 +533,7 @@ class PhysliteEventProcessor:
         task_config: TaskConfig,
         plotting_enabled: bool = False,
         need_more_zero_bias_samples: bool = False,
-    ) -> tuple[Optional[dict[str, np.ndarray]], bool]:
+    ) -> tuple[Optional[ProcessedEvent], bool]:
         """
         Process a single event using the task configuration.
 
@@ -644,27 +544,9 @@ class PhysliteEventProcessor:
             need_more_zero_bias_samples: Whether we still need more zero-bias samples for plotting
 
         Returns:
-            Tuple of (processed_features, passed_filters):
-            - processed_features: Dictionary of processed features or None if processing failed
+            Tuple of (processed_event, passed_filters):
+            - processed_event: ProcessedEvent instance or None if processing failed
             - passed_filters: Boolean indicating whether the event passed all filters
-
-            processed_features structure:
-            {
-                "scalar_features": {branch_name: value, ...},
-                "aggregated_features": {
-                     aggregator_key: { # e.g., "aggregator_0"
-                          "array": aggregated_array,
-                          "plot_feature_names": [list_of_final_plot_names_for_each_column],
-                          "n_valid_elements": int # Add this for track counting
-                     }, ...
-                },
-                "label_features": [ # List for multiple label sets
-                     {
-                          "scalar_features": {branch_name: value, ...},
-                          "aggregated_features": {agg_key: {"array": ..., "plot_feature_names": [...]}}
-                     }, ...
-                ],
-            }
         """
         # Apply event filters first and track the result
         passed_filters = self._apply_event_filters(
@@ -712,46 +594,20 @@ class PhysliteEventProcessor:
                     return None, passed_filters
                 label_results.append(label_result)
 
-        # Construct the final result dictionary, adding branch names to aggregators
-        final_result = {
-            "scalar_features": input_result["scalar_features"],
-            "aggregated_features": {},
-            "label_features": [],
-            "num_tracks_for_plot": None,  # Initialize
-            "passed_filters": passed_filters,  # Track filter status
-        }
-
-        # Add input aggregators with branch names and n_valid_elements
-        first_input_agg_key = None
-        for agg_key, agg_data_dict in input_result["aggregated_features"].items():
-            if (
-                first_input_agg_key is None
-            ):  # Capture the key of the first input aggregator
-                first_input_agg_key = agg_key
-
-            agg_array = agg_data_dict["array"]
-            n_valid_elements = agg_data_dict.get("n_valid_elements")
-
-            aggregator_data_object = {
-                "array": agg_array,
-                "n_valid_elements": n_valid_elements,
-                "post_selection_hist_data": agg_data_dict.get(
-                    "post_selection_hist_data"
-                ),
-                "zero_bias_hist_data": agg_data_dict.get("zero_bias_hist_data"),
-            }
-
-            final_result["aggregated_features"][agg_key] = aggregator_data_object
-
-        # Set num_tracks_for_plot from the first input aggregator if available
+        # Calculate num_tracks_for_plot from the first input aggregator if available
         # This should reflect the actual number of tracks used for plotting (respecting max_length)
+        num_tracks_for_plot = None
+        first_input_agg_key = next(
+            iter(input_result["aggregated_features"].keys()), None
+        )
+
         if (
             first_input_agg_key
-            and first_input_agg_key in final_result["aggregated_features"]
+            and first_input_agg_key in input_result["aggregated_features"]
         ):
-            n_valid = final_result["aggregated_features"][first_input_agg_key].get(
-                "n_valid_elements", 0
-            )
+            agg_data = input_result["aggregated_features"][first_input_agg_key]
+            n_valid = agg_data.n_valid_elements
+
             # Get max_length from the first aggregator in task config
             max_length = None
             if task_config.input.feature_array_aggregators:
@@ -759,29 +615,32 @@ class PhysliteEventProcessor:
 
             # Apply max_length constraint to num_tracks_for_plot
             if max_length is not None and n_valid > max_length:
-                final_result["num_tracks_for_plot"] = max_length
+                num_tracks_for_plot = max_length
             else:
-                final_result["num_tracks_for_plot"] = n_valid
+                num_tracks_for_plot = n_valid
 
-        # Add label results with branch names
-        for i, label_res in enumerate(label_results):
+        # Process label results for labels that will go to the dataset (extract just arrays like input features)
+        processed_label_features = []
+        for label_res in label_results:
             processed_label = {
                 "scalar_features": label_res["scalar_features"],
-                "aggregated_features": {},
+                "aggregated_features": {
+                    agg_key: agg_data.array  # Extract just the array for HDF5 storage
+                    for agg_key, agg_data in label_res["aggregated_features"].items()
+                    if agg_data.array is not None  # Filter out None arrays
+                },
             }
-            for agg_key, agg_data_dict in label_res["aggregated_features"].items():
-                agg_array = agg_data_dict["array"]
-                n_valid_elements = agg_data_dict.get("n_valid_elements")
+            processed_label_features.append(processed_label)
 
-                label_aggregator_data_object = {
-                    "array": agg_array,
-                    "n_valid_elements": n_valid_elements,
-                }
+        # Create and return ProcessedEvent object
+        processed_event = ProcessedEvent(
+            scalar_features=input_result["scalar_features"],
+            aggregated_features=input_result[
+                "aggregated_features"
+            ],  # Already AggregatedFeatureData objects
+            label_features=processed_label_features,
+            num_tracks_for_plot=num_tracks_for_plot,
+            passed_filters=passed_filters,
+        )
 
-                processed_label["aggregated_features"][agg_key] = (
-                    label_aggregator_data_object
-                )
-            final_result["label_features"].append(processed_label)
-
-        # Return both the processed result and filter status
-        return final_result, passed_filters
+        return processed_event, passed_filters

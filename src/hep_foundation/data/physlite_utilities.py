@@ -4,6 +4,9 @@ from enum import Enum
 from importlib import resources
 from typing import Any, Optional
 
+import awkward as ak
+import numpy as np
+
 # Import functions to check and retrieve derived feature definitions
 from hep_foundation.data.physlite_derived_features import (
     get_derived_feature,
@@ -152,6 +155,102 @@ def _determine_branch_type(branch_info: dict[str, Any]) -> BranchType:
 
     # Non-empty shape indicates an array (feature_array)
     return BranchType.FEATURE_ARRAY
+
+
+def convert_stl_vector_array(branch_name: str, data: Any) -> np.ndarray:
+    """
+    Converts input data (NumPy array potentially containing STLVector objects,
+    or a single STLVector object) into a numerical NumPy array using awkward-array,
+    preserving dimensions where possible.
+
+    Args:
+        branch_name: Name of the branch (for logging)
+        data: Input data (np.ndarray or potentially STLVector object)
+
+    Returns:
+        Converted numerical NumPy array (e.g., float32) or the original data if no conversion needed/possible.
+        Returns an empty float32 array if the input represents an empty structure.
+    """
+    try:
+        is_numpy = isinstance(data, np.ndarray)
+
+        # --- Handle NumPy Array Input ---
+        if is_numpy:
+            if data.ndim == 0:
+                # Handle 0-dimensional array (likely containing a single object)
+                item = data.item()
+                if "STLVector" in str(type(item)):
+                    logger.debug(f"Converting 0-D array item for '{branch_name}'...")
+                    # Convert the single item
+                    ak_array = ak.Array([item])  # Wrap item for awkward conversion
+                    np_array = ak.to_numpy(ak_array)  # REMOVED .flatten()
+                else:
+                    # 0-D array but not STLVector, return as is (or wrap if needed?)
+                    # If downstream expects at least 1D, wrap it.
+                    return np.atleast_1d(data)
+            elif data.dtype == object:
+                # Handle N-dimensional object array
+                if data.size == 0:
+                    return np.array([], dtype=np.float32)  # Handle empty object array
+                # Check first element to guess if it contains STL Vectors
+                first_element = data.flat[0]
+                if "STLVector" in str(type(first_element)):
+                    logger.debug(f"Converting N-D object array for '{branch_name}'...")
+                    # Use awkward-array for robust conversion
+                    ak_array = ak.from_iter(data)
+                    np_array = ak.to_numpy(ak_array)  # REMOVED .flatten()
+                else:
+                    # N-D object array, but doesn't seem to contain STL Vectors
+                    logger.warning(
+                        f"Branch '{branch_name}' is N-D object array but doesn't appear to be STLVector. Returning as is."
+                    )
+                    return data  # Return original object array
+            else:
+                # Standard numerical NumPy array, return as is
+                return data
+
+        # --- Handle Non-NumPy Input (e.g., direct STLVector) ---
+        elif "STLVector" in str(type(data)):
+            logger.debug(f"Converting direct STLVector object for '{branch_name}'...")
+            # Convert the single STLVector object
+            ak_array = ak.Array([data])  # Wrap object for awkward conversion
+            np_array = ak.to_numpy(ak_array)[
+                0
+            ]  # Convert and get the single resulting array
+
+        # --- Handle Other Non-NumPy Input Types ---
+        else:
+            # E.g., could be a standard Python scalar (int, float) - ensure it's a numpy array
+            if isinstance(data, (int, float, bool)):
+                return np.array([data])  # Return as 1-element array
+            else:
+                # Unexpected type
+                logger.warning(
+                    f"Branch '{branch_name}' has unexpected type '{type(data)}'. Returning as is."
+                )
+                return data  # Return original data if type is unexpected
+
+        # --- Post-Conversion Processing (applies if conversion happened) ---
+        # Check if the result of conversion is numeric and cast
+        if np.issubdtype(np_array.dtype, np.number):
+            converted_array = np_array.astype(np.float32)
+            logger.debug(
+                f"Successfully converted '{branch_name}' from object dtype to {converted_array.dtype}, shape {converted_array.shape}"
+            )  # Updated log
+            return converted_array
+        else:
+            logger.warning(
+                f"Branch '{branch_name}' converted, but result is not numeric ({np_array.dtype}). Returning non-flattened array."
+            )  # Updated log
+            return np_array
+
+    except Exception as e:
+        logger.error(
+            f"Failed to convert data for branch '{branch_name}' (type: {type(data)}): {e}",
+            exc_info=True,
+        )
+        # Return original array or raise error depending on desired handling
+        raise  # Re-raise the exception to stop processing if conversion fails
 
 
 class PhysliteBranch:
