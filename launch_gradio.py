@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env .venv/bin/python
 """
 Gradio UI for viewing HEP Foundation experiment results.
 """

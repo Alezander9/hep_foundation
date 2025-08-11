@@ -36,3 +36,8 @@ build/
 
 # Auto-generated percentiles file
 src/hep_foundation/data/physlite_percentiles.json
+
+# Temporary coding logs in root
+/*.md
+# Include README.md
+!README.md

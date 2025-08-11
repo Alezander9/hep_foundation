@@ -56,7 +56,7 @@ task:
   label_array_aggregators:
     - - input_branches:
           - "MET_Core_AnalysisMETAuxDyn.mpx"
-          # - "MET_Core_AnalysisMETAuxDyn.sumet"
+          - "MET_Core_AnalysisMETAuxDyn.sumet"
         filter_branches: []
         sort_by_branch: null
         min_length: 1
