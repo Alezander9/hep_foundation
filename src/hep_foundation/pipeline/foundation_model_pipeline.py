@@ -995,6 +995,56 @@ class FoundationModelPipeline:
             self.logger.exception("Detailed traceback:")
             return False
 
+    def _denormalize_labels(
+        self,
+        normalized_labels: np.ndarray,
+        norm_params: dict,
+        label_config_index: int = 0,
+    ) -> np.ndarray:
+        """
+        Denormalize label values using stored normalization parameters.
+
+        Args:
+            normalized_labels: Normalized label array of shape (n_samples, n_features)
+            norm_params: Normalization parameters dictionary
+            label_config_index: Index of the label configuration (default 0)
+
+        Returns:
+            Denormalized label array with original scale and units
+        """
+        if (
+            "labels" not in norm_params
+            or len(norm_params["labels"]) <= label_config_index
+        ):
+            self.logger.warning(
+                "No label normalization parameters found, returning normalized values"
+            )
+            return normalized_labels
+
+        label_norm_params = norm_params["labels"][label_config_index]
+        denormalized = normalized_labels.copy()
+
+        # For now, assume all labels are aggregated features (this is the common case)
+        # If scalar features are present, they would need separate handling
+        if "aggregated" in label_norm_params:
+            for agg_name, params in label_norm_params["aggregated"].items():
+                means = np.array(params["means"])
+                stds = np.array(params["stds"])
+
+                # Apply denormalization: denormalized = normalized * std + mean
+                denormalized = denormalized * stds + means
+                break  # Assuming single aggregator for labels (most common case)
+        elif "scalar" in label_norm_params:
+            # Handle scalar features if present
+            for feature_name, params in label_norm_params["scalar"].items():
+                mean = params["mean"]
+                std = params["std"]
+                # Apply denormalization for scalar features
+                denormalized = denormalized * std + mean
+                break  # Assuming single scalar feature for labels
+
+        return denormalized
+
     def evaluate_foundation_model_regression(
         self,
         dataset_config: DatasetConfig,
@@ -1048,6 +1098,25 @@ class FoundationModelPipeline:
                 include_labels=True,
                 delete_catalogs=delete_catalogs,
             )
+
+            # Access normalization parameters for denormalizing labels
+            import json
+
+            import h5py
+
+            dataset_path = data_manager.get_current_dataset_path()
+            norm_params = None
+            try:
+                with h5py.File(dataset_path, "r") as f:
+                    norm_params = json.loads(f.attrs["normalization_params"])
+                self.logger.info(
+                    "Successfully loaded normalization parameters for label denormalization"
+                )
+            except Exception as e:
+                self.logger.warning(
+                    f"Could not load normalization parameters: {e}. Labels will remain normalized."
+                )
+                norm_params = None
 
             # Count total training events
             total_train_events = 0
@@ -1296,6 +1365,31 @@ class FoundationModelPipeline:
                     actual_labels_array = np.array(actual_labels_list)
 
                     if len(predictions_array) > 0 and len(actual_labels_array) > 0:
+                        # Denormalize labels and predictions to get original scale/units
+                        if norm_params is not None:
+                            try:
+                                self.logger.info(
+                                    f"Denormalizing labels and predictions for {model_name}..."
+                                )
+                                predictions_array = self._denormalize_labels(
+                                    predictions_array, norm_params, label_config_index=0
+                                )
+                                actual_labels_array = self._denormalize_labels(
+                                    actual_labels_array,
+                                    norm_params,
+                                    label_config_index=0,
+                                )
+                                self.logger.info(
+                                    f"Successfully denormalized {len(predictions_array)} prediction/label pairs"
+                                )
+                            except Exception as e:
+                                self.logger.warning(
+                                    f"Failed to denormalize labels for {model_name}: {e}. Using normalized values."
+                                )
+                        else:
+                            self.logger.info(
+                                f"No normalization parameters available for {model_name}, using normalized values"
+                            )
                         # Get label variable names (required for histogram keys)
                         if not label_variable_names_param:
                             self.logger.warning(
@@ -1477,6 +1571,26 @@ class FoundationModelPipeline:
 
                 # Convert to numpy and organize by variable names
                 actual_labels_array = np.array(actual_labels_list)
+
+                # Denormalize actual test labels to get original scale/units
+                if norm_params is not None:
+                    try:
+                        self.logger.info("Denormalizing actual test labels...")
+                        actual_labels_array = self._denormalize_labels(
+                            actual_labels_array, norm_params, label_config_index=0
+                        )
+                        self.logger.info(
+                            f"Successfully denormalized {len(actual_labels_array)} actual label samples"
+                        )
+                    except Exception as e:
+                        self.logger.warning(
+                            f"Failed to denormalize actual test labels: {e}. Using normalized values."
+                        )
+                else:
+                    self.logger.info(
+                        "No normalization parameters available, using normalized values for actual test labels"
+                    )
+
                 actual_data = {}
 
                 for i, var_name in enumerate(label_variable_names):
