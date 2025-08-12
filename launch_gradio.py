@@ -248,6 +248,14 @@ h1 {
     background-color: #ffffff !important;
 }
 
+/* Config YAML code viewer colors settings */
+/* Light-mode base */
+.config-code .cm-editor,
+.config-code .cm-scroller,
+.config-code .cm-content { background: #ffffff !important; color: #0a122a !important; }
+
+
+
 """
 
 # Create the Gradio interface at module level for hot swapping
@@ -272,6 +280,7 @@ with demo:
 
                 # Get experiment folders
                 experiment_folders = get_experiment_folders()
+                print(experiment_folders.items())
                 experiment_buttons = []
 
                 # Create buttons for each category
@@ -341,6 +350,7 @@ with demo:
                         max_lines=40,
                         wrap_lines=True,
                         show_line_numbers=True,
+                        elem_classes=["config-code"],
                     )
 
     # Handle experiment button clicks
