@@ -244,6 +244,33 @@ def calculate_reduced_chi_squared(
     return result
 
 
+# --- MET utilities ---
+
+
+def calculate_met_norm(mpx: np.ndarray, mpy: np.ndarray) -> np.ndarray:
+    """Compute MET magnitude from x/y components.
+
+    Minimal safeguards: replace non-finite inputs with 0.
+    """
+    mpx_safe = np.where(np.isfinite(mpx), mpx, 0.0)
+    mpy_safe = np.where(np.isfinite(mpy), mpy, 0.0)
+    met = np.sqrt(mpx_safe * mpx_safe + mpy_safe * mpy_safe)
+    return met.astype(np.float32)
+
+
+def calculate_met_phi(mpx: np.ndarray, mpy: np.ndarray) -> np.ndarray:
+    """Compute MET azimuth from x/y components.
+
+    Minimal safeguards: replace non-finite inputs with 0, ensure finite output.
+    Range is [-pi, pi] by definition of arctan2.
+    """
+    mpx_safe = np.where(np.isfinite(mpx), mpx, 0.0)
+    mpy_safe = np.where(np.isfinite(mpy), mpy, 0.0)
+    phi = np.arctan2(mpy_safe, mpx_safe).astype(np.float32)
+    phi = np.where(np.isfinite(phi), phi, 0.0).astype(np.float32)
+    return phi
+
+
 # --- Registry ---
 # Central dictionary mapping derived feature names to their definitions.
 # Convention: All derived feature names should start with "derived."
@@ -273,6 +300,27 @@ DERIVED_FEATURE_REGISTRY: dict[str, DerivedFeature] = {
             "InDetTrackParticlesAuxDyn.numberDoF",
         ],
         shape=[2],  # Assuming shape follows the pattern of other track features
+        dtype="float32",
+    ),
+    # --- MET derived features (basic magnitude and direction) ---
+    "derived.MET_Core_AnalysisMETAuxDyn.met_norm": DerivedFeature(
+        name="derived.MET_Core_AnalysisMETAuxDyn.met_norm",
+        function=calculate_met_norm,
+        dependencies=[
+            "MET_Core_AnalysisMETAuxDyn.mpx",
+            "MET_Core_AnalysisMETAuxDyn.mpy",
+        ],
+        shape=[-1, 1],
+        dtype="float32",
+    ),
+    "derived.MET_Core_AnalysisMETAuxDyn.met_phi": DerivedFeature(
+        name="derived.MET_Core_AnalysisMETAuxDyn.met_phi",
+        function=calculate_met_phi,
+        dependencies=[
+            "MET_Core_AnalysisMETAuxDyn.mpx",
+            "MET_Core_AnalysisMETAuxDyn.mpy",
+        ],
+        shape=[-1, 1],
         dtype="float32",
     ),
     # Add other derived features here following the same pattern
