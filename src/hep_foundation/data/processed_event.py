@@ -5,7 +5,7 @@ This module provides a cleaner separation between raw event data and transformed
 eliminating redundant data transformations and providing clear APIs for different use cases.
 """
 
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -65,13 +65,6 @@ class EventSelectionData:
         if len(self.aggregator_configs) != num_aggregators:
             raise ValueError("Mismatch between aggregator data and configs")
 
-    def get_aggregator_filtered_count(self, aggregator_idx: int) -> int:
-        """Get number of valid elements for a specific aggregator after filtering."""
-        if aggregator_idx >= len(self.event_aggregators_sort_filter_indices):
-            return 0
-
-        return len(self.event_aggregators_sort_filter_indices[aggregator_idx])
-
     def get_zero_bias_hist_data(self) -> dict[str, list[float]]:
         """
         Get raw unfiltered data in histogram format (key -> list of values).
@@ -95,6 +88,17 @@ class EventSelectionData:
                     hist_data[branch_name].extend(values_list)
                 else:
                     hist_data[branch_name] = list(values_list)
+
+        # Add track counts for each aggregator (zero-bias: raw array length, no filtering/truncation)
+        for aggregator_idx, aggregator_data in enumerate(
+            self.event_raw_aggregators_data
+        ):
+            if aggregator_data:  # Only if aggregator has data
+                # Get raw count from any branch in this aggregator (they should all have same length)
+                first_branch_values = next(iter(aggregator_data.values()))
+                raw_count = len(first_branch_values)
+                track_count_key = f"aggregator_{aggregator_idx}_num_tracks"
+                hist_data[track_count_key] = [raw_count]
 
         return hist_data
 
@@ -136,6 +140,22 @@ class EventSelectionData:
                     hist_data[branch_name].extend(filtered_values)
                 else:
                     hist_data[branch_name] = filtered_values
+
+        # Add track counts for each aggregator (post-selection: min(filtered_count, max_length))
+        for aggregator_idx in range(len(self.event_raw_aggregators_data)):
+            if self.event_aggregators_pass_filters[aggregator_idx]:
+                # Get filtered count
+                filtered_count = len(
+                    self.event_aggregators_sort_filter_indices[aggregator_idx]
+                )
+
+                # Apply max_length truncation
+                aggregator_config = self.aggregator_configs[aggregator_idx]
+                max_length = aggregator_config.max_length
+                final_count = min(filtered_count, max_length)
+
+                track_count_key = f"aggregator_{aggregator_idx}_num_tracks"
+                hist_data[track_count_key] = [final_count]
 
         return hist_data
 
@@ -247,10 +267,6 @@ class EventSelectionData:
             "selection_config_name": self.selection_config_name,
             "histogram_data": hist_data,
             "aggregator_pass_filters": self.event_aggregators_pass_filters,
-            "aggregator_filtered_counts": [
-                self.get_aggregator_filtered_count(i)
-                for i in range(len(self.event_raw_aggregators_data))
-            ],
         }
 
         return convert_numpy_types(json_data)
@@ -281,37 +297,6 @@ class ProcessedEvent:
         self.passed_filters = passed_filters
         self.input_selection_data = input_selection_data
         self.label_selection_data = label_selection_data
-
-    def get_num_tracks_for_plot(self) -> Optional[int]:
-        """
-        Get number of tracks for plotting from the first input aggregator.
-
-        Returns:
-            Number of tracks after filtering/truncation, or None if no aggregators
-        """
-        if not self.input_selection_data.event_raw_aggregators_data:
-            return None
-
-        # Get count from first aggregator that passed filters
-        for aggregator_idx in range(
-            len(self.input_selection_data.event_raw_aggregators_data)
-        ):
-            if self.input_selection_data.event_aggregators_pass_filters[aggregator_idx]:
-                filtered_count = (
-                    self.input_selection_data.get_aggregator_filtered_count(
-                        aggregator_idx
-                    )
-                )
-
-                # Apply max_length truncation for plotting
-                aggregator_config = self.input_selection_data.aggregator_configs[
-                    aggregator_idx
-                ]
-                max_length = aggregator_config.max_length
-
-                return min(filtered_count, max_length)
-
-        return None
 
     def get_dataset_features(self) -> dict[str, Any]:
         """
@@ -366,5 +351,4 @@ class ProcessedEvent:
                 label_data.to_json_dict(data_type)
                 for label_data in self.label_selection_data
             ],
-            "num_tracks_for_plot": self.get_num_tracks_for_plot(),
         }

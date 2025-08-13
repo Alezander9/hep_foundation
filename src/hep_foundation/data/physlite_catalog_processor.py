@@ -102,7 +102,6 @@ class PhysliteCatalogProcessor:
         self,
         scalar_features_dict: dict,
         aggregated_features_dict: dict,
-        event_n_tracks_list: list,
         data_type_name: str,
         plot_output: Path,
         plot_data_dir: Optional[Path] = None,
@@ -113,16 +112,11 @@ class PhysliteCatalogProcessor:
         Args:
             scalar_features_dict: Dictionary of scalar features with lists of values
             aggregated_features_dict: Dictionary of aggregated features
-            event_n_tracks_list: List of track counts per event
             data_type_name: Either "post_selection" or "zero_bias"
             plot_output: Path for determining JSON file location
             plot_data_dir: Optional directory where plot data should be saved
         """
-        if (
-            not scalar_features_dict
-            and not aggregated_features_dict
-            and not event_n_tracks_list
-        ):
+        if not scalar_features_dict and not aggregated_features_dict:
             self.logger.warning(f"No histogram data to save for {data_type_name}")
             return
 
@@ -178,9 +172,8 @@ class PhysliteCatalogProcessor:
         data_type: str,
         scalar_features_dict: dict,
         aggregated_features_dict: dict,
-        event_n_tracks_list: list,
         raw_samples_list: Optional[list] = None,
-    ) -> Optional[int]:
+    ) -> None:
         """
         Collect histogram data from a processed event result using the proper histogram data format.
 
@@ -189,11 +182,7 @@ class PhysliteCatalogProcessor:
             data_type: Either "zero_bias" or "post_selection"
             scalar_features_dict: Dictionary to accumulate scalar features (branch_name -> list of values)
             aggregated_features_dict: Dictionary to accumulate aggregated features (NOT USED - kept for compatibility)
-            event_n_tracks_list: List to accumulate track counts
             raw_samples_list: Optional list to accumulate complete raw event samples
-
-        Returns:
-            Number of tracks for the first aggregator, or None if no aggregators
         """
         # Get histogram data from the new format
         hist_data = result.get_histogram_data(data_type)
@@ -207,38 +196,11 @@ class PhysliteCatalogProcessor:
                 # Handle case where it's a single value
                 scalar_features_dict[branch_name].append(branch_values)
 
-        # Get track count from the new format
-        num_tracks = result.get_num_tracks_for_plot()
-
-        # Add track count for first aggregator if we have aggregators
-        if result.input_selection_data.event_raw_aggregators_data:
-            first_agg_idx = 0
-            # Find first aggregator that passed filters
-            for agg_idx in range(
-                len(result.input_selection_data.event_raw_aggregators_data)
-            ):
-                if result.input_selection_data.event_aggregators_pass_filters[agg_idx]:
-                    first_agg_idx = agg_idx
-                    break
-
-            # Add aggregator track count as a special histogram feature
-            track_count_key = f"aggregator_{first_agg_idx}_valid_tracks"
-            n_valid_elements = (
-                result.input_selection_data.get_aggregator_filtered_count(first_agg_idx)
-            )
-            scalar_features_dict[track_count_key].append(n_valid_elements)
-
-        # Add overall track count to the event tracks list
-        if num_tracks is not None:
-            event_n_tracks_list.append(num_tracks)
-
         # Collect complete raw sample if requested
         if raw_samples_list is not None:
             # Create a serializable copy of the result
             raw_sample = self._prepare_raw_sample_for_storage(result, data_type)
             raw_samples_list.append(raw_sample)
-
-        return num_tracks
 
     def _prepare_raw_sample_for_storage(
         self, result: ProcessedEvent, data_type: str
@@ -447,9 +409,6 @@ class PhysliteCatalogProcessor:
         # Post-selection data
         sampled_scalar_features = defaultdict(list) if plotting_enabled else None
         sampled_aggregated_features = defaultdict(list) if plotting_enabled else None
-        sampled_event_n_tracks_list = (
-            [] if plotting_enabled else None
-        )  # For track multiplicity
         sampled_raw_events = (
             [] if (plotting_enabled and save_raw_samples) else None
         )  # Raw samples for post-selection
@@ -457,9 +416,6 @@ class PhysliteCatalogProcessor:
         # Zero-bias data
         zero_bias_scalar_features = defaultdict(list) if plotting_enabled else None
         zero_bias_aggregated_features = defaultdict(list) if plotting_enabled else None
-        zero_bias_event_n_tracks_list = (
-            [] if plotting_enabled else None
-        )  # For track multiplicity
         zero_bias_raw_events = (
             [] if (plotting_enabled and save_raw_samples) else None
         )  # Raw samples for zero-bias
@@ -587,7 +543,6 @@ class PhysliteCatalogProcessor:
                                             "zero_bias",
                                             zero_bias_scalar_features,
                                             zero_bias_aggregated_features,
-                                            zero_bias_event_n_tracks_list,
                                             zero_bias_raw_events,
                                         )
 
@@ -654,7 +609,6 @@ class PhysliteCatalogProcessor:
                                                 "post_selection",
                                                 sampled_scalar_features,
                                                 sampled_aggregated_features,
-                                                sampled_event_n_tracks_list,
                                                 sampled_raw_events,
                                             )
 
@@ -788,7 +742,6 @@ class PhysliteCatalogProcessor:
             self._save_histogram_data_with_manager(
                 sampled_scalar_features,
                 sampled_aggregated_features,
-                sampled_event_n_tracks_list,
                 "post_selection",
                 plot_output,
                 plot_data_dir,
@@ -802,7 +755,6 @@ class PhysliteCatalogProcessor:
             self._save_histogram_data_with_manager(
                 zero_bias_scalar_features,
                 zero_bias_aggregated_features,
-                zero_bias_event_n_tracks_list,
                 "zero_bias",
                 plot_output,
                 plot_data_dir,
