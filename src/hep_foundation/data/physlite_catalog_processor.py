@@ -12,7 +12,6 @@ import tensorflow as tf
 import uproot
 
 from hep_foundation.config.logging_config import get_logger
-from hep_foundation.config.new_processed_event import NewProcessedEvent
 from hep_foundation.config.task_config import (
     TaskConfig,
 )
@@ -22,6 +21,7 @@ from hep_foundation.data.physlite_derived_features import (
     get_derived_feature,
     is_derived_feature,
 )
+from hep_foundation.data.processed_event import ProcessedEvent
 from hep_foundation.plots.histogram_manager import HistogramManager
 
 # Import plotting utilities
@@ -174,7 +174,7 @@ class PhysliteCatalogProcessor:
 
     def _collect_histogram_data(
         self,
-        result: NewProcessedEvent,
+        result: ProcessedEvent,
         data_type: str,
         scalar_features_dict: dict,
         aggregated_features_dict: dict,
@@ -185,7 +185,7 @@ class PhysliteCatalogProcessor:
         Collect histogram data from a processed event result using the proper histogram data format.
 
         Args:
-            result: The NewProcessedEvent instance
+            result: The ProcessedEvent instance
             data_type: Either "zero_bias" or "post_selection"
             scalar_features_dict: Dictionary to accumulate scalar features (branch_name -> list of values)
             aggregated_features_dict: Dictionary to accumulate aggregated features (NOT USED - kept for compatibility)
@@ -241,7 +241,7 @@ class PhysliteCatalogProcessor:
         return num_tracks
 
     def _prepare_raw_sample_for_storage(
-        self, result: NewProcessedEvent, data_type: str
+        self, result: ProcessedEvent, data_type: str
     ) -> dict:
         """
         Prepare a processed event result for JSON serialization and storage.
@@ -249,7 +249,7 @@ class PhysliteCatalogProcessor:
         Uses the new format's built-in JSON serialization.
 
         Args:
-            result: The NewProcessedEvent instance
+            result: The ProcessedEvent instance
             data_type: Either "zero_bias" or "post_selection" to determine which histogram data to keep
 
         Returns:
@@ -565,7 +565,7 @@ class PhysliteCatalogProcessor:
                                 # --- Process Event (using NEW format) ---
 
                                 result, passed_filters = (
-                                    self.event_processor.process_event_new_format(
+                                    self.event_processor.process_event(
                                         processed_event_data,
                                         task_config,
                                         plotting_enabled,
@@ -597,7 +597,7 @@ class PhysliteCatalogProcessor:
                                     # For filtered data: collect for dataset creation when filters passed
                                     if passed_filters:
                                         # Store the result for dataset creation
-                                        # Extract only the arrays for the dataset using NewProcessedEvent helper method
+                                        # Extract only the arrays for the dataset using ProcessedEvent helper method
                                         input_features_for_dataset = (
                                             result.get_dataset_features()
                                         )

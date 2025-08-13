@@ -5,10 +5,6 @@ from typing import Optional
 import numpy as np
 
 from hep_foundation.config.logging_config import get_logger
-from hep_foundation.config.new_processed_event import (
-    EventSelectionData,
-    NewProcessedEvent,
-)
 from hep_foundation.config.task_config import (
     PhysliteFeatureArrayAggregator,
     PhysliteFeatureFilter,
@@ -19,6 +15,10 @@ from hep_foundation.config.task_config import (
 from hep_foundation.data.atlas_file_manager import ATLASFileManager
 from hep_foundation.data.physlite_utilities import (
     convert_stl_vector_array,
+)
+from hep_foundation.data.processed_event import (
+    EventSelectionData,
+    ProcessedEvent,
 )
 
 
@@ -142,89 +142,7 @@ class PhysliteEventProcessor:
 
         return selected_features
 
-    def process_event_new_format(
-        self,
-        event_data: dict[str, np.ndarray],
-        task_config: TaskConfig,
-        plotting_enabled: bool = False,
-        need_more_zero_bias_samples: bool = False,
-    ) -> tuple[Optional[NewProcessedEvent], bool]:
-        """
-        Process a single event using the new data format.
-
-        Args:
-            event_data: Dictionary mapping branch names (real and derived) to their raw values
-            task_config: TaskConfig object containing event filters, input features, and labels
-            plotting_enabled: Whether plotting is enabled
-            need_more_zero_bias_samples: Whether we still need more zero-bias samples for plotting
-
-        Returns:
-            Tuple of (new_processed_event, passed_filters):
-            - new_processed_event: NewProcessedEvent instance or None if processing failed
-            - passed_filters: Boolean indicating whether the event passed all filters
-        """
-        # Apply event filters first and track the result
-        passed_filters = self._apply_event_filters(
-            event_data, task_config.event_filters
-        )
-
-        # Determine if we should process this event
-        # For zero-bias sampling, we process regardless of filter status
-        # For filtered data, we only process if filters passed
-        process_for_zero_bias = plotting_enabled and need_more_zero_bias_samples
-        should_process = passed_filters or process_for_zero_bias
-
-        if not should_process:
-            return None, passed_filters
-
-        # Process input selection config using new format
-        input_selection_data = self._process_selection_config_new_format(
-            event_data,
-            task_config.input,
-            need_more_zero_bias_samples,
-        )
-
-        # For zero-bias sampling, we always want to return data even if aggregators failed min_length
-        # For normal dataset creation, we reject if input_selection_data is None
-        if input_selection_data is None:
-            if need_more_zero_bias_samples:
-                # For zero-bias, create empty selection data
-                input_selection_data = EventSelectionData(
-                    selection_config_name=task_config.input.name,
-                    event_raw_selector_data={},
-                    event_raw_aggregators_data=[],
-                    event_aggregators_sort_filter_indices=[],
-                    event_aggregators_pass_filters=[],
-                    aggregator_configs=[],
-                )
-            else:
-                # For dataset creation, None means we should reject the event
-                return None, passed_filters
-
-        # Process each label config if present (only for filtered events going to dataset)
-        label_selection_data = []
-        if passed_filters:  # Only process labels for events going into the dataset
-            for label_config in task_config.labels:
-                label_data = self._process_selection_config_new_format(
-                    event_data,
-                    label_config,
-                    False,  # Labels: no zero-bias sampling needed
-                )
-                if label_data is None:
-                    # If any label processing fails for a supervised task, reject the event
-                    return None, passed_filters
-                label_selection_data.append(label_data)
-
-        # Create and return NewProcessedEvent object
-        new_processed_event = NewProcessedEvent(
-            passed_filters=passed_filters,
-            input_selection_data=input_selection_data,
-            label_selection_data=label_selection_data,
-        )
-
-        return new_processed_event, passed_filters
-
-    def _process_selection_config_new_format(
+    def _process_selection_config(
         self,
         event_data: dict[str, np.ndarray],
         selection_config: PhysliteSelectionConfig,
@@ -265,7 +183,7 @@ class PhysliteEventProcessor:
                         raw_aggregator_data,
                         sort_filter_indices,
                         aggregator_passed_filters,
-                    ) = self._process_single_aggregator_new_format(
+                    ) = self._process_single_aggregator(
                         event_data,
                         aggregator,
                         idx,
@@ -326,7 +244,7 @@ class PhysliteEventProcessor:
             aggregator_configs=aggregator_configs,
         )
 
-    def _process_single_aggregator_new_format(
+    def _process_single_aggregator(
         self,
         event_data: dict[str, np.ndarray],
         aggregator: PhysliteFeatureArrayAggregator,
@@ -481,3 +399,85 @@ class PhysliteEventProcessor:
                 sort_filter_indices = valid_indices.tolist()
 
         return raw_aggregator_data, sort_filter_indices, passed_aggregator_filters
+
+    def process_event(
+        self,
+        event_data: dict[str, np.ndarray],
+        task_config: TaskConfig,
+        plotting_enabled: bool = False,
+        need_more_zero_bias_samples: bool = False,
+    ) -> tuple[Optional[ProcessedEvent], bool]:
+        """
+        Process a single event using the new data format.
+
+        Args:
+            event_data: Dictionary mapping branch names (real and derived) to their raw values
+            task_config: TaskConfig object containing event filters, input features, and labels
+            plotting_enabled: Whether plotting is enabled
+            need_more_zero_bias_samples: Whether we still need more zero-bias samples for plotting
+
+        Returns:
+            Tuple of (processed_event, passed_filters):
+            - processed_event: ProcessedEvent instance or None if processing failed
+            - passed_filters: Boolean indicating whether the event passed all filters
+        """
+        # Apply event filters first and track the result
+        passed_filters = self._apply_event_filters(
+            event_data, task_config.event_filters
+        )
+
+        # Determine if we should process this event
+        # For zero-bias sampling, we process regardless of filter status
+        # For filtered data, we only process if filters passed
+        process_for_zero_bias = plotting_enabled and need_more_zero_bias_samples
+        should_process = passed_filters or process_for_zero_bias
+
+        if not should_process:
+            return None, passed_filters
+
+        # Process input selection config using new format
+        input_selection_data = self._process_selection_config(
+            event_data,
+            task_config.input,
+            need_more_zero_bias_samples,
+        )
+
+        # For zero-bias sampling, we always want to return data even if aggregators failed min_length
+        # For normal dataset creation, we reject if input_selection_data is None
+        if input_selection_data is None:
+            if need_more_zero_bias_samples:
+                # For zero-bias, create empty selection data
+                input_selection_data = EventSelectionData(
+                    selection_config_name=task_config.input.name,
+                    event_raw_selector_data={},
+                    event_raw_aggregators_data=[],
+                    event_aggregators_sort_filter_indices=[],
+                    event_aggregators_pass_filters=[],
+                    aggregator_configs=[],
+                )
+            else:
+                # For dataset creation, None means we should reject the event
+                return None, passed_filters
+
+        # Process each label config if present (only for filtered events going to dataset)
+        label_selection_data = []
+        if passed_filters:  # Only process labels for events going into the dataset
+            for label_config in task_config.labels:
+                label_data = self._process_selection_config(
+                    event_data,
+                    label_config,
+                    False,  # Labels: no zero-bias sampling needed
+                )
+                if label_data is None:
+                    # If any label processing fails for a supervised task, reject the event
+                    return None, passed_filters
+                label_selection_data.append(label_data)
+
+        # Create and return ProcessedEvent object
+        processed_event = ProcessedEvent(
+            passed_filters=passed_filters,
+            input_selection_data=input_selection_data,
+            label_selection_data=label_selection_data,
+        )
+
+        return processed_event, passed_filters
