@@ -12,6 +12,7 @@ import tensorflow as tf
 import uproot
 
 from hep_foundation.config.logging_config import get_logger
+from hep_foundation.config.new_processed_event import NewProcessedEvent
 from hep_foundation.config.task_config import (
     TaskConfig,
 )
@@ -21,7 +22,6 @@ from hep_foundation.data.physlite_derived_features import (
     get_derived_feature,
     is_derived_feature,
 )
-from hep_foundation.data.processed_event import ProcessedEvent
 from hep_foundation.plots.histogram_manager import HistogramManager
 
 # Import plotting utilities
@@ -174,7 +174,7 @@ class PhysliteCatalogProcessor:
 
     def _collect_histogram_data(
         self,
-        result: ProcessedEvent,
+        result: NewProcessedEvent,
         data_type: str,
         scalar_features_dict: dict,
         aggregated_features_dict: dict,
@@ -185,7 +185,7 @@ class PhysliteCatalogProcessor:
         Collect histogram data from a processed event result using the proper histogram data format.
 
         Args:
-            result: The ProcessedEvent instance
+            result: The NewProcessedEvent instance
             data_type: Either "zero_bias" or "post_selection"
             scalar_features_dict: Dictionary to accumulate scalar features (branch_name -> list of values)
             aggregated_features_dict: Dictionary to accumulate aggregated features (NOT USED - kept for compatibility)
@@ -195,41 +195,40 @@ class PhysliteCatalogProcessor:
         Returns:
             Number of tracks for the first aggregator, or None if no aggregators
         """
-        # Collect scalar features
-        for name, value in result.scalar_features.items():
-            scalar_features_dict[name].append(value)
+        # Get histogram data from the new format
+        hist_data = result.get_histogram_data(data_type)
 
-        # Get track count from the properly calculated num_tracks_for_plot (which respects max_length)
-        num_tracks = result.num_tracks_for_plot
+        # Collect all histogram data
+        for branch_name, branch_values in hist_data.items():
+            # Flatten the branch values and extend the accumulated list
+            if isinstance(branch_values, list):
+                scalar_features_dict[branch_name].extend(branch_values)
+            else:
+                # Handle case where it's a single value
+                scalar_features_dict[branch_name].append(branch_values)
 
-        # Get first aggregator key for reference
-        first_agg_key = next(iter(result.aggregated_features.keys()), None)
+        # Get track count from the new format
+        num_tracks = result.get_num_tracks_for_plot()
 
-        # Collect histogram data from aggregators using the properly formatted histogram data
-        for agg_key, agg_data in result.aggregated_features.items():
-            # Get the histogram data for the appropriate data type
-            if data_type == "post_selection":
-                hist_data = agg_data.post_selection_hist_data
-            else:  # zero_bias
-                hist_data = agg_data.zero_bias_hist_data
+        # Add track count for first aggregator if we have aggregators
+        if result.input_selection_data.event_raw_aggregators_data:
+            first_agg_idx = 0
+            # Find first aggregator that passed filters
+            for agg_idx in range(
+                len(result.input_selection_data.event_raw_aggregators_data)
+            ):
+                if result.input_selection_data.event_aggregators_pass_filters[agg_idx]:
+                    first_agg_idx = agg_idx
+                    break
 
-            if hist_data:
-                # hist_data is a dict: {"branch_name": array_of_values, ...}
-                for branch_name, branch_values in hist_data.items():
-                    # Flatten the branch values and extend the accumulated list
-                    flattened_values = (
-                        branch_values.flatten()
-                        if hasattr(branch_values, "flatten")
-                        else branch_values
-                    )
-                    scalar_features_dict[branch_name].extend(flattened_values)
+            # Add aggregator track count as a special histogram feature
+            track_count_key = f"aggregator_{first_agg_idx}_valid_tracks"
+            n_valid_elements = (
+                result.input_selection_data.get_aggregator_filtered_count(first_agg_idx)
+            )
+            scalar_features_dict[track_count_key].append(n_valid_elements)
 
-            # Add aggregator track count as a special histogram feature (use the actual n_valid_elements)
-            if agg_key == first_agg_key:
-                track_count_key = f"{agg_key}_valid_tracks"
-                scalar_features_dict[track_count_key].append(agg_data.n_valid_elements)
-
-        # Add overall track count to the event tracks list (use the truncated count)
+        # Add overall track count to the event tracks list
         if num_tracks is not None:
             event_n_tracks_list.append(num_tracks)
 
@@ -242,98 +241,22 @@ class PhysliteCatalogProcessor:
         return num_tracks
 
     def _prepare_raw_sample_for_storage(
-        self, result: ProcessedEvent, data_type: str
+        self, result: NewProcessedEvent, data_type: str
     ) -> dict:
         """
         Prepare a processed event result for JSON serialization and storage.
 
-        Removes training arrays but keeps relevant histogram data for analysis.
+        Uses the new format's built-in JSON serialization.
 
         Args:
-            result: The ProcessedEvent instance
+            result: The NewProcessedEvent instance
             data_type: Either "zero_bias" or "post_selection" to determine which histogram data to keep
 
         Returns:
             A serializable dictionary suitable for JSON storage with relevant histogram data
         """
-
-        def convert_numpy_types(obj):
-            """Convert numpy types to Python native types"""
-            if isinstance(obj, np.ndarray):
-                return obj.tolist()
-            elif isinstance(obj, (np.integer, np.int64, np.int32)):
-                return int(obj)
-            elif isinstance(obj, (np.floating, np.float64, np.float32)):
-                return float(obj)
-            elif isinstance(obj, dict):
-                return {key: convert_numpy_types(value) for key, value in obj.items()}
-            elif isinstance(obj, list):
-                return [convert_numpy_types(item) for item in obj]
-            else:
-                return obj
-
-        def remove_training_arrays_keep_histogram_data(obj, data_type):
-            """Remove training arrays but keep histogram data for raw samples"""
-            if isinstance(obj, dict):
-                # Create a new dictionary without training arrays but with histogram data
-                cleaned = {}
-                for key, value in obj.items():
-                    if key == "array":
-                        # Skip training arrays - they're already in the dataset HDF5
-                        continue
-                    elif (
-                        key == "post_selection_hist_data"
-                        and data_type != "post_selection"
-                    ):
-                        # Only keep post_selection_hist_data for post-selection samples
-                        continue
-                    elif key == "zero_bias_hist_data" and data_type != "zero_bias":
-                        # Only keep zero_bias_hist_data for zero-bias samples
-                        continue
-                    elif isinstance(value, dict):
-                        # Recursively clean nested dictionaries
-                        cleaned[key] = remove_training_arrays_keep_histogram_data(
-                            value, data_type
-                        )
-                    elif isinstance(value, list):
-                        # Recursively clean lists
-                        cleaned[key] = [
-                            remove_training_arrays_keep_histogram_data(item, data_type)
-                            for item in value
-                        ]
-                    else:
-                        cleaned[key] = value
-                return cleaned
-            elif isinstance(obj, list):
-                return [
-                    remove_training_arrays_keep_histogram_data(item, data_type)
-                    for item in obj
-                ]
-            else:
-                return obj
-
-        # Convert ProcessedEvent to dictionary format manually, then remove training arrays and convert numpy types
-        result_dict = {
-            "scalar_features": result.scalar_features,
-            "aggregated_features": {
-                agg_key: {
-                    "array": agg_data.array,
-                    "n_valid_elements": agg_data.n_valid_elements,
-                    "post_selection_hist_data": agg_data.post_selection_hist_data,
-                    "zero_bias_hist_data": agg_data.zero_bias_hist_data,
-                }
-                for agg_key, agg_data in result.aggregated_features.items()
-            },
-            "label_features": result.label_features,
-            "num_tracks_for_plot": result.num_tracks_for_plot,
-            "passed_filters": result.passed_filters,
-        }
-        cleaned_result = remove_training_arrays_keep_histogram_data(
-            result_dict, data_type
-        )
-        serializable_result = convert_numpy_types(cleaned_result)
-
-        return serializable_result
+        # Use the new format's built-in JSON serialization
+        return result.to_json_dict(data_type)
 
     def _save_raw_samples(
         self,
@@ -639,10 +562,10 @@ class PhysliteCatalogProcessor:
                                     < samples_per_catalog
                                 )
 
-                                # --- Process Event (unified method handles both filtered and zero-bias data) ---
+                                # --- Process Event (using NEW format) ---
 
                                 result, passed_filters = (
-                                    self.event_processor.process_event(
+                                    self.event_processor.process_event_new_format(
                                         processed_event_data,
                                         task_config,
                                         plotting_enabled,
@@ -674,7 +597,7 @@ class PhysliteCatalogProcessor:
                                     # For filtered data: collect for dataset creation when filters passed
                                     if passed_filters:
                                         # Store the result for dataset creation
-                                        # Extract only the arrays for the dataset using ProcessedEvent helper method
+                                        # Extract only the arrays for the dataset using NewProcessedEvent helper method
                                         input_features_for_dataset = (
                                             result.get_dataset_features()
                                         )
@@ -693,7 +616,7 @@ class PhysliteCatalogProcessor:
                                             continue
                                         # Process labels similarly for the dataset
                                         label_features_for_dataset = (
-                                            result.label_features
+                                            result.get_label_features()
                                         )
 
                                         processed_inputs.append(
@@ -962,7 +885,7 @@ class PhysliteCatalogProcessor:
             # Compute for aggregated features
         if inputs[0]["aggregated_features"]:
             norm_params["features"]["aggregated"] = {}
-            for agg_name, agg_data in inputs[0]["aggregated_features"].items():
+            for agg_name in inputs[0]["aggregated_features"].keys():
                 # Stack all events for this aggregator
                 stacked_data = np.stack(
                     [
@@ -1019,9 +942,7 @@ class PhysliteCatalogProcessor:
                     # Compute for aggregated features
                 if label_data[0]["aggregated_features"]:
                     label_norm["aggregated"] = {}
-                    for agg_name, agg_data in label_data[0][
-                        "aggregated_features"
-                    ].items():
+                    for agg_name in label_data[0]["aggregated_features"].keys():
                         stacked_data = np.stack(
                             [
                                 event_labels["aggregated_features"][agg_name]

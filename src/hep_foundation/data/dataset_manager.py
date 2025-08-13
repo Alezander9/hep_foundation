@@ -769,7 +769,7 @@ class DatasetManager:
 
         # Save aggregated features if any exist
         if inputs and inputs[0]["aggregated_features"]:
-            for agg_name, agg_data in inputs[0]["aggregated_features"].items():
+            for agg_name in inputs[0]["aggregated_features"].keys():
                 stacked_data = np.stack(
                     [
                         input_data["aggregated_features"][agg_name]
@@ -827,7 +827,7 @@ class DatasetManager:
 
             # Save aggregated features if any exist
             if label_data and label_data[0]["aggregated_features"]:
-                for agg_name, agg_data in label_data[0]["aggregated_features"].items():
+                for agg_name in label_data[0]["aggregated_features"].keys():
                     stacked_data = np.stack(
                         [
                             event_labels["aggregated_features"][agg_name]
