@@ -192,8 +192,11 @@ class PhysliteCatalogProcessor:
             # Flatten the branch values and extend the accumulated list
             if isinstance(branch_values, list):
                 scalar_features_dict[branch_name].extend(branch_values)
+            elif hasattr(branch_values, "tolist"):
+                # Handle NumPy arrays - convert to list and extend
+                scalar_features_dict[branch_name].extend(branch_values.tolist())
             else:
-                # Handle case where it's a single value
+                # Handle case where it's a single scalar value
                 scalar_features_dict[branch_name].append(branch_values)
 
         # Collect complete raw sample if requested

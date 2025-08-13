@@ -310,7 +310,7 @@ DERIVED_FEATURE_REGISTRY: dict[str, DerivedFeature] = {
             "MET_Core_AnalysisMETAuxDyn.mpx",
             "MET_Core_AnalysisMETAuxDyn.mpy",
         ],
-        shape=[-1, 1],
+        shape=[2],
         dtype="float32",
     ),
     "derived.MET_Core_AnalysisMETAuxDyn.met_phi": DerivedFeature(
@@ -320,7 +320,7 @@ DERIVED_FEATURE_REGISTRY: dict[str, DerivedFeature] = {
             "MET_Core_AnalysisMETAuxDyn.mpx",
             "MET_Core_AnalysisMETAuxDyn.mpy",
         ],
-        shape=[-1, 1],
+        shape=[2],
         dtype="float32",
     ),
     # Add other derived features here following the same pattern
