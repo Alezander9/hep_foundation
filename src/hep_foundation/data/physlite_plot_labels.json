@@ -44,5 +44,5 @@
   "AnalysisJetsAuxDyn.eta": "Jet η",
   "AnalysisJetsAuxDyn.phi": "Jet φ",
   "AnalysisJetsAuxDyn.m": "Jet mass",
-  "aggregator_0_valid_tracks": "N Valid Tracks per Event"
+  "aggregator_0_num_tracks": "N Valid Tracks per Event"
 }

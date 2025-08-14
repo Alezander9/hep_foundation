@@ -39,6 +39,7 @@ task:
       sort_by_branch: null
       min_length: 5
       max_length: 20
+
     # - input_branches:
     #     - "AnalysisElectronsAuxDyn.pt"
     #     - "AnalysisElectronsAuxDyn.eta"
@@ -55,8 +56,8 @@ task:
 
   label_array_aggregators:
     - - input_branches:
-          - "MET_Core_AnalysisMETAuxDyn.mpx"
-          - "MET_Core_AnalysisMETAuxDyn.sumet"
+          - "derived.MET_Core_AnalysisMETAuxDyn.met_norm"
+          - "derived.MET_Core_AnalysisMETAuxDyn.met_phi"
         filter_branches: []
         sort_by_branch: null
         min_length: 1
