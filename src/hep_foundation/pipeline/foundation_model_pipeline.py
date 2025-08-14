@@ -605,7 +605,14 @@ class FoundationModelPipeline:
 
                 # Evaluate Model
                 self.logger.info("Evaluating model...")
-                test_results = trainer.evaluate(test_dataset)
+                test_results = trainer.evaluate(
+                    test_dataset,
+                    save_samples=True,
+                    training_history_dir=self.experiments_output_dir
+                    / experiment_id
+                    / "training",
+                    max_samples=5000,
+                )
 
                 # Save consolidated training history with all metrics (train/val/test)
                 self.logger.info("Saving consolidated training history...")

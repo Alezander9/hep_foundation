@@ -684,8 +684,14 @@ class ModelTrainer:
 
         return self.get_training_summary()
 
-    def evaluate(self, dataset: tf.data.Dataset) -> dict[str, float]:
-        """Evaluate with enhanced metrics tracking"""
+    def evaluate(
+        self,
+        dataset: tf.data.Dataset,
+        save_samples: bool = False,
+        training_history_dir: Optional[Path] = None,
+        max_samples: int = 5000,
+    ) -> dict[str, float]:
+        """Evaluate with enhanced metrics tracking and optional sample saving"""
         try:
             # Prepare test dataset
             test_dataset = self.prepare_dataset(dataset)
@@ -712,6 +718,12 @@ class ModelTrainer:
                 else:
                     self.build_and_compile_model(input_shape)
 
+            # Collect samples if requested
+            if save_samples and training_history_dir is not None:
+                self._save_model_samples(
+                    test_dataset, training_history_dir, max_samples
+                )
+
             # Evaluate and get results
             results = self.model.model.evaluate(
                 test_dataset, return_dict=True, verbose=0
@@ -732,3 +744,62 @@ class ModelTrainer:
         except Exception as e:
             self.logger.error(f"Error during evaluation: {str(e)}")
             raise
+
+    def _save_model_samples(
+        self,
+        test_dataset: tf.data.Dataset,
+        training_history_dir: Path,
+        max_samples: int = 5000,
+    ) -> None:
+        """Save input and output samples from model evaluation."""
+        self.logger.info(
+            f"Collecting {max_samples} input/output samples for analysis..."
+        )
+
+        input_samples, output_samples = [], []
+
+        # Collect samples from batches
+        for batch in test_dataset:
+            if len(input_samples) >= max_samples:
+                break
+
+            features, _ = batch
+            predictions = self.model.model.predict(features, verbose=0)
+
+            # Take only what we need from this batch
+            remaining = max_samples - len(input_samples)
+            batch_samples = min(features.shape[0], remaining)
+
+            # Flatten and convert to lists for JSON serialization
+            input_samples.extend(
+                features[:batch_samples].numpy().reshape(batch_samples, -1).tolist()
+            )
+            output_samples.extend(
+                predictions[:batch_samples].reshape(batch_samples, -1).tolist()
+            )
+
+        self.logger.info(f"Collected {len(input_samples)} input/output sample pairs")
+
+        # Create metadata template
+        metadata_base = {
+            "num_samples": len(input_samples),
+            "creation_date": str(datetime.now()),
+            "model_name": getattr(self.model, "name", "unknown"),
+            "model_type": getattr(self.model, "model_type", "unknown"),
+            "format_version": "1.0",
+        }
+
+        # Save both files
+        training_history_dir.mkdir(parents=True, exist_ok=True)
+        for sample_type, samples, filename in [
+            ("test_inputs", input_samples, "input_samples.json"),
+            ("test_outputs", output_samples, "output_samples.json"),
+        ]:
+            data = {
+                "metadata": {**metadata_base, "sample_type": sample_type},
+                "samples": samples,
+            }
+            file_path = training_history_dir / filename
+            with open(file_path, "w") as f:
+                json.dump(data, f, indent=2)
+            self.logger.info(f"Saved {sample_type} to: {file_path}")

@@ -75,6 +75,16 @@ EXPECTED_EXPERIMENT_STRUCTURE = {
                 "required": True,
                 "description": "Training history plot",
             },
+            "input_samples.json": {
+                "type": "file",
+                "required": True,
+                "description": "Test input samples (up to 5000) for model analysis",
+            },
+            "output_samples.json": {
+                "type": "file",
+                "required": True,
+                "description": "Model output samples corresponding to input samples",
+            },
         },
     },
     # Trained model artifacts

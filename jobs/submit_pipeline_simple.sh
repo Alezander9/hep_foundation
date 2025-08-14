@@ -7,7 +7,7 @@
 #SBATCH -n 1
 #SBATCH -c 32         # Required: NERSC gpu_shared_ss11 queue mandates 32 cores per GPU
 #SBATCH --gpus-per-task=1
-#SBATCH --time=08:00:00
+#SBATCH --time=06:00:00
 #SBATCH --output=logs/slurm-simple-%j.out
 #SBATCH --error=logs/slurm-simple-%j.err
 #SBATCH --mail-type=BEGIN,END,FAIL
