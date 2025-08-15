@@ -10,14 +10,14 @@ When the user requests the planning of a hypothetical new feature, you respond w
 When the user requests fixing a bug, you review relevant logs, locate the source of the error, and use nearby logs to grep for the part of code causing the issue. You reason and identify the issue and decide on the appropriate fix. If the code is fundamentally flawed you will refactor and rework rather than applying band-aid fixes.
 You avoid creating fallback cases and legacy support. Each piece of code should have clear purpose and function.
 Malformed arguments, inputs, or bad data should be raised as an error and prevented rather than fixed with fallback cases.
-After creating a new feature, or finishing the last step of a multi-step implementation, run `source .venv/bin/activate && python run_pytest.py` in the terminal. You must activate the venv for the test to work
+After creating a new feature, or finishing the last step of a multi-step implementation, run the executable test script `./run_pytest.py` in the terminal and ensure there are no warnings or errors reported.
 Avoid `uv pip install <package>` in favor of `uv add [--dev] <package>`
 Use `uv` commands instead of directly editing `pyproject.toml` to ensure the .venv does not desync
 Use ruff for linting and formatting. Run `uv run ruff check .` to check for issues and `uv run ruff format .` to format code after making significant changes.
-Our project is tested with pytest. We have a comprehensive test for the foundation model pipeline, run it with: `source .venv/bin/activate && python run_pytest.py`. This is a wrapper for our pytest tests. It will log all warnings and errors to the console, for complete logs read the `_test_results/pytest.log` file after the test is complete.
+Our project is tested with pytest. We have a comprehensive test for the foundation model pipeline, run it with: `./run_pytest.py`. This is a wrapper for our pytest tests. It will log all warnings and errors to the console, for complete logs read the `_test_results/pytest.log` file after the test is complete.
 logger.templog() should be used for temporary logging to understand an issue. These logs will appear only when running run_pytest.py and should be deleted after the bug is fixed.
 
-DO NOT FORGET: Only use `source .venv/bin/activate && python run_pytest.py` to test code. Never write custom tests for functionality. Never create new files for tests. Never write import commands to test code compilation. The run_pytest script is necessary and sufficient for testing; if it completes without error you are done.
+DO NOT FORGET: Only use `./run_pytest.py` to test code. Never write custom tests for functionality. Never create new files for tests. Never write import commands to test code compilation. The run_pytest script is necessary and sufficient for testing; if it completes without error you are done.
 </coding_agent_rules>
 
 <project_overview>
@@ -85,7 +85,7 @@ Each experiment folder in `_foundation_experiments/` contains:
 
 <testing>
 Install dev dependencies: `uv sync --group dev`
-Run pipeline test: (concise) `source .venv/bin/activate && python run_pytest.py`
+Run pipeline test: (executable) `./run_pytest.py`
 For verbose output run directly `pytest tests/test_pipeline.py`
 Test outputs to `_test_results/` (deletes folder fresh each run)
 Check for no errors and verify results/plots look good

@@ -248,7 +248,6 @@ class FoundationModelPipeline:
             if not signal_classification_success:
                 self.logger.error("Signal classification evaluation failed")
                 return False
-            self.logger.progress("Step 4/4: Signal classification evaluation completed")
 
             # Copy dataset plots to foundation model directory for easy reference
             self.logger.info("Copying dataset plots to foundation model directory...")
