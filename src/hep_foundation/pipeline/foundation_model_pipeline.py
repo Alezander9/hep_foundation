@@ -98,103 +98,6 @@ class FoundationModelPipeline:
         self._source_config_file = config_file_path
         self.logger.info(f"Source config file set to: {config_file_path}")
 
-    def run_process(
-        self,
-        process_name: str,
-        dataset_config: DatasetConfig,
-        task_config: TaskConfig,
-        vae_model_config: VAEConfig = None,
-        dnn_model_config: DNNPredictorConfig = None,
-        vae_training_config: TrainingConfig = None,
-        dnn_training_config: TrainingConfig = None,
-        delete_catalogs: bool = True,
-        foundation_model_path: str = None,
-        data_sizes: list = None,
-        fixed_epochs: int = None,
-    ) -> Union[bool, tuple[str, str]]:
-        """
-        Run the specified process with provided configurations.
-
-        Args:
-            process_name: Name of the process to run ("train", "anomaly", or "regression")
-            dataset_config: Configuration for dataset processing
-            task_config: Configuration for task processing
-            vae_model_config: Configuration for VAE model (optional)
-            dnn_model_config: Configuration for DNN model (optional)
-            vae_training_config: Configuration for VAE training (optional)
-            dnn_training_config: Configuration for DNN training (optional)
-            delete_catalogs: Whether to delete catalogs after processing
-            foundation_model_path: Path to the foundation model encoder to use for encoding (optional)
-            data_sizes: List of training data sizes for regression evaluation (optional)
-            fixed_epochs: Number of epochs for regression evaluation (optional)
-
-        Returns:
-            bool: Success status for anomaly/regression processes
-            tuple[str, str]: Tuple containing (foundation_model_path, dataset_path) for train process, or None if training failed
-        """
-        valid_processes = ["train", "anomaly", "regression", "signal_classification"]
-        if process_name not in valid_processes:
-            self.logger.error(
-                f"Invalid process name: {process_name}. Must be one of {valid_processes}"
-            )
-            return False
-
-        # Define method mapping with all possible parameters
-        method_map = {
-            "train": self.train_foundation_model,
-            "anomaly": self.evaluate_foundation_model_anomaly_detection,
-            "regression": self.evaluate_foundation_model_regression,
-            "signal_classification": self.evaluate_foundation_model_signal_classification,
-        }
-
-        # Get the method to call
-        method = method_map[process_name]
-
-        # Prepare common arguments that all methods accept
-        common_args = {
-            "dataset_config": dataset_config,
-            "task_config": task_config,
-            "delete_catalogs": delete_catalogs,
-        }
-
-        # Add optional arguments based on what each method accepts
-        if process_name == "train":
-            common_args.update(
-                {
-                    "model_config": vae_model_config,
-                    "training_config": vae_training_config,
-                }
-            )
-        elif process_name == "anomaly":
-            common_args.update(
-                {
-                    "foundation_model_path": foundation_model_path,
-                    "vae_training_config": vae_training_config,
-                }
-            )
-        elif process_name == "regression":
-            common_args.update(
-                {
-                    "dnn_model_config": dnn_model_config,
-                    "dnn_training_config": dnn_training_config,
-                    "foundation_model_path": foundation_model_path,
-                    "data_sizes": data_sizes,
-                    "fixed_epochs": fixed_epochs,
-                }
-            )
-        elif process_name == "signal_classification":
-            common_args.update(
-                {
-                    "dnn_model_config": dnn_model_config,
-                    "dnn_training_config": dnn_training_config,
-                    "foundation_model_path": foundation_model_path,
-                    "data_sizes": data_sizes,
-                    "fixed_epochs": fixed_epochs,
-                }
-            )
-
-        return method(**common_args)
-
     def run_full_pipeline(
         self,
         dataset_config: DatasetConfig,
@@ -244,12 +147,11 @@ class FoundationModelPipeline:
             # Print system usage before training
             print_system_usage("Before Training - ")
 
-            training_result = self.run_process(
-                process_name="train",
+            training_result = self.train_foundation_model(
                 dataset_config=dataset_config,
+                model_config=vae_model_config,
+                training_config=vae_training_config,
                 task_config=task_config,
-                vae_model_config=vae_model_config,
-                vae_training_config=vae_training_config,
                 delete_catalogs=delete_catalogs,
             )
 
@@ -280,13 +182,12 @@ class FoundationModelPipeline:
             # Print system usage before anomaly detection
             print_system_usage("Before Anomaly Detection - ")
 
-            anomaly_success = self.run_process(
-                process_name="anomaly",
+            anomaly_success = self.evaluate_anomaly_detection(
                 dataset_config=dataset_config,
                 task_config=task_config,
+                delete_catalogs=delete_catalogs,
                 foundation_model_path=foundation_model_path,
                 vae_training_config=vae_training_config,
-                delete_catalogs=delete_catalogs,
             )
 
             # Print system usage after anomaly detection
@@ -304,16 +205,15 @@ class FoundationModelPipeline:
             # Print system usage before regression evaluation
             print_system_usage("Before Regression Evaluation - ")
 
-            regression_success = self.run_process(
-                process_name="regression",
+            regression_success = self.evaluate_regression(
                 dataset_config=dataset_config,
-                task_config=task_config,
                 dnn_model_config=dnn_model_config,
                 dnn_training_config=dnn_training_config,
+                task_config=task_config,
+                delete_catalogs=delete_catalogs,
                 foundation_model_path=foundation_model_path,
                 data_sizes=data_sizes,
                 fixed_epochs=fixed_epochs,
-                delete_catalogs=delete_catalogs,
             )
 
             # Print system usage after regression evaluation
@@ -331,16 +231,15 @@ class FoundationModelPipeline:
             # Print system usage before signal classification
             print_system_usage("Before Signal Classification - ")
 
-            signal_classification_success = self.run_process(
-                process_name="signal_classification",
+            signal_classification_success = self.evaluate_signal_classification(
                 dataset_config=dataset_config,
-                task_config=task_config,
                 dnn_model_config=dnn_model_config,
                 dnn_training_config=dnn_training_config,
+                task_config=task_config,
+                delete_catalogs=delete_catalogs,
                 foundation_model_path=foundation_model_path,
                 data_sizes=data_sizes,
                 fixed_epochs=fixed_epochs,
-                delete_catalogs=delete_catalogs,
             )
 
             # Print system usage after signal classification
@@ -758,7 +657,7 @@ class FoundationModelPipeline:
             self.logger.error("Error context:")
             raise
 
-    def evaluate_foundation_model_anomaly_detection(
+    def evaluate_anomaly_detection(
         self,
         dataset_config: DatasetConfig,
         task_config: TaskConfig,
@@ -1052,7 +951,7 @@ class FoundationModelPipeline:
 
         return denormalized
 
-    def evaluate_foundation_model_regression(
+    def evaluate_regression(
         self,
         dataset_config: DatasetConfig,
         dnn_model_config: DNNPredictorConfig,
@@ -1096,15 +995,36 @@ class FoundationModelPipeline:
 
             # 1. Load full dataset with regression labels
             self.logger.info("Loading full dataset with regression labels...")
-            train_dataset, val_dataset, test_dataset = data_manager.load_atlas_datasets(
+            # train_dataset, val_dataset, test_dataset = data_manager.load_atlas_datasets(
+            #     dataset_config=dataset_config,
+            #     validation_fraction=dataset_config.validation_fraction,
+            #     test_fraction=dataset_config.test_fraction,
+            #     batch_size=dnn_training_config.batch_size,
+            #     shuffle_buffer=dataset_config.shuffle_buffer,
+            #     include_labels=True,
+            #     delete_catalogs=delete_catalogs,
+            # )
+            # Start of testing code
+            signal_datasets_splits = data_manager.load_signal_datasets(
                 dataset_config=dataset_config,
                 validation_fraction=dataset_config.validation_fraction,
                 test_fraction=dataset_config.test_fraction,
                 batch_size=dnn_training_config.batch_size,
                 shuffle_buffer=dataset_config.shuffle_buffer,
                 include_labels=True,
-                delete_catalogs=delete_catalogs,
+                split=True,  # Enable splitting
             )
+            signal_key = "wprime_taunu"
+
+            if signal_key not in signal_datasets_splits:
+                self.logger.error(f"Signal dataset '{signal_key}' not found")
+                return False
+
+            train_dataset, val_dataset, test_dataset = signal_datasets_splits[
+                signal_key
+            ]
+
+            # End of testing code
 
             # Access normalization parameters for denormalizing labels
             import json
@@ -1842,7 +1762,7 @@ class FoundationModelPipeline:
             self.logger.exception("Detailed traceback:")
             return False
 
-    def evaluate_foundation_model_signal_classification(
+    def evaluate_signal_classification(
         self,
         dataset_config: DatasetConfig,
         dnn_model_config: DNNPredictorConfig,
