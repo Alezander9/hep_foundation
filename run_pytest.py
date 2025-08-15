@@ -8,9 +8,63 @@ This script runs the pipeline test with simple output management:
 - Clean start and end messages
 """
 
+import os
 import subprocess
 import sys
 from datetime import datetime
+
+
+def is_on_login_node():
+    """Check if we're running on a login node by examining hostname."""
+    try:
+        hostname = os.uname().nodename
+        # Perlmutter login nodes have 'login' in hostname
+        return "login" in hostname.lower()
+    except Exception:
+        return False
+
+
+def resubmit_to_compute_node():
+    """Resubmit this script to run on a compute node."""
+    print("=" * 70)
+    print("HEP Foundation Pipeline Test - Auto Node Allocation")
+    print("=" * 70)
+    print("Detected login node - requesting interactive compute node...")
+    print("This will run faster and avoid login node restrictions.")
+    print("=" * 70)
+
+    # Get the current script path and working directory
+    script_path = os.path.abspath(__file__)
+    workspace_dir = os.path.dirname(script_path)
+
+    # Build salloc command to run this same script on compute node
+    cmd = [
+        "salloc",
+        "--nodes=1",
+        "--constraint=cpu",
+        "--qos=interactive",
+        "--time=5",
+        "--account=m2616",
+        "bash",
+        "-c",
+        f"cd {workspace_dir} && source .venv/bin/activate && python {script_path} --force-local",
+    ]
+
+    try:
+        print("Running:", " ".join(cmd[:7]) + " [bash command]")
+        print()
+
+        # Execute and let salloc handle all the allocation and execution
+        result = subprocess.run(cmd, check=False)
+        return result.returncode
+
+    except KeyboardInterrupt:
+        print("\n🛑 Node allocation interrupted")
+        return 130
+    except Exception as e:
+        print(f"\n💥 Error requesting compute node: {e}")
+        print("Falling back to login node execution...")
+        return None  # Signal to fall back to local execution
 
 
 def run_pytest_with_filtered_output():
@@ -107,5 +161,16 @@ def run_pytest_with_filtered_output():
 
 
 if __name__ == "__main__":
+    # Check for force-local flag (used when resubmitted to compute node)
+    force_local = "--force-local" in sys.argv
+
+    # If on login node and not forced local, try to resubmit to compute node
+    if not force_local and is_on_login_node():
+        exit_code = resubmit_to_compute_node()
+        if exit_code is not None:
+            sys.exit(exit_code)
+        # If resubmission failed, fall through to local execution
+
+    # Run the actual test (either forced local or on compute node)
     exit_code = run_pytest_with_filtered_output()
     sys.exit(exit_code)

@@ -6,9 +6,16 @@ from typing import Optional
 import numpy as np
 import tensorflow as tf
 
+from hep_foundation.config.dataset_config import DatasetConfig
 from hep_foundation.config.logging_config import get_logger
+from hep_foundation.config.task_config import TaskConfig
+from hep_foundation.config.training_config import TrainingConfig
+from hep_foundation.data.dataset_manager import DatasetManager
 from hep_foundation.models.base_model import BaseModel
-from hep_foundation.models.variational_autoencoder import VariationalAutoEncoder
+from hep_foundation.models.variational_autoencoder import (
+    VAEConfig,
+    VariationalAutoEncoder,
+)
 
 
 class AnomalyDetectionEvaluator:
@@ -16,25 +23,30 @@ class AnomalyDetectionEvaluator:
 
     def __init__(
         self,
-        model: BaseModel,
-        test_dataset: tf.data.Dataset,
+        model: BaseModel = None,
+        test_dataset: tf.data.Dataset = None,
         signal_datasets: Optional[dict[str, tf.data.Dataset]] = None,
         experiment_id: str = None,
         base_path: Path = Path("experiments"),
+        processed_datasets_dir: str = None,
     ):
         """
         Initialize the model tester
 
         Args:
-            model: Trained model to evaluate
-            test_dataset: Dataset of background events for testing
-            signal_datasets: Dictionary of signal datasets for comparison
+            model: Trained model to evaluate (optional, can be loaded later)
+            test_dataset: Dataset of background events for testing (optional, can be loaded later)
+            signal_datasets: Dictionary of signal datasets for comparison (optional, can be loaded later)
             experiment_id: ID of the experiment (e.g. '001_vae_test')
             base_path: Base path where experiments are stored
+            processed_datasets_dir: Directory for processed datasets (needed for loading datasets)
         """
         self.model = model
         self.test_dataset = test_dataset
         self.signal_datasets = signal_datasets or {}
+        self.processed_datasets_dir = (
+            Path(processed_datasets_dir) if processed_datasets_dir else None
+        )
 
         # Setup paths
         self.base_path = Path(base_path)
@@ -48,14 +60,16 @@ class AnomalyDetectionEvaluator:
         # Setup self.logger
         self.logger = get_logger(__name__)
 
-        # Load experiment info from the new file structure
+        # Load experiment info from the new file structure (only if it exists)
         self.experiment_info_path = self.experiment_path / "_experiment_info.json"
-        if not self.experiment_info_path.exists():
-            raise ValueError(f"No experiment info found at {self.experiment_info_path}")
-
-        # Load existing experiment info
-        with open(self.experiment_info_path) as f:
-            self.experiment_info = json.load(f)
+        self.experiment_info = None
+        if self.experiment_info_path.exists():
+            with open(self.experiment_info_path) as f:
+                self.experiment_info = json.load(f)
+        else:
+            self.logger.warning(
+                f"No experiment info found at {self.experiment_info_path} - will be created if needed"
+            )
 
     def _calculate_losses(
         self, dataset: tf.data.Dataset
@@ -835,3 +849,267 @@ class AnomalyDetectionEvaluator:
         }
 
         return test_results
+
+    def _load_model_from_foundation_path(
+        self,
+        foundation_model_path: Path,
+        task_config: TaskConfig,
+    ) -> VariationalAutoEncoder:
+        """
+        Load a trained VAE model from a foundation model path.
+
+        Args:
+            foundation_model_path: Path to the foundation model directory
+            task_config: Task configuration for input shape derivation
+
+        Returns:
+            Loaded VariationalAutoEncoder model
+        """
+        model_weights_path = (
+            foundation_model_path / "models" / "foundation_model" / "full_model"
+        )
+        config_path = foundation_model_path / "_experiment_config.yaml"
+
+        if not model_weights_path.exists():
+            model_weights_path_h5 = model_weights_path.with_suffix(".weights.h5")
+            if model_weights_path_h5.exists():
+                model_weights_path = model_weights_path_h5
+                self.logger.info("Found model weights with .h5 extension.")
+            else:
+                raise FileNotFoundError(
+                    f"Foundation model weights not found at: {model_weights_path} or {model_weights_path_h5}"
+                )
+
+        if not config_path.exists():
+            raise FileNotFoundError(
+                f"Foundation model config not found at: {config_path}"
+            )
+
+        # Load original model configuration
+        self.logger.info(f"Loading original model config from: {config_path}")
+        from hep_foundation.config.config_loader import PipelineConfigLoader
+
+        config_loader = PipelineConfigLoader()
+        original_experiment_data = config_loader.load_config(config_path)
+
+        # Get the VAE model config from the YAML structure
+        if (
+            "models" in original_experiment_data
+            and "vae" in original_experiment_data["models"]
+        ):
+            original_model_config = original_experiment_data["models"]["vae"]
+        else:
+            raise ValueError(f"Could not find VAE model config in: {config_path}")
+
+        if (
+            not original_model_config
+            or original_model_config.get("model_type") != "variational_autoencoder"
+        ):
+            raise ValueError(
+                f"Loaded config is not for a variational_autoencoder: {config_path}"
+            )
+
+        # Ensure input_shape is present in the loaded config
+        if "input_shape" not in original_model_config["architecture"]:
+            self.logger.warning(
+                "Input shape missing in loaded model config, deriving from task_config."
+            )
+            input_shape = (task_config.input.get_total_feature_size(),)
+            if input_shape[0] is None or input_shape[0] <= 0:
+                raise ValueError(
+                    "Could not determine a valid input shape from task_config."
+                )
+            original_model_config["architecture"]["input_shape"] = list(input_shape)
+
+        # Ensure hyperparameters like beta_schedule are present
+        if "hyperparameters" not in original_model_config:
+            original_model_config["hyperparameters"] = {}
+        if "beta_schedule" not in original_model_config["hyperparameters"]:
+            self.logger.warning(
+                "beta_schedule missing in loaded config, using default."
+            )
+            original_model_config["hyperparameters"]["beta_schedule"] = {
+                "start": 0.0,
+                "end": 1.0,
+                "warmup_epochs": 0,
+                "cycle_epochs": 0,
+            }
+
+        # Create VAE model (building will happen when needed)
+        vae_config = VAEConfig(
+            model_type=original_model_config["model_type"],
+            architecture=original_model_config["architecture"],
+            hyperparameters=original_model_config["hyperparameters"],
+        )
+        model = VariationalAutoEncoder(config=vae_config)
+
+        # Build model to load weights (for evaluation, we can build directly)
+        input_shape = tuple(original_model_config["architecture"]["input_shape"])
+        model.build(input_shape)
+
+        # Load weights
+        self.logger.info(f"Loading model weights from: {model_weights_path}")
+        try:
+            model.model.load_weights(str(model_weights_path)).expect_partial()
+            self.logger.info("VAE model loaded successfully.")
+            self.logger.info(model.model.summary())
+        except Exception as e:
+            raise RuntimeError(f"Failed to load model weights: {str(e)}")
+
+        return model
+
+    def _load_datasets_for_anomaly_detection(
+        self,
+        dataset_config: DatasetConfig,
+        eval_batch_size: int,
+        delete_catalogs: bool,
+    ) -> tuple[tf.data.Dataset, dict[str, tf.data.Dataset]]:
+        """
+        Load background and signal datasets for anomaly detection.
+
+        Args:
+            dataset_config: Dataset configuration
+            eval_batch_size: Batch size for evaluation
+            delete_catalogs: Whether to delete catalogs after processing
+
+        Returns:
+            Tuple of (test_dataset, signal_datasets)
+        """
+        if not self.processed_datasets_dir:
+            raise ValueError("processed_datasets_dir must be set to load datasets")
+
+        data_manager = DatasetManager(base_dir=self.processed_datasets_dir)
+
+        # Load test dataset (background)
+        self.logger.info("Loading background (test) dataset...")
+        _, _, test_dataset = data_manager.load_atlas_datasets(
+            dataset_config=dataset_config,
+            validation_fraction=0.0,
+            test_fraction=1.0,
+            batch_size=eval_batch_size,
+            shuffle_buffer=dataset_config.shuffle_buffer,
+            include_labels=False,
+            delete_catalogs=delete_catalogs,
+        )
+        background_dataset_id_for_plots = data_manager.get_current_dataset_id()
+        self.logger.info("Loaded background (test) dataset.")
+
+        # Determine background histogram data path for comparison plot
+        background_hist_data_path_for_comparison = None
+        if dataset_config.plot_distributions and background_dataset_id_for_plots:
+            background_plot_data_dir = (
+                data_manager.get_dataset_dir(background_dataset_id_for_plots)
+                / "plot_data"
+            )
+            potential_background_hist_path = (
+                background_plot_data_dir / "atlas_dataset_features_hist_data.json"
+            )
+            if potential_background_hist_path.exists():
+                background_hist_data_path_for_comparison = (
+                    potential_background_hist_path
+                )
+            else:
+                self.logger.warning(
+                    f"Background histogram data for comparison not found at {potential_background_hist_path}. Comparison plot may be skipped by DatasetManager."
+                )
+
+        # Load signal datasets
+        signal_datasets = {}
+        if dataset_config.signal_keys:
+            self.logger.info(
+                "Loading signal datasets for evaluation and comparison plotting..."
+            )
+            signal_datasets = data_manager.load_signal_datasets(
+                dataset_config=dataset_config,
+                batch_size=eval_batch_size,
+                include_labels=False,
+                background_hist_data_path=background_hist_data_path_for_comparison,
+                split=False,  # Anomaly detection uses full signal datasets
+            )
+            self.logger.info(
+                f"Loaded {len(signal_datasets)} signal datasets for evaluation."
+            )
+        else:
+            self.logger.warning(
+                "No signal keys provided. Skipping signal dataset loading for evaluation."
+            )
+
+        return test_dataset, signal_datasets
+
+    def evaluate_anomaly_detection(
+        self,
+        dataset_config: DatasetConfig,
+        task_config: TaskConfig,
+        delete_catalogs: bool = True,
+        foundation_model_path: str = None,
+        vae_training_config: TrainingConfig = None,
+        eval_batch_size: int = 1024,
+    ):
+        """
+        Evaluate a trained foundation model (VAE) for anomaly detection.
+
+        Loads a pre-trained VAE, test/signal datasets, performs evaluation,
+        and saves results directly in the foundation model's experiment directory.
+        """
+
+        if not foundation_model_path:
+            self.logger.error(
+                "Foundation model path must be provided for anomaly evaluation."
+            )
+            return False
+
+        foundation_model_path = Path(foundation_model_path)
+
+        try:
+            # Use eval_batch_size or derive from vae_training_config if provided
+            batch_size = eval_batch_size
+            if vae_training_config:
+                try:
+                    batch_size = vae_training_config.batch_size
+                    self.logger.info(
+                        f"Using batch size from provided VAE training config: {batch_size}"
+                    )
+                except AttributeError:
+                    self.logger.warning(
+                        "Provided vae_training_config lacks batch_size, using default."
+                    )
+            else:
+                self.logger.info(f"Using default evaluation batch size: {batch_size}")
+
+            # Load model from foundation path
+            self.logger.info("Loading VAE model from foundation model path...")
+            self.model = self._load_model_from_foundation_path(
+                foundation_model_path, task_config
+            )
+
+            # Load datasets
+            self.logger.info("Loading datasets for anomaly detection...")
+            self.test_dataset, self.signal_datasets = (
+                self._load_datasets_for_anomaly_detection(
+                    dataset_config, batch_size, delete_catalogs
+                )
+            )
+
+            # Run the anomaly detection evaluation using the existing method
+            self.logger.info("Running anomaly detection evaluation...")
+            self.run_anomaly_detection_test()
+
+            # Display Results
+            self.logger.info("=" * 100)
+            self.logger.info("Anomaly Detection Results")
+            self.logger.info("=" * 100)
+
+            foundation_experiment_id = foundation_model_path.name
+            self.logger.info(f"Foundation Model ID: {foundation_experiment_id}")
+            self.logger.info(
+                "Anomaly detection evaluation completed. Results are available in the testing directory."
+            )
+
+            return True
+
+        except Exception as e:
+            self.logger.error(
+                f"Anomaly detection evaluation failed: {type(e).__name__}: {str(e)}"
+            )
+            self.logger.exception("Detailed traceback:")
+            return False
