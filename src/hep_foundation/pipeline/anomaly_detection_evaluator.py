@@ -952,7 +952,7 @@ class AnomalyDetectionEvaluator:
         try:
             model.model.load_weights(str(model_weights_path)).expect_partial()
             self.logger.info("VAE model loaded successfully.")
-            self.logger.info(model.model.summary())
+            model.model.summary(print_fn=self.logger.info)
         except Exception as e:
             raise RuntimeError(f"Failed to load model weights: {str(e)}")
 
