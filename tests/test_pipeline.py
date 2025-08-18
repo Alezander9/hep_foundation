@@ -75,15 +75,37 @@ EXPECTED_EXPERIMENT_STRUCTURE = {
                 "required": True,
                 "description": "Training history plot",
             },
-            "input_samples.json": {
+            "input_vs_output_distributions.png": {
                 "type": "file",
                 "required": True,
-                "description": "Test input samples (up to 5000) for model analysis",
+                "description": "Comparison plot of model inputs vs outputs",
             },
-            "output_samples.json": {
-                "type": "file",
+            "sample_data": {
+                "type": "directory",
                 "required": True,
-                "description": "Model output samples corresponding to input samples",
+                "description": "Model sample data and histogram files",
+                "contents": {
+                    "input_samples.json": {
+                        "type": "file",
+                        "required": True,
+                        "description": "Test input samples (up to 5000) for model analysis",
+                    },
+                    "output_samples.json": {
+                        "type": "file",
+                        "required": True,
+                        "description": "Model output samples corresponding to input samples",
+                    },
+                    "input_sample_hist_data.json": {
+                        "type": "file",
+                        "required": True,
+                        "description": "Input samples converted to histogram format",
+                    },
+                    "output_sample_hist_data.json": {
+                        "type": "file",
+                        "required": True,
+                        "description": "Output samples converted to histogram format",
+                    },
+                },
             },
         },
     },
