@@ -16,6 +16,10 @@ from hep_foundation.models.variational_autoencoder import (
     VAEConfig,
     VariationalAutoEncoder,
 )
+from hep_foundation.plots.dataset_visualizer import (
+    create_combined_roc_curves_plot_from_json,
+    create_combined_two_panel_loss_plot_from_json,
+)
 
 
 class AnomalyDetectionEvaluator:
@@ -677,83 +681,55 @@ class AnomalyDetectionEvaluator:
             signal_recon_roc_jsons.append(sig_recon_roc_json)
             signal_kl_roc_jsons.append(sig_kl_roc_json)
 
-        # Create combined two-panel loss distribution plots (log and linear scale)
-        try:
-            # Import here to avoid circular imports
-            from hep_foundation.data.dataset_visualizer import (
-                create_combined_two_panel_loss_plot_from_json,
+        if signal_recon_jsons and signal_kl_jsons:
+            recon_json_paths = [bg_recon_json] + signal_recon_jsons
+            kl_json_paths = [bg_kl_json] + signal_kl_jsons
+            legend_labels = ["Background"] + signal_legend_labels
+
+            # Create log scale version
+            combined_plot_path_log = plots_dir / "combined_loss_distributions_log.png"
+            create_combined_two_panel_loss_plot_from_json(
+                recon_json_paths=recon_json_paths,
+                kl_json_paths=kl_json_paths,
+                output_plot_path=str(combined_plot_path_log),
+                legend_labels=legend_labels,
+                title_prefix="Loss Distributions",
+                log_scale=True,
+            )
+            self.logger.info(
+                f"Saved combined two-panel loss distribution plot (log scale) to {combined_plot_path_log}"
             )
 
-            if signal_recon_jsons and signal_kl_jsons:
-                recon_json_paths = [bg_recon_json] + signal_recon_jsons
-                kl_json_paths = [bg_kl_json] + signal_kl_jsons
-                legend_labels = ["Background"] + signal_legend_labels
-
-                # Create log scale version
-                combined_plot_path_log = (
-                    plots_dir / "combined_loss_distributions_log.png"
-                )
-                create_combined_two_panel_loss_plot_from_json(
-                    recon_json_paths=recon_json_paths,
-                    kl_json_paths=kl_json_paths,
-                    output_plot_path=str(combined_plot_path_log),
-                    legend_labels=legend_labels,
-                    title_prefix="Loss Distributions",
-                    log_scale=True,
-                )
-                self.logger.info(
-                    f"Saved combined two-panel loss distribution plot (log scale) to {combined_plot_path_log}"
-                )
-
-                # Create linear scale version
-                combined_plot_path_linear = (
-                    plots_dir / "combined_loss_distributions_linear.png"
-                )
-                create_combined_two_panel_loss_plot_from_json(
-                    recon_json_paths=recon_json_paths,
-                    kl_json_paths=kl_json_paths,
-                    output_plot_path=str(combined_plot_path_linear),
-                    legend_labels=legend_labels,
-                    title_prefix="Loss Distributions",
-                    log_scale=False,
-                )
-                self.logger.info(
-                    f"Saved combined two-panel loss distribution plot (linear scale) to {combined_plot_path_linear}"
-                )
-
-        except ImportError:
-            self.logger.error(
-                "Failed to import create_combined_two_panel_loss_plot_from_json for combined loss plots"
+            # Create linear scale version
+            combined_plot_path_linear = (
+                plots_dir / "combined_loss_distributions_linear.png"
             )
-        except Exception as e:
-            self.logger.error(f"Failed to create combined loss distribution plots: {e}")
+            create_combined_two_panel_loss_plot_from_json(
+                recon_json_paths=recon_json_paths,
+                kl_json_paths=kl_json_paths,
+                output_plot_path=str(combined_plot_path_linear),
+                legend_labels=legend_labels,
+                title_prefix="Loss Distributions",
+                log_scale=False,
+            )
+            self.logger.info(
+                f"Saved combined two-panel loss distribution plot (linear scale) to {combined_plot_path_linear}"
+            )
 
         # Create combined ROC curves plot
-        try:
-            # Import here to avoid circular imports
-            from hep_foundation.data.dataset_visualizer import (
-                create_combined_roc_curves_plot_from_json,
-            )
 
-            if signal_recon_roc_jsons and signal_kl_roc_jsons:
-                combined_roc_plot_path = plots_dir / "combined_roc_curves.png"
-                create_combined_roc_curves_plot_from_json(
-                    recon_roc_json_paths=signal_recon_roc_jsons,
-                    kl_roc_json_paths=signal_kl_roc_jsons,
-                    output_plot_path=str(combined_roc_plot_path),
-                    legend_labels=signal_legend_labels,
-                    title_prefix="ROC Curves",
-                )
-                self.logger.info(
-                    f"Saved combined ROC curves plot to {combined_roc_plot_path}"
-                )
-
-        except ImportError:
-            self.logger.error(
-                "Failed to import create_combined_roc_curves_plot_from_json for ROC curves"
+        if signal_recon_roc_jsons and signal_kl_roc_jsons:
+            combined_roc_plot_path = plots_dir / "combined_roc_curves.png"
+            create_combined_roc_curves_plot_from_json(
+                recon_roc_json_paths=signal_recon_roc_jsons,
+                kl_roc_json_paths=signal_kl_roc_jsons,
+                output_plot_path=str(combined_roc_plot_path),
+                legend_labels=signal_legend_labels,
+                title_prefix="ROC Curves",
             )
-        except Exception as e:
-            self.logger.error(f"Failed to create combined ROC curves plots: {e}")
+            self.logger.info(
+                f"Saved combined ROC curves plot to {combined_roc_plot_path}"
+            )
 
     def run_anomaly_detection_test(self) -> dict:
         """

@@ -14,6 +14,7 @@ from hep_foundation.config.dataset_config import DatasetConfig
 from hep_foundation.config.logging_config import get_logger
 from hep_foundation.data.atlas_file_manager import ATLASFileManager
 from hep_foundation.data.physlite_catalog_processor import PhysliteCatalogProcessor
+from hep_foundation.plots.dataset_visualizer import create_plot_from_hist_data
 from hep_foundation.plots.histogram_manager import HistogramManager
 
 
@@ -618,10 +619,6 @@ class DatasetManager:
                 )
 
                 try:
-                    from hep_foundation.data.dataset_visualizer import (
-                        create_plot_from_hist_data,
-                    )
-
                     create_plot_from_hist_data(
                         hist_data_paths=hist_data_paths_for_plot,
                         output_plot_path=str(comparison_plot_output_path),
@@ -630,10 +627,6 @@ class DatasetManager:
                     )
                     self.logger.info(
                         f"Saved combined comparison plot to {comparison_plot_output_path}"
-                    )
-                except ImportError:
-                    self.logger.error(
-                        "Failed to import create_plot_from_hist_data. Ensure dataset_visualizer is accessible."
                     )
                 except Exception as e_comp_plot:
                     self.logger.error(
