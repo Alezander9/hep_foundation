@@ -690,6 +690,7 @@ class ModelTrainer:
         save_samples: bool = False,
         training_history_dir: Optional[Path] = None,
         max_samples: int = 5000,
+        task_config: Optional[Any] = None,
     ) -> dict[str, float]:
         """Evaluate with enhanced metrics tracking and optional sample saving"""
         try:
@@ -721,7 +722,7 @@ class ModelTrainer:
             # Collect samples if requested
             if save_samples and training_history_dir is not None:
                 self._save_model_samples(
-                    test_dataset, training_history_dir, max_samples
+                    test_dataset, training_history_dir, max_samples, task_config
                 )
 
             # Evaluate and get results
@@ -750,6 +751,7 @@ class ModelTrainer:
         test_dataset: tf.data.Dataset,
         training_history_dir: Path,
         max_samples: int = 5000,
+        task_config: Optional[Any] = None,
     ) -> None:
         """Save input and output samples from model evaluation."""
         self.logger.info(
@@ -789,8 +791,11 @@ class ModelTrainer:
             "format_version": "1.0",
         }
 
-        # Save both files
-        training_history_dir.mkdir(parents=True, exist_ok=True)
+        # Create sample_data directory for organization
+        sample_data_dir = training_history_dir / "sample_data"
+        sample_data_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save sample files in the sample_data subdirectory
         for sample_type, samples, filename in [
             ("test_inputs", input_samples, "input_samples.json"),
             ("test_outputs", output_samples, "output_samples.json"),
@@ -799,7 +804,79 @@ class ModelTrainer:
                 "metadata": {**metadata_base, "sample_type": sample_type},
                 "samples": samples,
             }
-            file_path = training_history_dir / filename
+            file_path = sample_data_dir / filename
             with open(file_path, "w") as f:
                 json.dump(data, f, indent=2)
             self.logger.info(f"Saved {sample_type} to: {file_path}")
+
+        # Convert samples to histogram data and create comparison plot if task_config is available
+        if task_config is not None and input_samples and output_samples:
+            try:
+                from hep_foundation.data.physlite_utilities import (
+                    convert_flat_samples_to_hist_data,
+                )
+                from hep_foundation.plots.dataset_visualizer import (
+                    create_plot_from_hist_data,
+                )
+                from hep_foundation.plots.histogram_manager import HistogramManager
+
+                histogram_manager = HistogramManager()
+
+                # Convert input samples to histogram data
+                input_hist_data = convert_flat_samples_to_hist_data(
+                    input_samples, task_config.input, "model_inputs"
+                )
+                input_hist_file = sample_data_dir / "input_sample_hist_data.json"
+                histogram_manager.save_to_hist_file(
+                    data=input_hist_data,
+                    file_path=input_hist_file,
+                    nbins=50,
+                    use_percentile_file=True,
+                    update_percentile_file=True,
+                    use_percentile_cache=True,
+                )
+
+                # Convert output samples to histogram data
+                output_hist_data = convert_flat_samples_to_hist_data(
+                    output_samples, task_config.input, "model_outputs"
+                )
+                output_hist_file = sample_data_dir / "output_sample_hist_data.json"
+                histogram_manager.save_to_hist_file(
+                    data=output_hist_data,
+                    file_path=output_hist_file,
+                    nbins=50,
+                    use_percentile_file=True,
+                    update_percentile_file=True,
+                    use_percentile_cache=True,
+                )
+
+                self.logger.info(f"Saved histogram data to: {sample_data_dir}")
+
+                # Create input vs output comparison plot
+                comparison_plot_file = (
+                    training_history_dir / "input_vs_output_distributions.png"
+                )
+                create_plot_from_hist_data(
+                    hist_data_paths=[input_hist_file, output_hist_file],
+                    output_plot_path=comparison_plot_file,
+                    legend_labels=["Model Inputs", "Model Outputs"],
+                    title_prefix="Input vs Output",
+                )
+                self.logger.info(
+                    f"Created input vs output comparison plot: {comparison_plot_file}"
+                )
+
+            except Exception as e:
+                self.logger.warning(
+                    f"Failed to create histogram data and plots from samples: {e}"
+                )
+                # Don't fail the entire evaluation if histogram creation fails
+        else:
+            if task_config is None:
+                self.logger.info(
+                    "Task config not provided - skipping histogram data creation from samples"
+                )
+            else:
+                self.logger.info(
+                    "Input or output samples missing - skipping comparison plot creation"
+                )
