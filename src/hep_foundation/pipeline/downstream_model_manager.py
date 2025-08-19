@@ -296,10 +296,28 @@ class DownstreamModelManager:
 
         # Evaluate on test set
         test_metrics = trainer.evaluate(test_dataset)
-        test_loss = test_metrics.get("test_loss", test_metrics.get("test_mse", 0.0))
+
+        # Extract test loss - try common metric names, raise error if not found
+        if "test_loss" in test_metrics:
+            test_loss = test_metrics["test_loss"]
+        elif "test_mse" in test_metrics:
+            test_loss = test_metrics["test_mse"]
+        else:
+            available_metrics = list(test_metrics.keys())
+            raise ValueError(
+                f"Expected metric 'test_loss' or 'test_mse' not found in evaluation results. "
+                f"Available metrics: {available_metrics}"
+            )
 
         if return_accuracy:
-            test_accuracy = test_metrics.get("test_binary_accuracy", 0.0)
+            # Extract test accuracy - raise error if not found for classification tasks
+            if "test_binary_accuracy" not in test_metrics:
+                available_metrics = list(test_metrics.keys())
+                raise ValueError(
+                    f"Expected metric 'test_binary_accuracy' not found in evaluation results. "
+                    f"Available metrics: {available_metrics}"
+                )
+            test_accuracy = test_metrics["test_binary_accuracy"]
             self.logger.info(
                 f"{model_name} with {data_size} events - Test Loss: {test_loss:.6f}, Test Accuracy: {test_accuracy:.6f}"
             )
