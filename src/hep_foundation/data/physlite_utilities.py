@@ -699,6 +699,22 @@ def convert_flat_samples_to_hist_data(
         logger.warning("No flat samples provided")
         return {}
 
+    # Load custom label mapping for nice plot names
+    custom_label_map = {}
+    try:
+        # Use importlib.resources for robust path finding within the package
+        with (
+            resources.files("hep_foundation")
+            .joinpath("data/physlite_plot_labels.json")
+            .open("rt") as f
+        ):
+            custom_label_map = json.load(f)
+        logger.debug("Loaded custom plot labels for model sample histogram data")
+    except Exception as e:
+        logger.warning(
+            f"Could not load custom plot labels for model samples: {e}. Using raw branch names."
+        )
+
     # Calculate expected feature size from task config
     expected_size = task_config_input.get_total_feature_size()
 
@@ -728,11 +744,14 @@ def convert_flat_samples_to_hist_data(
                 branch_name = selector.branch.name
                 scalar_value = float(flat_array[current_pos])
 
-                # Initialize list for this branch if first sample
-                if branch_name not in hist_data:
-                    hist_data[branch_name] = []
+                # Apply custom label mapping if available
+                display_name = custom_label_map.get(branch_name, branch_name)
 
-                hist_data[branch_name].append(scalar_value)
+                # Initialize list for this branch if first sample
+                if display_name not in hist_data:
+                    hist_data[display_name] = []
+
+                hist_data[display_name].append(scalar_value)
                 current_pos += 1
 
         # --- Extract aggregated features (they come after scalars) ---
@@ -816,39 +835,26 @@ def convert_flat_samples_to_hist_data(
                             # For histogram purposes, we'll keep a few representative zeros
                             branch_values = branch_values[: min(3, len(branch_values))]
 
+                        # Apply custom label mapping if available
+                        display_name = custom_label_map.get(branch_name, branch_name)
+
                         # Initialize list for this branch if first sample
-                        if branch_name not in hist_data:
-                            hist_data[branch_name] = []
+                        if display_name not in hist_data:
+                            hist_data[display_name] = []
 
                         # Add all values from this track sequence
-                        hist_data[branch_name].extend(branch_values.tolist())
+                        hist_data[display_name].extend(branch_values.tolist())
 
                         feature_start_idx += k
 
-                # Add track count for this aggregator
-                if aggregator_size > 0:
-                    # Count non-zero tracks (approximate, since we removed padding)
-                    track_count_key = f"aggregator_{aggregator_idx}_num_tracks"
-                    if track_count_key not in hist_data:
-                        hist_data[track_count_key] = []
-
-                    # Estimate number of real tracks by checking non-zero rows
-                    if aggregator_size > 0:
-                        aggregator_matrix = flat_array[
-                            current_pos - aggregator_size : current_pos
-                        ].reshape(aggregator.max_length, features_per_track)
-
-                        # Count rows that are not all zero
-                        non_zero_rows = np.any(aggregator_matrix != 0, axis=1)
-                        num_tracks = int(np.sum(non_zero_rows))
-                    else:
-                        num_tracks = 0
-
-                    hist_data[track_count_key].append(num_tracks)
+                # Note: We skip adding track count for model input/output plots since ML models
+                # don't have perfect zeros to designate zero padding, making track counting unreliable
 
     # Log summary
-    logger.info(f"Reconstructed histogram data with {len(hist_data)} branch features:")
-    for branch_name, values in hist_data.items():
-        logger.info(f"  {branch_name}: {len(values)} values")
+    logger.info(
+        f"Reconstructed histogram data with {len(hist_data)} features (with nice labels applied):"
+    )
+    for display_name, values in hist_data.items():
+        logger.info(f"  {display_name}: {len(values)} values")
 
     return hist_data
