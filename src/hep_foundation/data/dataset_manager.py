@@ -171,7 +171,7 @@ class DatasetManager:
         with open(dataset_config_path, "w") as f:
             yaml.dump(clean_config, f, default_flow_style=False, indent=2)
 
-        # Prepare metadata info
+        # Prepare metadata info with enhanced structure
         dataset_info = {
             "dataset_id": dataset_id,
             "creation_date": str(datetime.now()),
@@ -375,9 +375,14 @@ class DatasetManager:
                     }
                 )
 
-            # Save configuration with processing stats
+            # Save configuration with enhanced processing stats
+            enhanced_processing_stats = {
+                "dataset_type": "background",
+                "total_stats": total_stats,
+                "background_stats": total_stats,  # For consistency with signal format
+            }
             dataset_config_path, dataset_info_path = self.save_dataset_config(
-                dataset_id, dataset_config, total_stats
+                dataset_id, dataset_config, enhanced_processing_stats
             )
             self.logger.info(
                 f"Saved configuration with processing stats to: {dataset_config_path} and {dataset_info_path}"
@@ -457,6 +462,16 @@ class DatasetManager:
                 first_event_logged = False
                 collected_signal_hist_data_paths = []
                 collected_signal_legend_labels = []
+
+                # Track per-signal statistics
+                signal_processing_stats = {}
+                total_stats = {
+                    "total_events": 0,
+                    "processed_events": 0,
+                    "total_features": 0,
+                    "processing_time": 0.0,
+                }
+
                 for signal_key in dataset_config.signal_keys:
                     self.logger.info(f"Processing signal type: {signal_key}")
 
@@ -526,6 +541,18 @@ class DatasetManager:
                         sample_data_dir=signal_sample_data_dir,
                     )
                     first_event_logged = True
+
+                    # Store per-signal statistics
+                    signal_processing_stats[signal_key] = self._convert_numpy_types(
+                        stats
+                    )
+
+                    # Add to total statistics
+                    total_stats["total_events"] += stats["total_events"]
+                    total_stats["processed_events"] += stats["processed_events"]
+                    total_stats["total_features"] += stats["total_features"]
+                    total_stats["processing_time"] += stats["processing_time"]
+
                     if not inputs:
                         self.logger.warning(
                             f"No events passed selection for {signal_key}"
@@ -591,6 +618,16 @@ class DatasetManager:
                 f.attrs.update(
                     {"dataset_id": dataset_id, "creation_date": str(datetime.now())}
                 )
+
+            # Save configuration with enhanced processing stats
+            enhanced_processing_stats = {
+                "dataset_type": "signal",
+                "total_stats": total_stats,
+                "signal_stats": signal_processing_stats,
+            }
+            dataset_config_path, dataset_info_path = self.save_dataset_config(
+                dataset_id, dataset_config, enhanced_processing_stats
+            )
 
             # --- Create combined comparison plot AFTER all signals are processed ---
             if (
