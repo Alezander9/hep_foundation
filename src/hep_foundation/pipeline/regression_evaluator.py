@@ -1,21 +1,21 @@
+import json
 from pathlib import Path
-from typing import Optional
 
+import h5py
 import numpy as np
 import tensorflow as tf
 
+from hep_foundation.config.config_loader import PipelineConfigLoader
 from hep_foundation.config.dataset_config import DatasetConfig
 from hep_foundation.config.logging_config import get_logger
 from hep_foundation.config.task_config import TaskConfig
 from hep_foundation.config.training_config import TrainingConfig
 from hep_foundation.data.dataset_manager import DatasetManager
-from hep_foundation.models.base_model import CustomKerasModelWrapper
 from hep_foundation.models.dnn_predictor import DNNPredictorConfig
-from hep_foundation.models.model_factory import ModelFactory
+from hep_foundation.pipeline.downstream_model_manager import DownstreamModelManager
 from hep_foundation.pipeline.foundation_pipeline_utils import log_evaluation_summary
 from hep_foundation.plots.foundation_plot_manager import FoundationPlotManager
 from hep_foundation.plots.histogram_manager import HistogramManager
-from hep_foundation.training.model_trainer import ModelTrainer
 
 
 class RegressionEvaluator:
@@ -45,6 +45,7 @@ class RegressionEvaluator:
         self.foundation_plot_manager = (
             foundation_plot_manager or FoundationPlotManager()
         )
+        self.downstream_manager = DownstreamModelManager(logger=self.logger)
 
     def _denormalize_labels(
         self,
@@ -140,41 +141,17 @@ class RegressionEvaluator:
 
             # 1. Load full dataset with regression labels
             self.logger.info("Loading full dataset with regression labels...")
-            # train_dataset, val_dataset, test_dataset = data_manager.load_atlas_datasets(
-            #     dataset_config=dataset_config,
-            #     validation_fraction=dataset_config.validation_fraction,
-            #     test_fraction=dataset_config.test_fraction,
-            #     batch_size=dnn_training_config.batch_size,
-            #     shuffle_buffer=dataset_config.shuffle_buffer,
-            #     include_labels=True,
-            #     delete_catalogs=delete_catalogs,
-            # )
-            # Start of testing code
-            signal_datasets_splits = data_manager.load_signal_datasets(
+            train_dataset, val_dataset, test_dataset = data_manager.load_atlas_datasets(
                 dataset_config=dataset_config,
                 validation_fraction=dataset_config.validation_fraction,
                 test_fraction=dataset_config.test_fraction,
                 batch_size=dnn_training_config.batch_size,
                 shuffle_buffer=dataset_config.shuffle_buffer,
                 include_labels=True,
-                split=True,  # Enable splitting
+                delete_catalogs=delete_catalogs,
             )
-            signal_key = "wprime_taunu"
-
-            if signal_key not in signal_datasets_splits:
-                self.logger.error(f"Signal dataset '{signal_key}' not found")
-                return False
-
-            train_dataset, val_dataset, test_dataset = signal_datasets_splits[
-                signal_key
-            ]
-
-            # End of testing code
 
             # Access normalization parameters for denormalizing labels
-            import json
-
-            import h5py
 
             dataset_path = data_manager.get_current_dataset_path()
             norm_params = None
@@ -226,8 +203,6 @@ class RegressionEvaluator:
                 )
                 return False
 
-            from hep_foundation.config.config_loader import PipelineConfigLoader
-
             config_loader = PipelineConfigLoader()
             vae_config_data = config_loader.load_config(vae_config_path)
 
@@ -275,302 +250,6 @@ class RegressionEvaluator:
 
             original_input_shape = (task_config.input.get_total_feature_size(),)
             regression_output_shape = (task_config.labels[0].get_total_feature_size(),)
-
-            # Helper function to build regressor head
-            def build_regressor_head(name_suffix: str) -> tf.keras.Model:
-                # Create a copy of the DNN config with modified architecture
-                import copy
-
-                regressor_config = copy.deepcopy(dnn_model_config)
-
-                # Update the architecture for the regressor head
-                regressor_config.architecture.update(
-                    {
-                        "input_shape": (latent_dim,),
-                        "output_shape": regression_output_shape,
-                        "name": f"{dnn_model_config.architecture.get('name', 'regressor')}_{name_suffix}",
-                    }
-                )
-
-                regressor_model_wrapper = ModelFactory.create_model(
-                    model_type="dnn_predictor", config=regressor_config
-                )
-                regressor_model_wrapper.build()
-                return regressor_model_wrapper.model
-
-            # Helper function to create subset dataset
-            def create_subset_dataset(dataset, num_events, data_size_index=None):
-                """Create a subset of the dataset with exactly num_events events"""
-                # Convert to unbatched dataset to count events precisely
-                unbatched = dataset.unbatch()
-                # Use different seed for each data size to ensure independent sampling
-                # This prevents smaller datasets from being strict subsets of larger ones
-                seed = 42 + (data_size_index or 0)  # Different seed for each data size
-                shuffled = unbatched.shuffle(buffer_size=50000, seed=seed)
-                subset = shuffled.take(num_events)
-                # Rebatch with original batch size
-                return subset.batch(dnn_training_config.batch_size)
-
-            # Helper function to train and evaluate a model for a specific data size
-            def train_and_evaluate_for_size(
-                model_name: str,
-                combined_keras_model: tf.keras.Model,
-                train_subset,
-                data_size: int,
-                save_training_history: bool = False,
-                label_distributions_dir_param: Optional[Path] = None,
-                label_variable_names_param: Optional[list] = None,
-            ):
-                self.logger.info(
-                    f"Training {model_name} model with {data_size} events..."
-                )
-
-                # Wrap the Keras model with CustomKerasModelWrapper for ModelTrainer
-                wrapped_model_for_trainer = CustomKerasModelWrapper(
-                    combined_keras_model, name=model_name
-                )
-
-                trainer_config_dict = {
-                    "batch_size": dnn_training_config.batch_size,
-                    "epochs": fixed_epochs,  # Use fixed epochs for fair comparison
-                    "learning_rate": dnn_training_config.learning_rate,
-                    "early_stopping": {
-                        "patience": fixed_epochs + 1,
-                        "min_delta": 0,
-                    },  # Disable early stopping
-                }
-
-                trainer = ModelTrainer(
-                    model=wrapped_model_for_trainer, training_config=trainer_config_dict
-                )
-
-                # Train with reduced verbosity for evaluation
-                _ = trainer.train(  # Unused return value
-                    dataset=train_subset,
-                    validation_data=val_dataset,
-                    callbacks=[],  # No callbacks for speed
-                    training_history_dir=regression_dir / "training_histories"
-                    if save_training_history
-                    else None,
-                    model_name=model_name,
-                    dataset_id=f"regression_eval_{data_size}",
-                    experiment_id="regression_evaluation",
-                    verbose_training="minimal",  # Reduce verbosity for evaluation models
-                    save_individual_history=True,  # Save individual files for comparison plots
-                )
-
-                # Evaluate on test set
-                test_metrics = trainer.evaluate(test_dataset)
-                test_loss = test_metrics.get(
-                    "test_loss", test_metrics.get("test_mse", 0.0)
-                )
-
-                # Generate predictions and save histogram data (1000 samples)
-                try:
-                    self.logger.info(
-                        f"Generating predictions for {model_name} model..."
-                    )
-                    predictions_list = []
-                    actual_labels_list = []
-                    samples_collected = 0
-                    max_prediction_samples = 1000
-
-                    for batch in test_dataset:
-                        if samples_collected >= max_prediction_samples:
-                            break
-
-                        if isinstance(batch, tuple) and len(batch) == 2:
-                            features_batch, labels_batch = batch
-
-                            predictions_batch = combined_keras_model.predict(
-                                features_batch, verbose=0
-                            )
-
-                            # Extract actual labels from batch structure
-                            if isinstance(labels_batch, tuple):
-                                actual_labels_batch = None
-                                for item in labels_batch:
-                                    if hasattr(item, "shape") and hasattr(
-                                        item, "numpy"
-                                    ):
-                                        actual_labels_batch = item.numpy()
-                                        break
-                                if (
-                                    actual_labels_batch is None
-                                    and len(labels_batch) > 0
-                                ):
-                                    actual_labels_batch = labels_batch[0]
-                            else:
-                                actual_labels_batch = (
-                                    labels_batch.numpy()
-                                    if hasattr(labels_batch, "numpy")
-                                    else labels_batch
-                                )
-
-                            # Remove extra dimensions if present
-                            if (
-                                hasattr(actual_labels_batch, "ndim")
-                                and actual_labels_batch.ndim == 3
-                                and actual_labels_batch.shape[0] == 1
-                            ):
-                                actual_labels_batch = actual_labels_batch.squeeze(
-                                    axis=0
-                                )
-
-                            # Convert to numpy and collect samples
-                            predictions_np = np.array(predictions_batch)
-                            actual_labels_np = np.array(actual_labels_batch)
-
-                            batch_size = predictions_np.shape[0]
-                            samples_to_take = min(
-                                batch_size, max_prediction_samples - samples_collected
-                            )
-
-                            predictions_list.extend(predictions_np[:samples_to_take])
-                            actual_labels_list.extend(
-                                actual_labels_np[:samples_to_take]
-                            )
-                            samples_collected += samples_to_take
-
-                    # Convert to numpy arrays
-                    predictions_array = np.array(predictions_list)
-                    actual_labels_array = np.array(actual_labels_list)
-
-                    if len(predictions_array) > 0 and len(actual_labels_array) > 0:
-                        # Denormalize labels and predictions to get original scale/units
-                        if norm_params is not None:
-                            try:
-                                self.logger.info(
-                                    f"Denormalizing labels and predictions for {model_name}..."
-                                )
-                                predictions_array = self._denormalize_labels(
-                                    predictions_array, norm_params, label_config_index=0
-                                )
-                                actual_labels_array = self._denormalize_labels(
-                                    actual_labels_array,
-                                    norm_params,
-                                    label_config_index=0,
-                                )
-                                self.logger.info(
-                                    f"Successfully denormalized {len(predictions_array)} prediction/label pairs"
-                                )
-                            except Exception as e:
-                                self.logger.warning(
-                                    f"Failed to denormalize labels for {model_name}: {e}. Using normalized values."
-                                )
-                        else:
-                            self.logger.info(
-                                f"No normalization parameters available for {model_name}, using normalized values"
-                            )
-                        # Get label variable names (required for histogram keys)
-                        if not label_variable_names_param:
-                            self.logger.warning(
-                                "No label variable names found, using generic names"
-                            )
-                            num_vars = (
-                                predictions_array.shape[1]
-                                if predictions_array.ndim > 1
-                                else 1
-                            )
-                            current_label_names = [
-                                f"variable_{i}" for i in range(num_vars)
-                            ]
-                        else:
-                            current_label_names = label_variable_names_param
-
-                        # Create data dictionaries for histogram manager (simplified - no special cases)
-                        predictions_data = {}
-                        differences_data = {}
-
-                        for i, var_name in enumerate(current_label_names):
-                            if i < predictions_array.shape[1]:
-                                predictions_data[var_name] = predictions_array[
-                                    :, i
-                                ].tolist()
-                                differences_data[var_name] = (
-                                    predictions_array[:, i] - actual_labels_array[:, i]
-                                ).tolist()
-
-                        # Prepare save directory and file paths
-                        hist_save_dir = label_distributions_dir_param or (
-                            regression_dir / "label_distributions"
-                        )
-                        hist_save_dir.mkdir(parents=True, exist_ok=True)
-
-                        data_size_label = (
-                            f"{data_size // 1000}k"
-                            if data_size >= 1000
-                            else str(data_size)
-                        )
-
-                        # Extract base model name to avoid duplication (model_name already contains data_size_label)
-                        # e.g., "From_Scratch_1k" -> "From_Scratch"
-                        base_model_name = (
-                            model_name.rsplit("_", 1)[0]
-                            if "_" in model_name
-                            else model_name
-                        )
-
-                        # Save predictions histogram using HistogramManager
-                        pred_file_path = (
-                            hist_save_dir
-                            / f"{base_model_name}_{data_size_label}_predictions_hist.json"
-                        )
-                        self.histogram_manager.save_to_hist_file(
-                            data=predictions_data,
-                            file_path=pred_file_path,
-                            nbins=50,
-                            use_percentile_file=False,
-                            update_percentile_file=False,
-                            use_percentile_cache=True,  # Use cache for coordinated bins
-                        )
-
-                        # Save differences histogram using HistogramManager with separate percentile index
-                        diff_file_path = (
-                            hist_save_dir
-                            / f"{base_model_name}_{data_size_label}_diff_predictions_hist.json"
-                        )
-                        self.histogram_manager.save_to_hist_file(
-                            data=differences_data,
-                            file_path=diff_file_path,
-                            nbins=50,
-                            use_percentile_file=False,
-                            update_percentile_file=False,
-                            use_percentile_cache=False,  # Don't use coordinated bins for differences
-                        )
-
-                        self.logger.info(
-                            f"Saved histogram data for {model_name} with {len(predictions_array)} samples"
-                        )
-                    else:
-                        self.logger.warning(
-                            f"No predictions or labels generated for {model_name}"
-                        )
-
-                except Exception as e:
-                    self.logger.error(
-                        f"Failed to generate predictions for {model_name}: {str(e)}"
-                    )
-
-                self.logger.info(
-                    f"{model_name} with {data_size} events - Test Loss: {test_loss:.6f}"
-                )
-                return test_loss
-
-            # Store results for plotting
-            results = {
-                "data_sizes": data_sizes,
-                "From_Scratch": [],
-                "Fine_Tuned": [],
-                "Fixed_Encoder": [],
-            }
-
-            # Save training histories for all data sizes (not just the largest)
-            if not data_sizes:
-                self.logger.warning(
-                    "No valid data sizes remain after filtering. Using total training events as fallback."
-                )
-                # Will save histories for all data sizes processed
 
             # 3. Set up label distributions directory
             label_distributions_dir = regression_dir / "label_distributions"
@@ -683,49 +362,31 @@ class RegressionEvaluator:
                 )
                 self.logger.info("Saved actual test labels histogram")
 
-            # 4. Run experiments for each data size
+            # 4. Run data efficiency study for regression
+            from hep_foundation.pipeline.downstream_model_manager import (
+                DownstreamModelType,
+            )
+
+            # Initialize results dictionary
+            results = {
+                "data_sizes": data_sizes,
+                "From_Scratch": [],
+                "Fine_Tuned": [],
+                "Fixed_Encoder": [],
+            }
+
+            # Run experiments for each data size
             for data_size_index, data_size in enumerate(data_sizes):
                 self.logger.info(f"{'=' * 50}")
                 self.logger.info(f"Training with {data_size} events")
                 self.logger.info(f"{'=' * 50}")
 
                 # Create subset of training data
-                train_subset = create_subset_dataset(
-                    train_dataset, data_size, data_size_index
-                )
-
-                # --- Model 1: From Scratch ---
-                self.logger.info("Building From Scratch model...")
-                scratch_encoder_layers = []
-                for units in encoder_hidden_layers:
-                    scratch_encoder_layers.append(
-                        tf.keras.layers.Dense(units, activation=encoder_activation)
-                    )
-                scratch_encoder_layers.append(
-                    tf.keras.layers.Dense(latent_dim, name="scratch_latent_space")
-                )
-
-                scratch_encoder_part = tf.keras.Sequential(
-                    scratch_encoder_layers, name="scratch_encoder"
-                )
-                scratch_regressor_dnn = build_regressor_head("from_scratch")
-
-                model_inputs = tf.keras.Input(
-                    shape=original_input_shape, name="input_features"
-                )
-                encoded_scratch = scratch_encoder_part(model_inputs)
-                predictions_scratch = scratch_regressor_dnn(encoded_scratch)
-                model_from_scratch = tf.keras.Model(
-                    inputs=model_inputs,
-                    outputs=predictions_scratch,
-                    name="Regressor_From_Scratch",
-                )
-
-                # Save training history for all data sizes
-                should_save_history = True
-
-                self.logger.info(
-                    f"Enabling training history saving for all models with {data_size} events"
+                train_subset = self.downstream_manager.create_subset_dataset(
+                    train_dataset,
+                    data_size,
+                    dnn_training_config.batch_size,
+                    data_size_index,
                 )
 
                 # Format data size for better labeling
@@ -733,110 +394,226 @@ class RegressionEvaluator:
                     f"{data_size // 1000}k" if data_size >= 1000 else str(data_size)
                 )
 
-                scratch_loss = train_and_evaluate_for_size(
-                    f"From_Scratch_{data_size_label}",
-                    model_from_scratch,
-                    train_subset,
-                    data_size,
-                    save_training_history=should_save_history,
-                    label_distributions_dir_param=label_distributions_dir,
-                    label_variable_names_param=label_variable_names,
-                )
-                results["From_Scratch"].append(scratch_loss)
+                # Test all three model types
+                model_types = [
+                    DownstreamModelType.FROM_SCRATCH,
+                    DownstreamModelType.FINE_TUNED,
+                    DownstreamModelType.FIXED_ENCODER,
+                ]
 
-                # --- Model 2: Fine-Tuned ---
-                self.logger.info("Building Fine-Tuned model...")
-                # Create a functional copy of the deterministic encoder for fine-tuning
-                # We can't use clone_model with QKeras layers, so we'll create a new model
-                # that uses the same layers but allows training
-                fine_tuned_input = tf.keras.Input(
-                    shape=original_input_shape, name="fine_tuned_input"
-                )
-                fine_tuned_encoded = pretrained_deterministic_encoder(fine_tuned_input)
+                for model_type in model_types:
+                    self.logger.info(
+                        f"Building {model_type.value.replace('_', ' ').title()} model..."
+                    )
 
-                # Add dtype casting to ensure compatibility with QKeras layers
-                # Mixed precision may cause the encoder to output float16, but QKeras expects float32
-                fine_tuned_encoded_cast = tf.keras.layers.Lambda(
-                    lambda x: tf.cast(x, tf.float32), name="dtype_cast_fine_tuned"
-                )(fine_tuned_encoded)
+                    # Create the model
+                    model = self.downstream_manager.create_downstream_model(
+                        model_type=model_type,
+                        input_shape=original_input_shape,
+                        output_shape=regression_output_shape,
+                        pretrained_encoder=pretrained_deterministic_encoder,
+                        encoder_hidden_layers=encoder_hidden_layers,
+                        latent_dim=latent_dim,
+                        dnn_model_config=dnn_model_config,
+                        encoder_activation=encoder_activation,
+                        output_activation=None,
+                    )
 
-                fine_tuned_encoder_part = tf.keras.Model(
-                    inputs=fine_tuned_input,
-                    outputs=fine_tuned_encoded_cast,
-                    name="fine_tuned_pretrained_encoder",
-                )
-                fine_tuned_encoder_part.trainable = True
+                    # Train and evaluate
+                    model_name = f"{model_type.value.replace('_', ' ').title().replace(' ', '_')}_{data_size_label}"
 
-                fine_tuned_regressor_dnn = build_regressor_head("fine_tuned")
+                    training_config = {
+                        "batch_size": dnn_training_config.batch_size,
+                        "learning_rate": dnn_training_config.learning_rate,
+                    }
 
-                model_inputs_ft = tf.keras.Input(
-                    shape=original_input_shape, name="input_features_ft"
-                )
-                encoded_ft = fine_tuned_encoder_part(model_inputs_ft)
-                predictions_ft = fine_tuned_regressor_dnn(encoded_ft)
-                model_fine_tuned = tf.keras.Model(
-                    inputs=model_inputs_ft,
-                    outputs=predictions_ft,
-                    name="Regressor_Fine_Tuned",
-                )
+                    evaluation_results = (
+                        self.downstream_manager.train_and_evaluate_model(
+                            model=model,
+                            model_name=model_name,
+                            train_dataset=train_subset,
+                            val_dataset=val_dataset,
+                            test_dataset=test_dataset,
+                            training_config=training_config,
+                            fixed_epochs=fixed_epochs,
+                            data_size=data_size,
+                            output_dir=regression_dir,
+                            save_training_history=True,
+                            return_accuracy=False,
+                        )
+                    )
 
-                finetuned_loss = train_and_evaluate_for_size(
-                    f"Fine_Tuned_{data_size_label}",
-                    model_fine_tuned,
-                    train_subset,
-                    data_size,
-                    save_training_history=should_save_history,
-                    label_distributions_dir_param=label_distributions_dir,
-                    label_variable_names_param=label_variable_names,
-                )
-                results["Fine_Tuned"].append(finetuned_loss)
+                    # Store results
+                    test_loss = evaluation_results[0]
+                    model_key = (
+                        model_type.value.replace("_", " ").title().replace(" ", "_")
+                    )
+                    results[model_key].append(test_loss)
 
-                # --- Model 3: Fixed Encoder ---
-                self.logger.info("Building Fixed Encoder model...")
-                # Create a functional copy of the deterministic encoder for fixed use
-                # We can't use clone_model with QKeras layers, so we'll create a new model
-                # that uses the same layers but freezes them
-                fixed_input = tf.keras.Input(
-                    shape=original_input_shape, name="fixed_input"
-                )
-                fixed_encoded = pretrained_deterministic_encoder(fixed_input)
+                    # Generate predictions and save histogram data for regression
+                    if label_variable_names:
+                        try:
+                            self.logger.info(
+                                f"Generating predictions for {model_name} model..."
+                            )
+                            predictions_list = []
+                            actual_labels_list = []
+                            samples_collected = 0
+                            max_prediction_samples = 1000
 
-                # Add dtype casting to ensure compatibility with QKeras layers
-                # Mixed precision may cause the encoder to output float16, but QKeras expects float32
-                fixed_encoded_cast = tf.keras.layers.Lambda(
-                    lambda x: tf.cast(x, tf.float32), name="dtype_cast_fixed"
-                )(fixed_encoded)
+                            for batch in test_dataset:
+                                if samples_collected >= max_prediction_samples:
+                                    break
 
-                fixed_encoder_part = tf.keras.Model(
-                    inputs=fixed_input,
-                    outputs=fixed_encoded_cast,
-                    name="fixed_pretrained_encoder",
-                )
-                fixed_encoder_part.trainable = False
+                                if isinstance(batch, tuple) and len(batch) == 2:
+                                    features_batch, labels_batch = batch
 
-                fixed_regressor_dnn = build_regressor_head("fixed_encoder")
+                                    predictions_batch = model.predict(
+                                        features_batch, verbose=0
+                                    )
 
-                model_inputs_fx = tf.keras.Input(
-                    shape=original_input_shape, name="input_features_fx"
-                )
-                encoded_fx = fixed_encoder_part(model_inputs_fx)
-                predictions_fx = fixed_regressor_dnn(encoded_fx)
-                model_fixed = tf.keras.Model(
-                    inputs=model_inputs_fx,
-                    outputs=predictions_fx,
-                    name="Regressor_Fixed_Encoder",
-                )
+                                    # Extract actual labels from batch structure
+                                    if isinstance(labels_batch, tuple):
+                                        actual_labels_batch = None
+                                        for item in labels_batch:
+                                            if hasattr(item, "shape") and hasattr(
+                                                item, "numpy"
+                                            ):
+                                                actual_labels_batch = item.numpy()
+                                                break
+                                        if (
+                                            actual_labels_batch is None
+                                            and len(labels_batch) > 0
+                                        ):
+                                            actual_labels_batch = labels_batch[0]
+                                    else:
+                                        actual_labels_batch = (
+                                            labels_batch.numpy()
+                                            if hasattr(labels_batch, "numpy")
+                                            else labels_batch
+                                        )
 
-                fixed_loss = train_and_evaluate_for_size(
-                    f"Fixed_Encoder_{data_size_label}",
-                    model_fixed,
-                    train_subset,
-                    data_size,
-                    save_training_history=should_save_history,
-                    label_distributions_dir_param=label_distributions_dir,
-                    label_variable_names_param=label_variable_names,
-                )
-                results["Fixed_Encoder"].append(fixed_loss)
+                                    # Remove extra dimensions if present
+                                    if (
+                                        hasattr(actual_labels_batch, "ndim")
+                                        and actual_labels_batch.ndim == 3
+                                        and actual_labels_batch.shape[0] == 1
+                                    ):
+                                        actual_labels_batch = (
+                                            actual_labels_batch.squeeze(axis=0)
+                                        )
+
+                                    # Convert to numpy and collect samples
+                                    predictions_np = np.array(predictions_batch)
+                                    actual_labels_np = np.array(actual_labels_batch)
+
+                                    batch_size = predictions_np.shape[0]
+                                    samples_to_take = min(
+                                        batch_size,
+                                        max_prediction_samples - samples_collected,
+                                    )
+
+                                    predictions_list.extend(
+                                        predictions_np[:samples_to_take]
+                                    )
+                                    actual_labels_list.extend(
+                                        actual_labels_np[:samples_to_take]
+                                    )
+                                    samples_collected += samples_to_take
+
+                            # Convert to numpy arrays
+                            predictions_array = np.array(predictions_list)
+                            actual_labels_array = np.array(actual_labels_list)
+
+                            if (
+                                len(predictions_array) > 0
+                                and len(actual_labels_array) > 0
+                            ):
+                                # Denormalize labels and predictions to get original scale/units
+                                if norm_params is not None:
+                                    try:
+                                        self.logger.info(
+                                            f"Denormalizing labels and predictions for {model_name}..."
+                                        )
+                                        predictions_array = self._denormalize_labels(
+                                            predictions_array,
+                                            norm_params,
+                                            label_config_index=0,
+                                        )
+                                        actual_labels_array = self._denormalize_labels(
+                                            actual_labels_array,
+                                            norm_params,
+                                            label_config_index=0,
+                                        )
+                                        self.logger.info(
+                                            f"Successfully denormalized {len(predictions_array)} prediction/label pairs"
+                                        )
+                                    except Exception as e:
+                                        self.logger.warning(
+                                            f"Failed to denormalize labels for {model_name}: {e}. Using normalized values."
+                                        )
+
+                                # Create data dictionaries for histogram manager
+                                predictions_data = {}
+                                differences_data = {}
+
+                                for i, var_name in enumerate(label_variable_names):
+                                    if i < predictions_array.shape[1]:
+                                        predictions_data[var_name] = predictions_array[
+                                            :, i
+                                        ].tolist()
+                                        differences_data[var_name] = (
+                                            predictions_array[:, i]
+                                            - actual_labels_array[:, i]
+                                        ).tolist()
+
+                                # Extract base model name to avoid duplication
+                                base_model_name = (
+                                    model_name.rsplit("_", 1)[0]
+                                    if "_" in model_name
+                                    else model_name
+                                )
+
+                                # Save predictions histogram
+                                pred_file_path = (
+                                    label_distributions_dir
+                                    / f"{base_model_name}_{data_size_label}_predictions_hist.json"
+                                )
+                                self.histogram_manager.save_to_hist_file(
+                                    data=predictions_data,
+                                    file_path=pred_file_path,
+                                    nbins=50,
+                                    use_percentile_file=False,
+                                    update_percentile_file=False,
+                                    use_percentile_cache=True,
+                                )
+
+                                # Save differences histogram
+                                diff_file_path = (
+                                    label_distributions_dir
+                                    / f"{base_model_name}_{data_size_label}_diff_predictions_hist.json"
+                                )
+                                self.histogram_manager.save_to_hist_file(
+                                    data=differences_data,
+                                    file_path=diff_file_path,
+                                    nbins=50,
+                                    use_percentile_file=False,
+                                    update_percentile_file=False,
+                                    use_percentile_cache=False,
+                                )
+
+                                self.logger.info(
+                                    f"Saved histogram data for {model_name} with {len(predictions_array)} samples"
+                                )
+                            else:
+                                self.logger.warning(
+                                    f"No predictions or labels generated for {model_name}"
+                                )
+
+                        except Exception as e:
+                            self.logger.error(
+                                f"Failed to generate predictions for {model_name}: {str(e)}"
+                            )
 
             # 5. Save results and create plots
             self.logger.info("Creating data efficiency plot...")
