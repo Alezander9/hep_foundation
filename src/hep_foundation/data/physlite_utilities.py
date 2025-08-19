@@ -7,6 +7,8 @@ from typing import Any, Optional
 import awkward as ak
 import numpy as np
 
+from hep_foundation.config.logging_config import get_logger
+
 # Import functions to check and retrieve derived feature definitions
 from hep_foundation.data.physlite_derived_features import (
     get_derived_feature,
@@ -667,3 +669,186 @@ class PhysliteSelectionConfig:
             total_size += aggregator_size
 
         return total_size
+
+
+def convert_flat_samples_to_hist_data(
+    flat_samples: list[list[float]],
+    task_config_input: "PhysliteSelectionConfig",
+    sample_type: str = "model_samples",
+) -> dict[str, list[float]]:
+    """
+    Convert flattened model input/output samples back to histogram-compatible format.
+
+    This function reverses the flattening process used in model training to reconstruct
+    the original feature structure for histogram visualization.
+
+    Args:
+        flat_samples: List of flattened sample arrays (each sample is a list of floats)
+        task_config_input: The input task configuration used to create the original features
+        sample_type: Type of samples for metadata ("model_inputs", "model_outputs", etc.)
+
+    Returns:
+        Dictionary mapping branch names to lists of values suitable for histogram creation
+
+    Raises:
+        ValueError: If flat samples don't match expected feature size from task config
+    """
+    logger = get_logger(__name__)
+
+    if not flat_samples:
+        logger.warning("No flat samples provided")
+        return {}
+
+    # Calculate expected feature size from task config
+    expected_size = task_config_input.get_total_feature_size()
+
+    # Validate sample sizes
+    sample_size = len(flat_samples[0]) if flat_samples else 0
+    if sample_size != expected_size:
+        raise ValueError(
+            f"Sample size {sample_size} doesn't match expected feature size {expected_size} "
+            f"from task config '{task_config_input.name}'"
+        )
+
+    logger.info(
+        f"Converting {len(flat_samples)} flattened {sample_type} samples "
+        f"(size {sample_size}) back to histogram format using config '{task_config_input.name}'"
+    )
+
+    hist_data = {}
+
+    # Process each sample
+    for flat_sample in flat_samples:
+        flat_array = np.array(flat_sample)
+        current_pos = 0
+
+        # --- Extract scalar features first (they come first in the flattened array) ---
+        if task_config_input.feature_selectors:
+            for selector in task_config_input.feature_selectors:
+                branch_name = selector.branch.name
+                scalar_value = float(flat_array[current_pos])
+
+                # Initialize list for this branch if first sample
+                if branch_name not in hist_data:
+                    hist_data[branch_name] = []
+
+                hist_data[branch_name].append(scalar_value)
+                current_pos += 1
+
+        # --- Extract aggregated features (they come after scalars) ---
+        if task_config_input.feature_array_aggregators:
+            for aggregator_idx, aggregator in enumerate(
+                task_config_input.feature_array_aggregators
+            ):
+                # Calculate features per track for this aggregator
+                features_per_track = 0
+                branch_names_ordered = []
+
+                # Get ordered branch names and calculate features per track
+                for selector in aggregator.input_branches:
+                    branch_name = selector.branch.name
+                    branch_names_ordered.append(branch_name)
+
+                    # Determine feature multiplicity (k) from branch shape
+                    branch_shape = selector.branch.get_shape()
+                    k = 1  # Default to 1 feature
+                    if branch_shape is not None:
+                        if len(branch_shape) == 1:
+                            k = 1
+                        elif len(branch_shape) == 2:
+                            k = branch_shape[1]
+                            if k <= 0:
+                                k = 1
+                        else:
+                            k = 1
+
+                    features_per_track += k
+
+                # Extract aggregator data
+                aggregator_size = aggregator.max_length * features_per_track
+                aggregator_data = flat_array[
+                    current_pos : current_pos + aggregator_size
+                ]
+                current_pos += aggregator_size
+
+                # Reshape to (max_length, features_per_track)
+                if aggregator_size > 0:
+                    aggregator_matrix = aggregator_data.reshape(
+                        aggregator.max_length, features_per_track
+                    )
+
+                    # Split into individual branch features
+                    feature_start_idx = 0
+                    for selector in aggregator.input_branches:
+                        branch_name = selector.branch.name
+
+                        # Determine feature multiplicity for this branch
+                        branch_shape = selector.branch.get_shape()
+                        k = 1
+                        if branch_shape is not None:
+                            if len(branch_shape) == 2:
+                                k = branch_shape[1]
+                                if k <= 0:
+                                    k = 1
+
+                        # Extract features for this branch
+                        branch_features = aggregator_matrix[
+                            :, feature_start_idx : feature_start_idx + k
+                        ]
+
+                        # Flatten the branch features (all tracks for this branch)
+                        if k == 1:
+                            branch_values = branch_features.flatten()
+                        else:
+                            # For multi-dimensional features, keep all values
+                            branch_values = branch_features.flatten()
+
+                        # Remove zero-padding (values that are exactly 0.0 at the end)
+                        # This assumes zero-padding, which may not always be correct for actual zero values
+                        # For safety, only remove trailing zeros
+                        non_zero_mask = branch_values != 0.0
+                        if np.any(non_zero_mask):
+                            # Find last non-zero index
+                            last_nonzero = np.where(non_zero_mask)[0][-1]
+                            branch_values = branch_values[: last_nonzero + 1]
+                        else:
+                            # All zeros - this could be legitimate data or all padding
+                            # For histogram purposes, we'll keep a few representative zeros
+                            branch_values = branch_values[: min(3, len(branch_values))]
+
+                        # Initialize list for this branch if first sample
+                        if branch_name not in hist_data:
+                            hist_data[branch_name] = []
+
+                        # Add all values from this track sequence
+                        hist_data[branch_name].extend(branch_values.tolist())
+
+                        feature_start_idx += k
+
+                # Add track count for this aggregator
+                if aggregator_size > 0:
+                    # Count non-zero tracks (approximate, since we removed padding)
+                    track_count_key = f"aggregator_{aggregator_idx}_num_tracks"
+                    if track_count_key not in hist_data:
+                        hist_data[track_count_key] = []
+
+                    # Estimate number of real tracks by checking non-zero rows
+                    if aggregator_size > 0:
+                        aggregator_matrix = flat_array[
+                            current_pos - aggregator_size : current_pos
+                        ].reshape(aggregator.max_length, features_per_track)
+
+                        # Count rows that are not all zero
+                        non_zero_rows = np.any(aggregator_matrix != 0, axis=1)
+                        num_tracks = int(np.sum(non_zero_rows))
+                    else:
+                        num_tracks = 0
+
+                    hist_data[track_count_key].append(num_tracks)
+
+    # Log summary
+    logger.info(f"Reconstructed histogram data with {len(hist_data)} branch features:")
+    for branch_name, values in hist_data.items():
+        logger.info(f"  {branch_name}: {len(values)} values")
+
+    return hist_data

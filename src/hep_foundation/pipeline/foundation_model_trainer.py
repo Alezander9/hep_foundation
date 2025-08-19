@@ -247,6 +247,7 @@ class FoundationModelTrainer:
                     / experiment_id
                     / "training",
                     max_samples=5000,
+                    task_config=task_config,
                 )
 
                 # Save consolidated training history with all metrics (train/val/test)
