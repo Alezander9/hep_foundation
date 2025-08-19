@@ -9,8 +9,11 @@ import tensorflow as tf
 from tensorflow.keras import mixed_precision
 
 from hep_foundation.config.logging_config import get_logger
+from hep_foundation.data.physlite_utilities import convert_flat_samples_to_hist_data
 from hep_foundation.models.base_model import BaseModel
 from hep_foundation.models.dnn_predictor import DNNPredictor
+from hep_foundation.plots.dataset_visualizer import create_plot_from_hist_data
+from hep_foundation.plots.histogram_manager import HistogramManager
 
 
 class TrainingProgressCallback(tf.keras.callbacks.Callback):
@@ -812,14 +815,6 @@ class ModelTrainer:
         # Convert samples to histogram data and create comparison plot if task_config is available
         if task_config is not None and input_samples and output_samples:
             try:
-                from hep_foundation.data.physlite_utilities import (
-                    convert_flat_samples_to_hist_data,
-                )
-                from hep_foundation.plots.dataset_visualizer import (
-                    create_plot_from_hist_data,
-                )
-                from hep_foundation.plots.histogram_manager import HistogramManager
-
                 histogram_manager = HistogramManager()
 
                 # Convert input samples to histogram data

@@ -21,6 +21,30 @@ def format_event_count(event_count: int) -> str:
         return str(event_count)
 
 
+def get_event_count_from_dataset_info(hist_data_path: Path) -> Optional[int]:
+    """Extract event count from dataset metadata file."""
+    try:
+        dataset_info_path = hist_data_path.parent.parent / "_dataset_info.json"
+        with open(dataset_info_path) as f:
+            data = json.load(f)
+        return data["processing_stats"]["total_stats"]["processed_events"]
+    except (FileNotFoundError, KeyError):
+        return None
+
+
+def get_specific_signal_event_count(
+    hist_data_path: Path, signal_name: str
+) -> Optional[int]:
+    """Extract event count for a specific signal from dataset metadata."""
+    try:
+        dataset_info_path = hist_data_path.parent.parent / "_dataset_info.json"
+        with open(dataset_info_path) as f:
+            data = json.load(f)
+        return data["processing_stats"]["signal_stats"][signal_name]["processed_events"]
+    except (FileNotFoundError, KeyError):
+        return None
+
+
 def create_plot_from_hist_data(
     hist_data_paths: Union[list[Union[str, Path]], Union[str, Path]],
     output_plot_path: Union[str, Path],
@@ -70,13 +94,11 @@ def create_plot_from_hist_data(
                     continue
                 loaded_hist_data_list.append(data)
                 if legend_labels:
-                    # Use provided legend labels but enhance with event count if available
+                    # Use provided legend labels but enhance with event count
                     base_label = legend_labels[idx]
-                    if (
-                        "_metadata" in data
-                        and "total_processed_events" in data["_metadata"]
-                    ):
-                        event_count = data["_metadata"]["total_processed_events"]
+                    event_count = get_event_count_from_dataset_info(hist_file_path)
+
+                    if event_count is not None:
                         event_str = format_event_count(event_count)
                         enhanced_label = f"{base_label} ({event_str} events)"
                     else:
@@ -85,11 +107,22 @@ def create_plot_from_hist_data(
                 else:
                     # Auto-generate labels with event counts
                     base_name = hist_file_path.stem.replace("_hist_data", "")
-                    if (
-                        "_metadata" in data
-                        and "total_processed_events" in data["_metadata"]
-                    ):
-                        event_count = data["_metadata"]["total_processed_events"]
+
+                    # Extract signal name for specific signal counts
+                    signal_name = None
+                    if "_dataset_features" in base_name:
+                        signal_name = base_name.replace("_dataset_features", "")
+                        if signal_name in ["atlas", "background"]:
+                            signal_name = None
+
+                    # Get event count (signal-specific or general)
+                    event_count = (
+                        get_specific_signal_event_count(hist_file_path, signal_name)
+                        if signal_name
+                        else get_event_count_from_dataset_info(hist_file_path)
+                    )
+
+                    if event_count is not None:
                         event_str = format_event_count(event_count)
                         enhanced_label = f"{base_name} ({event_str} events)"
                     else:
