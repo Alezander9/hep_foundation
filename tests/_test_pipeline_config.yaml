@@ -10,8 +10,8 @@ dataset:
   run_numbers: ["00298967", "00311481"]  # Just 2 runs for speed
   signal_keys: ["zprime_tt", "wprime_taunu"]  # 2 signals for testing (removed "DMA", "leptoquark", "dm_4top_scalar")
   catalog_limit: 2  # Very small for testing
-  event_limit: 2000  # Limit events per catalog for faster testing
-  signal_event_limit: 5000  # Higher limit for signal data to allow full sample collection
+  event_limit: 200  # Limit events per catalog for faster testing
+  signal_event_limit: 500  # Higher limit for signal data to allow full sample collection
   validation_fraction: 0.1
   test_fraction: 0.1
   shuffle_buffer: 100  # Small buffer
@@ -117,8 +117,8 @@ training:
 
 # Evaluation Settings - minimal for testing
 evaluation:
-  regression_data_sizes: [500, 1000]  # Small sizes for testing
-  signal_classification_data_sizes: [500, 1000]  # Small sizes for testing
+  regression_data_sizes: [100, 500, 1000]  # Small sizes for testing
+  signal_classification_data_sizes: [100, 500, 1000]  # Small sizes for testing
   fixed_epochs: 3  # Very few epochs for testing
 
 # Pipeline Settings - test-specific paths

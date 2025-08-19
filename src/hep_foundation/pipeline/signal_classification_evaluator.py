@@ -1,20 +1,18 @@
 import json
 from pathlib import Path
-from typing import Optional
 
 import tensorflow as tf
 
+from hep_foundation.config.config_loader import PipelineConfigLoader
 from hep_foundation.config.dataset_config import DatasetConfig
 from hep_foundation.config.logging_config import get_logger
 from hep_foundation.config.task_config import TaskConfig
 from hep_foundation.config.training_config import TrainingConfig
 from hep_foundation.data.dataset_manager import DatasetManager
-from hep_foundation.models.base_model import CustomKerasModelWrapper
 from hep_foundation.models.dnn_predictor import DNNPredictorConfig
-from hep_foundation.models.model_factory import ModelFactory
+from hep_foundation.pipeline.downstream_model_manager import DownstreamModelManager
 from hep_foundation.pipeline.foundation_pipeline_utils import log_evaluation_summary
 from hep_foundation.plots.foundation_plot_manager import FoundationPlotManager
-from hep_foundation.training.model_trainer import ModelTrainer
 
 
 class SignalClassificationEvaluator:
@@ -41,6 +39,7 @@ class SignalClassificationEvaluator:
         self.foundation_plot_manager = (
             foundation_plot_manager or FoundationPlotManager()
         )
+        self.downstream_manager = DownstreamModelManager(logger=self.logger)
 
     def evaluate_signal_classification(
         self,
@@ -217,8 +216,6 @@ class SignalClassificationEvaluator:
                 )
                 return False
 
-            from hep_foundation.config.config_loader import PipelineConfigLoader
-
             config_loader = PipelineConfigLoader()
             vae_config_data = config_loader.load_config(vae_config_path)
 
@@ -262,101 +259,12 @@ class SignalClassificationEvaluator:
             original_input_shape = (task_config.input.get_total_feature_size(),)
             classification_output_shape = (1,)  # Binary classification
 
-            # Helper function to build classifier head
-            def build_classifier_head(name_suffix: str) -> tf.keras.Model:
-                # Create a copy of the DNN config with modified architecture for binary classification
-                import copy
+            # 5. Run data efficiency study for signal classification
+            from hep_foundation.pipeline.downstream_model_manager import (
+                DownstreamModelType,
+            )
 
-                classifier_config = copy.deepcopy(dnn_model_config)
-
-                # Update the architecture for the classifier head
-                classifier_config.architecture.update(
-                    {
-                        "input_shape": (latent_dim,),
-                        "output_shape": classification_output_shape,
-                        "output_activation": "sigmoid",  # Binary classification
-                        "name": f"{dnn_model_config.architecture.get('name', 'classifier')}_{name_suffix}",
-                    }
-                )
-
-                classifier_model_wrapper = ModelFactory.create_model(
-                    model_type="dnn_predictor", config=classifier_config
-                )
-                classifier_model_wrapper.build()
-                return classifier_model_wrapper.model
-
-            # Helper function to create subset dataset
-            def create_subset_dataset(dataset, num_events, data_size_index=None):
-                """Create a subset of the dataset with exactly num_events events"""
-                # Convert to unbatched dataset to count events precisely
-                unbatched = dataset.unbatch()
-                # Use different seed for each data size to ensure independent sampling
-                # This prevents smaller datasets from being strict subsets of larger ones
-                seed = 42 + (data_size_index or 0)  # Different seed for each data size
-                shuffled = unbatched.shuffle(buffer_size=50000, seed=seed)
-                subset = shuffled.take(num_events)
-                # Rebatch with original batch size
-                return subset.batch(dnn_training_config.batch_size)
-
-            # Helper function to train and evaluate a model for a specific data size
-            def train_and_evaluate_for_size(
-                model_name: str,
-                combined_keras_model: tf.keras.Model,
-                train_subset,
-                data_size: int,
-                save_training_history: bool = False,
-                label_distributions_dir_param: Optional[Path] = None,
-                label_variable_names_param: Optional[list] = None,
-            ):
-                self.logger.info(
-                    f"Training {model_name} model with {data_size} events..."
-                )
-
-                # Wrap the Keras model with CustomKerasModelWrapper for ModelTrainer
-                wrapped_model_for_trainer = CustomKerasModelWrapper(
-                    combined_keras_model, name=model_name
-                )
-
-                trainer_config_dict = {
-                    "batch_size": dnn_training_config.batch_size,
-                    "epochs": fixed_epochs,  # Use fixed epochs for fair comparison
-                    "learning_rate": dnn_training_config.learning_rate,
-                    "early_stopping": {
-                        "patience": fixed_epochs + 1,
-                        "min_delta": 0,
-                    },  # Disable early stopping
-                }
-
-                trainer = ModelTrainer(
-                    model=wrapped_model_for_trainer, training_config=trainer_config_dict
-                )
-
-                # Train with reduced verbosity for evaluation
-                _ = trainer.train(  # Unused return value
-                    dataset=train_subset,
-                    validation_data=labeled_val_dataset,
-                    callbacks=[],  # No callbacks for speed
-                    training_history_dir=classification_dir / "training_histories"
-                    if save_training_history
-                    else None,
-                    model_name=model_name,
-                    dataset_id=f"signal_classification_eval_{data_size}",
-                    experiment_id="signal_classification_evaluation",
-                    verbose_training="minimal",  # Reduce verbosity for evaluation models
-                    save_individual_history=True,  # Save individual files for comparison plots
-                )
-
-                # Evaluate on test set
-                test_metrics = trainer.evaluate(labeled_test_dataset)
-                test_loss = test_metrics.get("test_loss", 0.0)
-                test_accuracy = test_metrics.get("test_binary_accuracy", 0.0)
-
-                self.logger.info(
-                    f"{model_name} with {data_size} events - Test Loss: {test_loss:.6f}, Test Accuracy: {test_accuracy:.6f}"
-                )
-                return test_loss, test_accuracy
-
-            # Store results for plotting
+            # Initialize results dictionary for classification (with accuracy)
             results = {
                 "data_sizes": data_sizes,
                 "From_Scratch_loss": [],
@@ -367,21 +275,18 @@ class SignalClassificationEvaluator:
                 "Fixed_Encoder_accuracy": [],
             }
 
-            # 5. Run experiments for each data size
+            # Run experiments for each data size
             for data_size_index, data_size in enumerate(data_sizes):
                 self.logger.info(f"{'=' * 50}")
                 self.logger.info(f"Training with {data_size} events")
                 self.logger.info(f"{'=' * 50}")
 
                 # Create subset of training data
-                train_subset = create_subset_dataset(
-                    labeled_train_dataset, data_size, data_size_index
-                )
-
-                # Enable training history saving for all data sizes
-                should_save_history = True
-                self.logger.info(
-                    f"Enabling training history saving for all models with {data_size} events"
+                train_subset = self.downstream_manager.create_subset_dataset(
+                    labeled_train_dataset,
+                    data_size,
+                    dnn_training_config.batch_size,
+                    data_size_index,
                 )
 
                 # Format data size for better labeling
@@ -389,135 +294,62 @@ class SignalClassificationEvaluator:
                     f"{data_size // 1000}k" if data_size >= 1000 else str(data_size)
                 )
 
-                # --- Model 1: From Scratch ---
-                self.logger.info("Building From Scratch model...")
-                scratch_encoder_layers = []
-                for units in encoder_hidden_layers:
-                    scratch_encoder_layers.append(
-                        tf.keras.layers.Dense(units, activation=encoder_activation)
+                # Test all three model types
+                model_types = [
+                    DownstreamModelType.FROM_SCRATCH,
+                    DownstreamModelType.FINE_TUNED,
+                    DownstreamModelType.FIXED_ENCODER,
+                ]
+
+                for model_type in model_types:
+                    self.logger.info(
+                        f"Building {model_type.value.replace('_', ' ').title()} model..."
                     )
-                scratch_encoder_layers.append(
-                    tf.keras.layers.Dense(latent_dim, name="scratch_latent_space")
-                )
 
-                scratch_encoder_part = tf.keras.Sequential(
-                    scratch_encoder_layers, name="scratch_encoder"
-                )
-                scratch_classifier_dnn = build_classifier_head("from_scratch")
+                    # Create the model
+                    model = self.downstream_manager.create_downstream_model(
+                        model_type=model_type,
+                        input_shape=original_input_shape,
+                        output_shape=classification_output_shape,
+                        pretrained_encoder=pretrained_deterministic_encoder,
+                        encoder_hidden_layers=encoder_hidden_layers,
+                        latent_dim=latent_dim,
+                        dnn_model_config=dnn_model_config,
+                        encoder_activation=encoder_activation,
+                        output_activation="sigmoid",
+                    )
 
-                model_inputs = tf.keras.Input(
-                    shape=original_input_shape, name="input_features"
-                )
-                encoded_scratch = scratch_encoder_part(model_inputs)
-                predictions_scratch = scratch_classifier_dnn(encoded_scratch)
-                model_from_scratch = tf.keras.Model(
-                    inputs=model_inputs,
-                    outputs=predictions_scratch,
-                    name="Classifier_From_Scratch",
-                )
+                    # Train and evaluate
+                    model_name = f"{model_type.value.replace('_', ' ').title().replace(' ', '_')}_{data_size_label}"
 
-                scratch_loss, scratch_accuracy = train_and_evaluate_for_size(
-                    f"From_Scratch_{data_size_label}",
-                    model_from_scratch,
-                    train_subset,
-                    data_size,
-                    save_training_history=should_save_history,
-                    label_distributions_dir_param=None,  # Signal classification doesn't need label distribution analysis
-                    label_variable_names_param=None,  # Signal classification uses binary labels
-                )
-                results["From_Scratch_loss"].append(scratch_loss)
-                results["From_Scratch_accuracy"].append(scratch_accuracy)
+                    training_config = {
+                        "batch_size": dnn_training_config.batch_size,
+                        "learning_rate": dnn_training_config.learning_rate,
+                    }
 
-                # --- Model 2: Fine-Tuned ---
-                self.logger.info("Building Fine-Tuned model...")
-                fine_tuned_input = tf.keras.Input(
-                    shape=original_input_shape, name="fine_tuned_input"
-                )
-                fine_tuned_encoded = pretrained_deterministic_encoder(fine_tuned_input)
+                    evaluation_results = (
+                        self.downstream_manager.train_and_evaluate_model(
+                            model=model,
+                            model_name=model_name,
+                            train_dataset=train_subset,
+                            val_dataset=labeled_val_dataset,
+                            test_dataset=labeled_test_dataset,
+                            training_config=training_config,
+                            fixed_epochs=fixed_epochs,
+                            data_size=data_size,
+                            output_dir=classification_dir,
+                            save_training_history=True,
+                            return_accuracy=True,
+                        )
+                    )
 
-                # Add dtype casting to ensure compatibility with QKeras layers
-                # Mixed precision may cause the encoder to output float16, but QKeras expects float32
-                fine_tuned_encoded_cast = tf.keras.layers.Lambda(
-                    lambda x: tf.cast(x, tf.float32),
-                    name="dtype_cast_fine_tuned_classifier",
-                )(fine_tuned_encoded)
-
-                fine_tuned_encoder_part = tf.keras.Model(
-                    inputs=fine_tuned_input,
-                    outputs=fine_tuned_encoded_cast,
-                    name="fine_tuned_pretrained_encoder",
-                )
-                fine_tuned_encoder_part.trainable = True
-
-                fine_tuned_classifier_dnn = build_classifier_head("fine_tuned")
-
-                model_inputs_ft = tf.keras.Input(
-                    shape=original_input_shape, name="input_features_ft"
-                )
-                encoded_ft = fine_tuned_encoder_part(model_inputs_ft)
-                predictions_ft = fine_tuned_classifier_dnn(encoded_ft)
-                model_fine_tuned = tf.keras.Model(
-                    inputs=model_inputs_ft,
-                    outputs=predictions_ft,
-                    name="Classifier_Fine_Tuned",
-                )
-
-                finetuned_loss, finetuned_accuracy = train_and_evaluate_for_size(
-                    f"Fine_Tuned_{data_size_label}",
-                    model_fine_tuned,
-                    train_subset,
-                    data_size,
-                    save_training_history=should_save_history,
-                    label_distributions_dir_param=None,  # Signal classification doesn't need label distribution analysis
-                    label_variable_names_param=None,  # Signal classification uses binary labels
-                )
-                results["Fine_Tuned_loss"].append(finetuned_loss)
-                results["Fine_Tuned_accuracy"].append(finetuned_accuracy)
-
-                # --- Model 3: Fixed Encoder ---
-                self.logger.info("Building Fixed Encoder model...")
-                fixed_input = tf.keras.Input(
-                    shape=original_input_shape, name="fixed_input"
-                )
-                fixed_encoded = pretrained_deterministic_encoder(fixed_input)
-
-                # Add dtype casting to ensure compatibility with QKeras layers
-                # Mixed precision may cause the encoder to output float16, but QKeras expects float32
-                fixed_encoded_cast = tf.keras.layers.Lambda(
-                    lambda x: tf.cast(x, tf.float32), name="dtype_cast_fixed_classifier"
-                )(fixed_encoded)
-
-                fixed_encoder_part = tf.keras.Model(
-                    inputs=fixed_input,
-                    outputs=fixed_encoded_cast,
-                    name="fixed_pretrained_encoder",
-                )
-                fixed_encoder_part.trainable = False
-
-                fixed_classifier_dnn = build_classifier_head("fixed_encoder")
-
-                model_inputs_fx = tf.keras.Input(
-                    shape=original_input_shape, name="input_features_fx"
-                )
-                encoded_fx = fixed_encoder_part(model_inputs_fx)
-                predictions_fx = fixed_classifier_dnn(encoded_fx)
-                model_fixed = tf.keras.Model(
-                    inputs=model_inputs_fx,
-                    outputs=predictions_fx,
-                    name="Classifier_Fixed_Encoder",
-                )
-
-                fixed_loss, fixed_accuracy = train_and_evaluate_for_size(
-                    f"Fixed_Encoder_{data_size_label}",
-                    model_fixed,
-                    train_subset,
-                    data_size,
-                    save_training_history=should_save_history,
-                    label_distributions_dir_param=None,  # Signal classification doesn't need label distribution analysis
-                    label_variable_names_param=None,  # Signal classification uses binary labels
-                )
-                results["Fixed_Encoder_loss"].append(fixed_loss)
-                results["Fixed_Encoder_accuracy"].append(fixed_accuracy)
+                    # Store results
+                    test_loss, test_accuracy = evaluation_results
+                    model_key = (
+                        model_type.value.replace("_", " ").title().replace(" ", "_")
+                    )
+                    results[f"{model_key}_loss"].append(test_loss)
+                    results[f"{model_key}_accuracy"].append(test_accuracy)
 
             # 6. Save results and create plots
             self.logger.info("Creating data efficiency plots...")
