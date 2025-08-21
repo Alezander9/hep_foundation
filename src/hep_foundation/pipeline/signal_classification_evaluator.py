@@ -219,7 +219,15 @@ class SignalClassificationEvaluator:
             config_loader = PipelineConfigLoader()
             vae_config_data = config_loader.load_config(vae_config_path)
 
-            if "models" in vae_config_data and "vae" in vae_config_data["models"]:
+            if "foundation_model_training" in vae_config_data:
+                foundation_config = vae_config_data["foundation_model_training"]
+                original_vae_model_config = {
+                    "model_type": foundation_config["model"]["model_type"],
+                    "architecture": foundation_config["model"]["architecture"],
+                    "hyperparameters": foundation_config["model"]["hyperparameters"],
+                }
+            elif "models" in vae_config_data and "vae" in vae_config_data["models"]:
+                # Backward compatibility with old format
                 original_vae_model_config = vae_config_data["models"]["vae"]
             else:
                 self.logger.error(

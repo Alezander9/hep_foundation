@@ -14,14 +14,22 @@ from typing import Any, Union
 
 import yaml
 
+from hep_foundation.config.anomaly_detection_evaluation_config import (
+    AnomalyDetectionEvaluationConfig,
+)
 from hep_foundation.config.dataset_config import DatasetConfig
-from hep_foundation.config.evaluation_config import EvaluationConfig
+from hep_foundation.config.foundation_model_training_config import (
+    FoundationModelTrainingConfig,
+)
 from hep_foundation.config.logging_config import get_logger
+from hep_foundation.config.regression_evaluation_config import (
+    RegressionEvaluationConfig,
+)
+from hep_foundation.config.signal_classification_evaluation_config import (
+    SignalClassificationEvaluationConfig,
+)
 from hep_foundation.config.task_config import TaskConfig
-from hep_foundation.config.training_config import TrainingConfig
 from hep_foundation.data.atlas_data import get_run_numbers
-from hep_foundation.models.dnn_predictor import DNNPredictorConfig
-from hep_foundation.models.variational_autoencoder import VAEConfig
 
 
 class PipelineConfigLoader:
@@ -123,22 +131,26 @@ class PipelineConfigLoader:
             config_dict["dataset"], task_config
         )
 
-        # Create TrainingConfigs
-        vae_training_config = self._create_training_config(
-            config_dict["training"]["vae"]
-        )
-        dnn_training_config = self._create_training_config(
-            config_dict["training"]["dnn"]
+        # Create stage-specific configs
+        foundation_model_training_config = FoundationModelTrainingConfig.from_dict(
+            config_dict["foundation_model_training"]
         )
 
-        # Create EvaluationConfig
-        evaluation_config = self._create_evaluation_config(
-            config_dict.get("evaluation", {})
+        anomaly_detection_evaluation_config = (
+            AnomalyDetectionEvaluationConfig.from_dict(
+                config_dict["anomaly_detection_evaluation"]
+            )
         )
 
-        # Create Model Configs
-        vae_model_config = self._create_vae_model_config(config_dict["models"]["vae"])
-        dnn_model_config = self._create_dnn_model_config(config_dict["models"]["dnn"])
+        regression_evaluation_config = RegressionEvaluationConfig.from_dict(
+            config_dict["regression_evaluation"]
+        )
+
+        signal_classification_evaluation_config = (
+            SignalClassificationEvaluationConfig.from_dict(
+                config_dict["signal_classification_evaluation"]
+            )
+        )
 
         # Extract other settings
         pipeline_settings = config_dict.get("pipeline", {})
@@ -146,11 +158,10 @@ class PipelineConfigLoader:
         return {
             "task_config": task_config,
             "dataset_config": dataset_config,
-            "vae_model_config": vae_model_config,
-            "dnn_model_config": dnn_model_config,
-            "vae_training_config": vae_training_config,
-            "dnn_training_config": dnn_training_config,
-            "evaluation_config": evaluation_config,
+            "foundation_model_training_config": foundation_model_training_config,
+            "anomaly_detection_evaluation_config": anomaly_detection_evaluation_config,
+            "regression_evaluation_config": regression_evaluation_config,
+            "signal_classification_evaluation_config": signal_classification_evaluation_config,
             "pipeline_settings": pipeline_settings,
             "metadata": {
                 "name": config_dict.get("name", "unnamed_experiment"),
@@ -191,50 +202,6 @@ class PipelineConfigLoader:
                 "hdf5_compression", True
             ),  # Default to True for backward compatibility
             task_config=task_config,
-        )
-
-    def _create_training_config(self, training_dict: dict[str, Any]) -> TrainingConfig:
-        """Create TrainingConfig from dictionary."""
-        early_stopping = training_dict.get("early_stopping", {})
-
-        return TrainingConfig(
-            batch_size=training_dict["batch_size"],
-            learning_rate=training_dict["learning_rate"],
-            epochs=training_dict["epochs"],
-            early_stopping_patience=early_stopping.get("patience", 10),
-            early_stopping_min_delta=early_stopping.get("min_delta", 1e-4),
-            plot_training=training_dict.get("plot_training", True),
-        )
-
-    def _create_evaluation_config(
-        self, evaluation_dict: dict[str, Any]
-    ) -> EvaluationConfig:
-        """Create EvaluationConfig from dictionary."""
-        regression_data_sizes = evaluation_dict.get(
-            "regression_data_sizes", [1000, 2000, 5000]
-        )
-        return EvaluationConfig(
-            regression_data_sizes=regression_data_sizes,
-            signal_classification_data_sizes=evaluation_dict.get(
-                "signal_classification_data_sizes", regression_data_sizes
-            ),
-            fixed_epochs=evaluation_dict.get("fixed_epochs", 10),
-        )
-
-    def _create_vae_model_config(self, vae_dict: dict[str, Any]) -> VAEConfig:
-        """Create VAEConfig from dictionary."""
-        return VAEConfig(
-            model_type=vae_dict["model_type"],
-            architecture=vae_dict["architecture"],
-            hyperparameters=vae_dict["hyperparameters"],
-        )
-
-    def _create_dnn_model_config(self, dnn_dict: dict[str, Any]) -> DNNPredictorConfig:
-        """Create DNNPredictorConfig from dictionary."""
-        return DNNPredictorConfig(
-            model_type=dnn_dict["model_type"],
-            architecture=dnn_dict["architecture"],
-            hyperparameters=dnn_dict["hyperparameters"],
         )
 
 

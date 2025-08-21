@@ -608,11 +608,15 @@ def create_test_configs():
     # Return the config objects and source file path
     return {
         "dataset_config": config["dataset_config"],
-        "vae_model_config": config["vae_model_config"],
-        "dnn_model_config": config["dnn_model_config"],
-        "vae_training_config": config["vae_training_config"],
-        "dnn_training_config": config["dnn_training_config"],
         "task_config": config["task_config"],
+        "foundation_model_training_config": config["foundation_model_training_config"],
+        "anomaly_detection_evaluation_config": config[
+            "anomaly_detection_evaluation_config"
+        ],
+        "regression_evaluation_config": config["regression_evaluation_config"],
+        "signal_classification_evaluation_config": config[
+            "signal_classification_evaluation_config"
+        ],
         "source_config_file": config.get("_source_config_file"),
     }
 
@@ -696,10 +700,8 @@ def test_run_full_pipeline(pipeline, test_configs, experiment_dir):
     """Test the full pipeline (train → regression → anomaly)"""
 
     try:
-        # Load test config to get evaluation settings
+        # Load test config path for source tracking
         test_config_path = Path(__file__).parent / "_test_pipeline_config.yaml"
-        full_config = load_pipeline_config(test_config_path)
-        evaluation_config = full_config.get("evaluation_config")
 
         # Set the source config file for reproducibility
         if test_configs.get("source_config_file"):
@@ -708,15 +710,17 @@ def test_run_full_pipeline(pipeline, test_configs, experiment_dir):
         result = pipeline.run_full_pipeline(
             dataset_config=test_configs["dataset_config"],
             task_config=test_configs["task_config"],
-            vae_model_config=test_configs["vae_model_config"],
-            dnn_model_config=test_configs["dnn_model_config"],
-            vae_training_config=test_configs["vae_training_config"],
-            dnn_training_config=test_configs["dnn_training_config"],
+            foundation_model_training_config=test_configs[
+                "foundation_model_training_config"
+            ],
+            anomaly_detection_evaluation_config=test_configs[
+                "anomaly_detection_evaluation_config"
+            ],
+            regression_evaluation_config=test_configs["regression_evaluation_config"],
+            signal_classification_evaluation_config=test_configs[
+                "signal_classification_evaluation_config"
+            ],
             delete_catalogs=False,
-            data_sizes=evaluation_config.regression_data_sizes
-            if evaluation_config
-            else [1000, 2000],
-            fixed_epochs=evaluation_config.fixed_epochs if evaluation_config else 3,
         )
 
         assert result is True, "Pipeline should return True on success"

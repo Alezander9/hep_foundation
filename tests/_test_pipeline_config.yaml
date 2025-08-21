@@ -65,9 +65,11 @@ task:
         min_length: 1
         max_length: 1
 
-# Model Configurations - minimal for fast testing
-models:
-  vae:
+# One config for each pipeline stage
+
+foundation_model_training:
+  run_stage: true
+  model:
     model_type: "variational_autoencoder"
     architecture:
       latent_dim: 2  # Very small latent space for testing
@@ -82,8 +84,25 @@ models:
         cycle_low: 0.01
         cycle_high: 0.05
         cycle_period: 2
+  training:
+    batch_size: 1024
+    learning_rate: 0.001  # Learning rate for VAE training
+    epochs: 10  # Short training for testing
+    early_stopping:
+      patience: 2
+      min_delta: 0.001
+    plot_training: true
 
-  dnn:
+
+anomaly_detection_evaluation:
+  run_stage: true
+  sample_size: 1024
+
+
+regression_evaluation:
+  run_stage: true
+  dataset: "atlas" # data to use in regression, either atlas or signal key
+  model:
     model_type: "dnn_predictor"
     architecture:
       hidden_layers: [8]  # Single small layer
@@ -94,22 +113,37 @@ models:
     hyperparameters:
       dropout_rate: 0.1
       l2_regularization: 0.00001  # 1e-5
-
-# Training Configurations - short for fast testing
-training:
-  vae:
+  data_sizes: [100, 500, 1000]
+  training:
     batch_size: 1024
-    learning_rate: 0.001  # Learning rate for VAE training
-    epochs: 10  # Short training for testing
+    learning_rate: 0.001  
+    encoder_learning_rate: 0.0005
+    epochs: 3 
     early_stopping:
       patience: 2
       min_delta: 0.001
     plot_training: true
 
-  dnn:
+signal_classification_evaluation:
+  run_stage: true
+  signal_key: "zprime_tt" # Which signal to classify
+  model:
+    model_type: "dnn_predictor"
+    architecture:
+      hidden_layers: [8]  # Single small layer
+      label_index: 0
+      activation: "relu"
+      output_activation: "linear"
+      name: "test_dnn"
+    hyperparameters:
+      dropout_rate: 0.1
+      l2_regularization: 0.00001  # 1e-5
+  data_sizes: [100, 500, 1000]
+  training:
     batch_size: 1024
-    learning_rate: 0.0005  # Different learning rate for DNN training
-    epochs: 0 # This gets overridden by the evaluation config
+    learning_rate: 0.001  
+    encoder_learning_rate: 0.0005
+    epochs: 3 
     early_stopping:
       patience: 2
       min_delta: 0.001

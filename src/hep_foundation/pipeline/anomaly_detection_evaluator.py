@@ -869,10 +869,18 @@ class AnomalyDetectionEvaluator:
         original_experiment_data = config_loader.load_config(config_path)
 
         # Get the VAE model config from the YAML structure
-        if (
+        if "foundation_model_training" in original_experiment_data:
+            foundation_config = original_experiment_data["foundation_model_training"]
+            original_model_config = {
+                "model_type": foundation_config["model"]["model_type"],
+                "architecture": foundation_config["model"]["architecture"],
+                "hyperparameters": foundation_config["model"]["hyperparameters"],
+            }
+        elif (
             "models" in original_experiment_data
             and "vae" in original_experiment_data["models"]
         ):
+            # Backward compatibility with old format
             original_model_config = original_experiment_data["models"]["vae"]
         else:
             raise ValueError(f"Could not find VAE model config in: {config_path}")
