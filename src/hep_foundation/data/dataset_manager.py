@@ -318,6 +318,7 @@ class DatasetManager:
                     first_event_logged=False,
                     plot_data_dir=plot_data_dir,
                     sample_data_dir=sample_data_dir,
+                    include_labels=dataset_config.include_labels,
                 )
                 inputs, labels, stats = result
                 all_inputs.extend(inputs)
@@ -539,6 +540,7 @@ class DatasetManager:
                         first_event_logged=first_event_logged,
                         plot_data_dir=signal_plot_data_dir,
                         sample_data_dir=signal_sample_data_dir,
+                        include_labels=dataset_config.include_labels,
                     )
                     first_event_logged = True
 

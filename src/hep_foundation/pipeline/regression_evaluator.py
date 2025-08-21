@@ -107,6 +107,7 @@ class RegressionEvaluator:
         foundation_model_path: str = None,
         data_sizes: list = None,
         fixed_epochs: int = 10,
+        dataset: str = "atlas",
     ) -> bool:
         """
         Evaluate foundation model for regression tasks using data efficiency study.
@@ -123,6 +124,7 @@ class RegressionEvaluator:
             foundation_model_path: Path to the foundation model encoder
             data_sizes: List of training data sizes to test (e.g., [1000, 2000, 5000, 10000])
             fixed_epochs: Number of epochs to train each model for each data size
+            dataset: Dataset to use for regression, either "atlas" or a signal key (e.g., "wprime_taunu")
         """
 
         if not foundation_model_path:
@@ -140,16 +142,43 @@ class RegressionEvaluator:
             data_manager = DatasetManager(base_dir=self.processed_datasets_dir)
 
             # 1. Load full dataset with regression labels
-            self.logger.info("Loading full dataset with regression labels...")
-            train_dataset, val_dataset, test_dataset = data_manager.load_atlas_datasets(
-                dataset_config=dataset_config,
-                validation_fraction=dataset_config.validation_fraction,
-                test_fraction=dataset_config.test_fraction,
-                batch_size=dnn_training_config.batch_size,
-                shuffle_buffer=dataset_config.shuffle_buffer,
-                include_labels=True,
-                delete_catalogs=delete_catalogs,
-            )
+            if dataset == "atlas":
+                self.logger.info("Loading ATLAS dataset with regression labels...")
+                train_dataset, val_dataset, test_dataset = (
+                    data_manager.load_atlas_datasets(
+                        dataset_config=dataset_config,
+                        validation_fraction=dataset_config.validation_fraction,
+                        test_fraction=dataset_config.test_fraction,
+                        batch_size=dnn_training_config.batch_size,
+                        shuffle_buffer=dataset_config.shuffle_buffer,
+                        include_labels=True,
+                        delete_catalogs=delete_catalogs,
+                    )
+                )
+            else:
+                # Load signal dataset
+                self.logger.info(
+                    f"Loading signal dataset '{dataset}' with regression labels..."
+                )
+                signal_datasets_splits = data_manager.load_signal_datasets(
+                    dataset_config=dataset_config,
+                    validation_fraction=dataset_config.validation_fraction,
+                    test_fraction=dataset_config.test_fraction,
+                    batch_size=dnn_training_config.batch_size,
+                    shuffle_buffer=dataset_config.shuffle_buffer,
+                    include_labels=True,
+                    split=True,
+                )
+
+                if dataset not in signal_datasets_splits:
+                    self.logger.error(
+                        f"Signal dataset '{dataset}' not found in available datasets: {list(signal_datasets_splits.keys())}"
+                    )
+                    return False
+
+                train_dataset, val_dataset, test_dataset = signal_datasets_splits[
+                    dataset
+                ]
 
             # Access normalization parameters for denormalizing labels
 

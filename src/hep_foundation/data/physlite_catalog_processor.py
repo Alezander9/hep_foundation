@@ -289,6 +289,7 @@ class PhysliteCatalogProcessor:
         first_event_logged: bool = True,
         plot_data_dir: Optional[Path] = None,
         sample_data_dir: Optional[Path] = None,
+        include_labels: bool = True,
     ) -> tuple[
         list[dict[str, np.ndarray]], list[dict[str, np.ndarray]], dict, Optional[dict]
     ]:
@@ -340,7 +341,9 @@ class PhysliteCatalogProcessor:
         processed_labels = []
 
         # Collect all initially required branch names (including derived ones)
-        initially_required_branches = self._get_required_branches(task_config)
+        initially_required_branches = self._get_required_branches(
+            task_config, include_labels
+        )
         self.logger.info(
             f"Initially required branches (incl. derived): {initially_required_branches}"
         )
@@ -1077,13 +1080,16 @@ class PhysliteCatalogProcessor:
 
         return labels_dict
 
-    def _get_required_branches(self, task_config: TaskConfig) -> set:
+    def _get_required_branches(
+        self, task_config: TaskConfig, include_labels: bool = True
+    ) -> set:
         """
         Get set of all required branch names for a given task configuration.
         This includes both real and potentially derived branches at this stage.
 
         Args:
             task_config: TaskConfig object containing event filters, input features, and labels
+            include_labels: Whether to include label branches in the required set
 
         Returns:
             set: Set of branch names required for processing (including derived ones initially)
@@ -1094,8 +1100,12 @@ class PhysliteCatalogProcessor:
         for filter_item in task_config.event_filters:
             required_branches.add(filter_item.branch.name)
 
-        # Process all selection configs (input and labels)
-        for selection_config in [task_config.input, *task_config.labels]:
+        # Process input config and conditionally include labels
+        selection_configs = [task_config.input]
+        if include_labels:
+            selection_configs.extend(task_config.labels)
+
+        for selection_config in selection_configs:
             # Add feature selector branches
             for selector in selection_config.feature_selectors:
                 required_branches.add(selector.branch.name)
