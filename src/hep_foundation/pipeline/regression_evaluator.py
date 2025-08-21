@@ -213,7 +213,9 @@ class RegressionEvaluator:
                     "architecture": foundation_config["model"]["architecture"],
                     "hyperparameters": foundation_config["model"]["hyperparameters"],
                 }
-
+            elif "models" in vae_config_data and "vae" in vae_config_data["models"]:
+                # Backward compatibility with old format
+                original_vae_model_config = vae_config_data["models"]["vae"]
             else:
                 self.logger.error(
                     f"Could not find VAE model config in: {vae_config_path}"

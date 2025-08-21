@@ -1,0 +1,17 @@
+# Test Old Format Config
+name: "test_old_format"
+description: "Test config using old models/vae structure"
+
+# This mimics the old config structure with models/vae
+models:
+  vae:
+    model_type: "variational_autoencoder"
+    architecture:
+      latent_dim: 2
+      encoder_layers: [8]
+      decoder_layers: [8]
+      activation: "relu"
+    hyperparameters:
+      beta_schedule:
+        start: 0.001
+        warmup: 2

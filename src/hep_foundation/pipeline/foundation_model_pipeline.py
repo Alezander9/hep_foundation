@@ -150,6 +150,22 @@ class FoundationModelPipeline:
             foundation_model_path = None
             dataset_path = None
 
+            # Create VAE and training configs from foundation config (needed for all stages)
+            vae_model_config = VAEConfig(
+                model_type=foundation_model_training_config.model_type,
+                architecture=foundation_model_training_config.architecture,
+                hyperparameters=foundation_model_training_config.hyperparameters,
+            )
+
+            vae_training_config = TrainingConfig(
+                batch_size=foundation_model_training_config.batch_size,
+                learning_rate=foundation_model_training_config.learning_rate,
+                epochs=foundation_model_training_config.epochs,
+                early_stopping_patience=foundation_model_training_config.early_stopping_patience,
+                early_stopping_min_delta=foundation_model_training_config.early_stopping_min_delta,
+                plot_training=foundation_model_training_config.plot_training,
+            )
+
             # Step 1: Train the foundation model (if enabled)
             if run_training:
                 self.logger.info("=" * 50)
@@ -158,22 +174,6 @@ class FoundationModelPipeline:
 
                 # Print system usage before training
                 print_system_usage("Before Training - ")
-
-                # Create VAE and training configs from foundation config
-                vae_model_config = VAEConfig(
-                    model_type=foundation_model_training_config.model_type,
-                    architecture=foundation_model_training_config.architecture,
-                    hyperparameters=foundation_model_training_config.hyperparameters,
-                )
-
-                vae_training_config = TrainingConfig(
-                    batch_size=foundation_model_training_config.batch_size,
-                    learning_rate=foundation_model_training_config.learning_rate,
-                    epochs=foundation_model_training_config.epochs,
-                    early_stopping_patience=foundation_model_training_config.early_stopping_patience,
-                    early_stopping_min_delta=foundation_model_training_config.early_stopping_min_delta,
-                    plot_training=foundation_model_training_config.plot_training,
-                )
 
                 # Create foundation model trainer
                 trainer = FoundationModelTrainer(

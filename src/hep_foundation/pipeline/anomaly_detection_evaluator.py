@@ -876,6 +876,12 @@ class AnomalyDetectionEvaluator:
                 "architecture": foundation_config["model"]["architecture"],
                 "hyperparameters": foundation_config["model"]["hyperparameters"],
             }
+        elif (
+            "models" in original_experiment_data
+            and "vae" in original_experiment_data["models"]
+        ):
+            # Backward compatibility with old format
+            original_model_config = original_experiment_data["models"]["vae"]
         else:
             raise ValueError(f"Could not find VAE model config in: {config_path}")
 

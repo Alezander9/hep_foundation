@@ -161,10 +161,10 @@ class PipelineconfigProcessor:
                     f"Signal keys: {config_config['dataset_config'].signal_keys}"
                 )
                 self.logger.info(
-                    f"VAE epochs: {config_config['vae_training_config'].epochs}"
+                    f"Foundation model epochs: {config_config['foundation_model_training_config'].epochs}"
                 )
                 self.logger.info(
-                    f"DNN epochs: {config_config['dnn_training_config'].epochs}"
+                    f"Regression epochs: {config_config['regression_evaluation_config'].epochs}"
                 )
                 return True
 
