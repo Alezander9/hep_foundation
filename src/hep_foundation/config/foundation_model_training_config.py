@@ -1,0 +1,42 @@
+"""
+Configuration for foundation model training stage.
+"""
+
+from dataclasses import dataclass
+from typing import Any
+
+
+@dataclass
+class FoundationModelTrainingConfig:
+    """Configuration for foundation model training stage."""
+
+    run_stage: bool
+    model_type: str
+    architecture: dict[str, Any]
+    hyperparameters: dict[str, Any]
+    batch_size: int
+    learning_rate: float
+    epochs: int
+    early_stopping_patience: int
+    early_stopping_min_delta: float
+    plot_training: bool
+
+    @classmethod
+    def from_dict(cls, config_dict: dict[str, Any]) -> "FoundationModelTrainingConfig":
+        """Create config from dictionary."""
+        model_config = config_dict["model"]
+        training_config = config_dict["training"]
+        early_stopping = training_config.get("early_stopping", {})
+
+        return cls(
+            run_stage=config_dict["run_stage"],
+            model_type=model_config["model_type"],
+            architecture=model_config["architecture"],
+            hyperparameters=model_config["hyperparameters"],
+            batch_size=training_config["batch_size"],
+            learning_rate=training_config["learning_rate"],
+            epochs=training_config["epochs"],
+            early_stopping_patience=early_stopping.get("patience", 10),
+            early_stopping_min_delta=early_stopping.get("min_delta", 1e-4),
+            plot_training=training_config.get("plot_training", True),
+        )

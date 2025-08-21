@@ -84,21 +84,8 @@ class PipelineconfigProcessor:
         try:
             config = load_pipeline_config(config_path)
 
-            # Extract all the config objects
-            config_config = {
-                "dataset_config": config["dataset_config"],
-                "vae_model_config": config["vae_model_config"],
-                "dnn_model_config": config["dnn_model_config"],
-                "vae_training_config": config["vae_training_config"],
-                "dnn_training_config": config["dnn_training_config"],
-                "task_config": config["task_config"],
-                "pipeline_settings": config.get("pipeline_settings", {}),
-                "source_config_file": config.get("_source_config_file"),
-                "evaluation_config": config.get("evaluation_config"),
-            }
-
             self.logger.info("Configuration loaded successfully")
-            return config_config
+            return config
 
         except Exception as e:
             self.logger.error(
@@ -188,15 +175,6 @@ class PipelineconfigProcessor:
             if config_config.get("source_config_file"):
                 pipeline.set_source_config_file(config_config["source_config_file"])
 
-            # Get evaluation configuration
-            evaluation_config = config_config.get("evaluation_config")
-            data_sizes = (
-                evaluation_config.regression_data_sizes
-                if evaluation_config
-                else [1000, 2000, 5000]
-            )
-            fixed_epochs = evaluation_config.fixed_epochs if evaluation_config else 10
-
             # Get pipeline settings
             pipeline_settings = config_config.get("pipeline_settings", {})
             delete_catalogs = pipeline_settings.get("delete_catalogs", True)
@@ -208,13 +186,19 @@ class PipelineconfigProcessor:
             success = pipeline.run_full_pipeline(
                 dataset_config=config_config["dataset_config"],
                 task_config=config_config["task_config"],
-                vae_model_config=config_config["vae_model_config"],
-                dnn_model_config=config_config["dnn_model_config"],
-                vae_training_config=config_config["vae_training_config"],
-                dnn_training_config=config_config["dnn_training_config"],
+                foundation_model_training_config=config_config[
+                    "foundation_model_training_config"
+                ],
+                anomaly_detection_evaluation_config=config_config[
+                    "anomaly_detection_evaluation_config"
+                ],
+                regression_evaluation_config=config_config[
+                    "regression_evaluation_config"
+                ],
+                signal_classification_evaluation_config=config_config[
+                    "signal_classification_evaluation_config"
+                ],
                 delete_catalogs=delete_catalogs,  # Use value from config
-                data_sizes=data_sizes,
-                fixed_epochs=fixed_epochs,
             )
 
             if success:
