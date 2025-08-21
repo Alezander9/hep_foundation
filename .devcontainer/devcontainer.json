@@ -34,6 +34,13 @@
         "charliermarsh.ruff",
         "ms-vscode-remote.remote-containers"
     ],
-    "postCreateCommand": "cd /workspace/repo && pip install qkeras seaborn uproot pytest ruff && pip install -e . --no-deps && chmod 600 /root/.ssh/* && chmod 700 /root/.ssh",
+    "postCreateCommand": [
+        "git config --global --add safe.directory /workspace/repo",
+        "cd /workspace/repo",
+        "pip install qkeras seaborn uproot pytest ruff",
+        "pip install -e . --no-deps",
+        "chmod 600 /root/.ssh/*",
+        "chmod 700 /root/.ssh"
+    ],
     "remoteUser": "root"
 }

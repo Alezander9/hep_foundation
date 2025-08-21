@@ -26,6 +26,9 @@ build/
 # Virtual environment
 .venv/
 
+# Machine specific cursor rules
+.cursor/rules/this_machine.mdc
+
 # Tool caches
 .ruff_cache/
 .pytest_cache/

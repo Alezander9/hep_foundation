@@ -26,7 +26,11 @@ def _load_atlas_index() -> dict:
     try:
         # Try to load from package resources first
         try:
-            with resources.open_text("hep_foundation.data", "atlas_index.json") as f:
+            with (
+                resources.files("hep_foundation.data")
+                .joinpath("atlas_index.json")
+                .open() as f
+            ):
                 _atlas_index_data = json.load(f)
         except (ImportError, FileNotFoundError):
             # Fallback to direct file path if package resources fail

@@ -38,9 +38,11 @@ class HistogramManager:
             return _physlite_percentiles_data
 
         try:
-            with resources.open_text(
-                "hep_foundation.data", "physlite_percentiles.json"
-            ) as f:
+            with (
+                resources.files("hep_foundation.data")
+                .joinpath("physlite_percentiles.json")
+                .open() as f
+            ):
                 _physlite_percentiles_data = json.load(f)
         except FileNotFoundError:
             # Create empty structure if file doesn't exist

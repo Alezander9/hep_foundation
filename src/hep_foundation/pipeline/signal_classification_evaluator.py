@@ -320,7 +320,10 @@ class SignalClassificationEvaluator:
                     )
 
                     # Train and evaluate
-                    model_name = f"{model_type.value.replace('_', ' ').title().replace(' ', '_')}_{data_size_label}"
+                    # Preserve the model name created by downstream_manager which contains "Classifier"
+                    # This is crucial for ModelTrainer to detect it's a classification task
+                    base_model_name = model.name
+                    model_name = f"{base_model_name}_{data_size_label}"
 
                     training_config = {
                         "batch_size": dnn_training_config.batch_size,
