@@ -207,20 +207,15 @@ EXPECTED_EXPERIMENT_STRUCTURE = {
                 "required": True,
                 "description": "Regression evaluation results",
                 "contents": {
-                    "regression_data_efficiency_plot.png": {
+                    "regression_evaluation_combined.png": {
                         "type": "file",
                         "required": True,
-                        "description": "Data efficiency plot",
+                        "description": "Combined training history and data efficiency plot",
                     },
                     "regression_data_efficiency_results.json": {
                         "type": "file",
                         "required": True,
                         "description": "Data efficiency results",
-                    },
-                    "regression_training_comparison.png": {
-                        "type": "file",
-                        "required": True,
-                        "description": "Training comparison plot",
                     },
                     "label_distribution_comparison_log_scale.png": {
                         "type": "file",
@@ -262,25 +257,20 @@ EXPECTED_EXPERIMENT_STRUCTURE = {
                 "required": True,
                 "description": "Signal classification evaluation results",
                 "contents": {
-                    "signal_classification_accuracy_plot.png": {
+                    "signal_classification_accuracy_evaluation_combined.png": {
                         "type": "file",
                         "required": True,
-                        "description": "Classification accuracy plot",
+                        "description": "Combined training history and accuracy efficiency plot",
+                    },
+                    "signal_classification_loss_evaluation_combined.png": {
+                        "type": "file",
+                        "required": True,
+                        "description": "Combined training history and loss efficiency plot",
                     },
                     "signal_classification_data_efficiency_results.json": {
                         "type": "file",
                         "required": True,
                         "description": "Classification data efficiency results",
-                    },
-                    "signal_classification_loss_plot.png": {
-                        "type": "file",
-                        "required": True,
-                        "description": "Classification loss plot",
-                    },
-                    "signal_classification_training_comparison.png": {
-                        "type": "file",
-                        "required": True,
-                        "description": "Classification training comparison plot",
                     },
                     "training_histories": {
                         "type": "directory",

@@ -170,8 +170,7 @@ class FoundationPlotManager:
         title_prefix: str = "Training History",
         metrics_to_plot: Optional[list[str]] = None,
         validation_only: bool = False,
-        handle_outliers: bool = True,
-        outlier_percentile: float = 80.0,
+        ax=None,
     ):
         """
         Creates a training history plot from saved training history JSON data.
@@ -184,14 +183,14 @@ class FoundationPlotManager:
             title_prefix: Prefix for the main plot title.
             metrics_to_plot: Optional list of specific metrics to plot. If None, plots all loss metrics.
             validation_only: If True, only plots validation metrics (no training metrics).
-            handle_outliers: If True, creates a 1x2 subplot with full range and cropped view.
-            outlier_percentile: Percentile threshold for cropping the zoomed view (default: 95.0).
+            ax: Optional matplotlib axis to plot on. If None, creates a new figure.
         """
         if not isinstance(training_history_json_paths, list):
             training_history_json_paths = [training_history_json_paths]
 
         training_history_json_paths = [Path(p) for p in training_history_json_paths]
-        output_plot_path = Path(output_plot_path)
+        if output_plot_path is not None:
+            output_plot_path = Path(output_plot_path)
 
         loaded_training_data_list = []
         effective_legend_labels = []
@@ -287,41 +286,13 @@ class FoundationPlotManager:
             self.logger.error("No common metrics found across all training histories.")
             return
 
-        # Collect all loss values to determine outlier threshold if needed
-        all_loss_values = []
-        if handle_outliers:
-            for training_data in loaded_training_data_list:
-                history = training_data["history"]
-                for metric in metrics_to_plot:
-                    if metric in history:
-                        all_loss_values.extend(history[metric])
-
-            if all_loss_values:
-                outlier_threshold = np.percentile(all_loss_values, outlier_percentile)
-                self.logger.info(
-                    f"Outlier threshold ({outlier_percentile}th percentile): {outlier_threshold:.6f}"
-                )
-            else:
-                self.logger.warning(
-                    "No loss values found for outlier detection, using single plot"
-                )
-                handle_outliers = False
-
-        # Create figure - either single plot or 1x2 subplot
-        if handle_outliers and all_loss_values:
-            # Use double-column width for 1x2 subplot with slightly less height to prevent it being too tall
-            fig, (ax_full, ax_cropped) = plt.subplots(
-                1, 2, figsize=get_figure_size("double", ratio=2.0)
-            )
-            axes = [ax_full, ax_cropped]
-            panel_titles = [
-                "Full Range (All Data)",
-                f"Cropped View ({outlier_percentile:.0f}th Percentile)",
-            ]
-        else:
+        # Create figure or use provided axis
+        if ax is None:
+            set_science_style(use_tex=False)
             fig, ax = plt.subplots(figsize=get_figure_size("single", ratio=1.2))
-            axes = [ax]
-            panel_titles = [None]
+            create_new_figure = True
+        else:
+            create_new_figure = False
 
         # Parse legend labels to extract dataset sizes and model types for systematic styling
         def parse_label(label):
@@ -383,116 +354,93 @@ class FoundationPlotManager:
         # Create line style mapping: one line style per model type
         model_to_linestyle = MODEL_LINE_STYLES
 
-        # Plot each training run with systematic styling on each axis
-        for ax_idx, current_ax in enumerate(axes):
-            for train_idx, training_data in enumerate(loaded_training_data_list):
-                history = training_data["history"]
-                label = effective_legend_labels[train_idx]
+        # Plot each training run with systematic styling
+        for train_idx, training_data in enumerate(loaded_training_data_list):
+            history = training_data["history"]
+            label = effective_legend_labels[train_idx]
 
-                # Get dataset size and model type for this training run
-                dataset_size, model_type = label_info[train_idx]
+            # Get dataset size and model type for this training run
+            dataset_size, model_type = label_info[train_idx]
 
-                # Get color based on dataset size and line style based on model type
-                base_color = size_to_color.get(
-                    dataset_size, colors[0]
-                )  # fallback to first color
-                base_linestyle = model_to_linestyle.get(
-                    model_type, "-"
-                )  # fallback to solid line
+            # Get color based on dataset size and line style based on model type
+            base_color = size_to_color.get(
+                dataset_size, colors[0]
+            )  # fallback to first color
+            base_linestyle = model_to_linestyle.get(
+                model_type, "-"
+            )  # fallback to solid line
 
-                if validation_only:
-                    # Plot only validation metrics with clean labels (no "- validation" suffix)
-                    val_metrics = [m for m in metrics_to_plot if m.startswith("val_")]
-                    for metric in val_metrics:
-                        if metric in history:
-                            values = history[metric]
-                            epochs = list(range(1, len(values) + 1))
+            if validation_only:
+                # Plot only validation metrics with clean labels (no "- validation" suffix)
+                val_metrics = [m for m in metrics_to_plot if m.startswith("val_")]
+                for metric in val_metrics:
+                    if metric in history:
+                        values = history[metric]
+                        epochs = list(range(1, len(values) + 1))
 
-                            # Use clean label without "- validation" suffix
-                            # Only add label for first axis to avoid legend duplication
-                            line_label = f"{label}" if ax_idx == 0 else None
-                            current_ax.plot(
-                                epochs,
-                                values,
-                                color=base_color,
-                                linewidth=LINE_WIDTHS["thick"],
-                                linestyle=base_linestyle,
-                                label=line_label,
-                            )
-                else:
-                    # Plot training metrics (using base line style)
-                    train_metrics = [
-                        m
-                        for m in metrics_to_plot
-                        if not m.startswith(("val_", "test_"))
-                    ]
-                    for metric in train_metrics:
-                        if metric in history:
-                            values = history[metric]
-                            epochs = list(range(1, len(values) + 1))
-
-                            line_label = (
-                                f"{label}"
-                                if len(train_metrics) == 1
-                                else f"{label} - {metric}"
-                            )
-                            # Only add label for first axis to avoid legend duplication
-                            line_label = line_label if ax_idx == 0 else None
-                            current_ax.plot(
-                                epochs,
-                                values,
-                                color=base_color,
-                                linewidth=LINE_WIDTHS["thick"],
-                                linestyle=base_linestyle,
-                                label=line_label,
-                            )
-
-                    # Plot validation metrics (using base line style - systematic approach)
-                    val_metrics = [m for m in metrics_to_plot if m.startswith("val_")]
-                    for metric in val_metrics:
-                        if metric in history:
-                            values = history[metric]
-                            epochs = list(range(1, len(values) + 1))
-
-                            # Use same color and line style for validation (systematic approach)
-                            line_label = (
-                                f"{label} - {metric}"
-                                if len(val_metrics) > 1
-                                else f"{label} - validation"
-                            )
-                            # Only add label for first axis to avoid legend duplication
-                            line_label = line_label if ax_idx == 0 else None
-                            current_ax.plot(
-                                epochs,
-                                values,
-                                color=base_color,
-                                linewidth=LINE_WIDTHS["thick"],
-                                linestyle=base_linestyle,
-                                label=line_label,
-                            )
-
-        # Format each axis
-        for ax_idx, current_ax in enumerate(axes):
-            current_ax.set_xlabel("Epoch", fontsize=FONT_SIZES["large"])
-            current_ax.set_ylabel("Loss (log scale)", fontsize=FONT_SIZES["large"])
-            current_ax.set_yscale("log")
-            current_ax.grid(True, alpha=0.3, which="both")
-
-            # Set panel-specific title
-            if len(axes) > 1:
-                if ax_idx == 0:
-                    current_ax.set_title(
-                        f"{title_prefix}\n{panel_titles[ax_idx]}",
-                        fontsize=FONT_SIZES["large"],
-                    )
-                else:
-                    current_ax.set_title(
-                        panel_titles[ax_idx], fontsize=FONT_SIZES["large"]
-                    )
-                    # Set y-limit for cropped view
-                    current_ax.set_ylim(top=outlier_threshold)
+                        ax.plot(
+                            epochs,
+                            values,
+                            color=base_color,
+                            linewidth=LINE_WIDTHS["thick"],
+                            linestyle=base_linestyle,
+                            label=label,
+                        )
             else:
-                current_ax.set_title(title_prefix, fontsize=FONT_SIZES["xlarge"])
+                # Plot training metrics (using base line style)
+                train_metrics = [
+                    m for m in metrics_to_plot if not m.startswith(("val_", "test_"))
+                ]
+                for metric in train_metrics:
+                    if metric in history:
+                        values = history[metric]
+                        epochs = list(range(1, len(values) + 1))
+
+                        line_label = (
+                            f"{label}"
+                            if len(train_metrics) == 1
+                            else f"{label} - {metric}"
+                        )
+                        ax.plot(
+                            epochs,
+                            values,
+                            color=base_color,
+                            linewidth=LINE_WIDTHS["thick"],
+                            linestyle=base_linestyle,
+                            label=line_label,
+                        )
+
+                # Plot validation metrics (using base line style - systematic approach)
+                val_metrics = [m for m in metrics_to_plot if m.startswith("val_")]
+                for metric in val_metrics:
+                    if metric in history:
+                        values = history[metric]
+                        epochs = list(range(1, len(values) + 1))
+
+                        # Use same color and line style for validation (systematic approach)
+                        line_label = (
+                            f"{label} - {metric}"
+                            if len(val_metrics) > 1
+                            else f"{label} - validation"
+                        )
+                        ax.plot(
+                            epochs,
+                            values,
+                            color=base_color,
+                            linewidth=LINE_WIDTHS["thick"],
+                            linestyle=base_linestyle,
+                            label=line_label,
+                        )
+
+        # Format axis
+        ax.set_xlabel("Epoch", fontsize=FONT_SIZES["large"])
+        ax.set_ylabel("Loss (log scale)", fontsize=FONT_SIZES["large"])
+        ax.set_yscale("log")
+        ax.grid(True, alpha=0.3, which="both")
+
+        # Set title only if we created a new figure
+        if create_new_figure:
+            ax.set_title(title_prefix, fontsize=FONT_SIZES["xlarge"])
 
         # Create custom legend with dataset sizes (colors) and model types (line styles)
         # Create legend elements for dataset sizes (colors)
@@ -544,9 +492,8 @@ class FoundationPlotManager:
             legend_elements.append(Line2D([0], [0], color="none", label="Model Types:"))
             legend_elements.extend(model_legend_elements)
 
-        # Create the legend (only on first axis for multi-panel plots)
-        legend_ax = axes[0]
-        legend = legend_ax.legend(
+        # Create the legend
+        legend = ax.legend(
             handles=legend_elements,
             fontsize=FONT_SIZES["normal"],
             loc="upper right",
@@ -566,19 +513,20 @@ class FoundationPlotManager:
                 text.set_color("black")
                 line.set_visible(False)
 
-        # Save the plot
-        try:
-            output_plot_path.parent.mkdir(parents=True, exist_ok=True)
-            fig.savefig(output_plot_path, dpi=300, bbox_inches="tight")
-            plt.close(fig)
-            self.logger.info(
-                f"Successfully created training history plot and saved to {output_plot_path}"
-            )
-        except Exception as e:
-            self.logger.error(
-                f"Failed to save training history plot to {output_plot_path}: {e}"
-            )
-            plt.close(fig)
+        # Save the plot only if we created a new figure and have an output path
+        if create_new_figure and output_plot_path is not None:
+            try:
+                output_plot_path.parent.mkdir(parents=True, exist_ok=True)
+                fig.savefig(output_plot_path, dpi=300, bbox_inches="tight")
+                plt.close(fig)
+                self.logger.info(
+                    f"Successfully created training history plot and saved to {output_plot_path}"
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to save training history plot to {output_plot_path}: {e}"
+                )
+                plt.close(fig)
 
     def create_training_history_comparison_plot_from_directory(
         self,
@@ -586,8 +534,6 @@ class FoundationPlotManager:
         output_path: Path,
         title_prefix: str = "Model Training Comparison",
         validation_only: bool = True,
-        handle_outliers: bool = True,
-        outlier_percentile: float = 95.0,
     ) -> bool:
         """
         Create a combined training history plot comparing different models from a directory.
@@ -600,8 +546,6 @@ class FoundationPlotManager:
             output_path: Path where to save the plot
             title_prefix: Prefix for the plot title
             validation_only: Whether to show only validation loss
-            handle_outliers: If True, creates a 1x2 subplot with full range and cropped view
-            outlier_percentile: Percentile threshold for cropping the zoomed view (default: 95.0)
 
         Returns:
             bool: True if plot was created successfully, False otherwise
@@ -668,8 +612,6 @@ class FoundationPlotManager:
                     legend_labels=sorted_labels,
                     title_prefix=title_prefix,
                     validation_only=validation_only,
-                    handle_outliers=handle_outliers,
-                    outlier_percentile=outlier_percentile,
                 )
                 self.logger.info(
                     f"Combined training history plot saved to: {output_path}"
@@ -684,6 +626,214 @@ class FoundationPlotManager:
         except Exception as e:
             self.logger.error(
                 f"Failed to create training history comparison plot: {str(e)}"
+            )
+            return False
+
+    def _create_data_efficiency_plot_on_axis(
+        self,
+        ax,
+        results: dict[str, list[float]],
+        plot_type: str = "regression",
+        metric_name: str = "Test Loss (MSE)",
+        total_test_events: int = 0,
+        signal_key: Optional[str] = None,
+    ):
+        """
+        Create a data efficiency plot on the provided axis.
+        """
+        # Determine plot scale and y-axis limits
+        if plot_type == "classification_accuracy":
+            plot_func = ax.semilogx
+            ylim = (0, 1)
+            legend_loc = "lower right"
+        else:
+            plot_func = ax.loglog
+            ylim = None
+            legend_loc = "upper right"
+
+        # Plot the three models
+        plot_func(
+            results["data_sizes"],
+            results.get(
+                "From_Scratch",
+                results.get(
+                    "From_Scratch_loss", results.get("From_Scratch_accuracy", [])
+                ),
+            ),
+            "o-",
+            color=self.colors[0],
+            linewidth=LINE_WIDTHS["thick"],
+            markersize=8,
+            label="From Scratch",
+        )
+        plot_func(
+            results["data_sizes"],
+            results.get(
+                "Fine_Tuned",
+                results.get("Fine_Tuned_loss", results.get("Fine_Tuned_accuracy", [])),
+            ),
+            "s-",
+            color=self.colors[1],
+            linewidth=LINE_WIDTHS["thick"],
+            markersize=8,
+            label="Fine-Tuned",
+        )
+        plot_func(
+            results["data_sizes"],
+            results.get(
+                "Fixed_Encoder",
+                results.get(
+                    "Fixed_Encoder_loss", results.get("Fixed_Encoder_accuracy", [])
+                ),
+            ),
+            "^-",
+            color=self.colors[2],
+            linewidth=LINE_WIDTHS["thick"],
+            markersize=8,
+            label="Fixed Encoder",
+        )
+
+        ax.set_xlabel("Number of Training Events", fontsize=FONT_SIZES["large"])
+
+        # Format y-axis label
+        test_events_label = (
+            f" - over {total_test_events:,} events" if total_test_events > 0 else ""
+        )
+        ax.set_ylabel(f"{metric_name}{test_events_label}", fontsize=FONT_SIZES["large"])
+
+        # Create title
+        if plot_type == "regression":
+            title = "Data Efficiency: Foundation Model Benefits"
+        elif plot_type == "classification_loss":
+            signal_part = f"\n(Signal: {signal_key})" if signal_key else ""
+            title = f"Signal Classification Data Efficiency: Loss{signal_part}"
+        elif plot_type == "classification_accuracy":
+            signal_part = f"\n(Signal: {signal_key})" if signal_key else ""
+            title = f"Signal Classification Data Efficiency: Accuracy{signal_part}"
+        else:
+            title = "Data Efficiency"
+
+        ax.set_title(title, fontsize=FONT_SIZES["large"])
+        ax.legend(fontsize=FONT_SIZES["normal"], loc=legend_loc)
+        ax.grid(True, alpha=0.3, which="both")
+
+        if ylim:
+            ax.set_ylim(ylim)
+
+    def create_combined_downstream_evaluation_plot(
+        self,
+        training_histories_dir: Path,
+        results: dict[str, list[float]],
+        output_path: Path,
+        plot_type: str = "regression",
+        metric_name: str = "Test Loss (MSE)",
+        total_test_events: int = 0,
+        signal_key: Optional[str] = None,
+        title_prefix: str = "Downstream Task Evaluation",
+    ) -> bool:
+        """
+        Create a combined two-panel plot with training history comparison and data efficiency.
+
+        Args:
+            training_histories_dir: Directory containing training history JSON files
+            results: Dictionary containing data_sizes and performance metrics for each model
+            output_path: Path where to save the plot
+            plot_type: Type of plot ("regression", "classification_loss", "classification_accuracy")
+            metric_name: Name of the metric being plotted
+            total_test_events: Total number of test events for labeling
+            signal_key: Signal key for classification plots
+            title_prefix: Prefix for the overall plot title
+
+        Returns:
+            bool: True if plot was created successfully, False otherwise
+        """
+        try:
+            set_science_style(use_tex=False)
+            fig, (ax_training, ax_efficiency) = plt.subplots(
+                1, 2, figsize=get_figure_size("double", ratio=2.0)
+            )
+
+            # Panel 1: Training History Comparison
+            if training_histories_dir.exists():
+                training_history_files = list(
+                    training_histories_dir.glob("training_history_*.json")
+                )
+                if training_history_files:
+                    # Sort files to ensure consistent ordering
+                    sorted_files = []
+                    sorted_labels = []
+
+                    for model_name in ["From_Scratch", "Fine_Tuned", "Fixed_Encoder"]:
+                        matching_files = [
+                            f for f in training_history_files if model_name in f.name
+                        ]
+
+                        def extract_data_size(filename):
+                            for part in filename.stem.split("_"):
+                                if part.endswith("k"):
+                                    return int(part[:-1]) * 1000
+                                elif part.isdigit():
+                                    return int(part)
+                            return 0
+
+                        matching_files.sort(key=extract_data_size)
+
+                        for file in matching_files:
+                            sorted_files.append(file)
+                            model_display_name = model_name.replace("_", " ")
+                            data_size_str = None
+                            for part in file.stem.split("_"):
+                                if part.endswith("k") or part.isdigit():
+                                    data_size_str = part
+                                    break
+
+                            if data_size_str:
+                                sorted_labels.append(
+                                    f"{model_display_name} ({data_size_str})"
+                                )
+                            else:
+                                sorted_labels.append(model_display_name)
+
+                    if sorted_files:
+                        self._create_training_history_comparison_plot(
+                            training_history_json_paths=sorted_files,
+                            output_plot_path=None,
+                            legend_labels=sorted_labels,
+                            title_prefix="Training History",
+                            validation_only=True,
+                            ax=ax_training,
+                        )
+
+            # Panel 2: Data Efficiency Plot
+            self._create_data_efficiency_plot_on_axis(
+                ax_efficiency,
+                results,
+                plot_type,
+                metric_name,
+                total_test_events,
+                signal_key,
+            )
+
+            # Set overall title
+            fig.suptitle(title_prefix, fontsize=FONT_SIZES["xlarge"], y=0.98)
+
+            # Adjust layout
+            plt.tight_layout()
+            plt.subplots_adjust(top=0.90)  # Make room for suptitle
+
+            # Save plot
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            fig.savefig(output_path, dpi=300, bbox_inches="tight")
+            plt.close(fig)
+
+            self.logger.info(
+                f"Combined downstream evaluation plot saved to: {output_path}"
+            )
+            return True
+
+        except Exception as e:
+            self.logger.error(
+                f"Failed to create combined downstream evaluation plot: {str(e)}"
             )
             return False
 

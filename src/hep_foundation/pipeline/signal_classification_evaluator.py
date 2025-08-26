@@ -374,41 +374,39 @@ class SignalClassificationEvaluator:
                 json.dump(results, f, indent=2)
             self.logger.info(f"Results saved to: {results_file}")
 
-            # Create combined training history plot if we saved training histories
+            # Create combined training history and data efficiency plots
             training_histories_dir = classification_dir / "training_histories"
-            combined_plot_path = (
-                classification_dir / "signal_classification_training_comparison.png"
-            )
-            self.foundation_plot_manager.create_training_history_comparison_plot_from_directory(
-                training_histories_dir,
-                combined_plot_path,
-                title_prefix="Signal Classification Model Training Comparison",
-                validation_only=True,
-            )
 
-            # Create the data efficiency plots
             # Plot 1: Loss comparison
-            loss_plot_file = classification_dir / "signal_classification_loss_plot.png"
-            self.foundation_plot_manager.create_data_efficiency_plot(
+            loss_plot_file = (
+                classification_dir
+                / "signal_classification_loss_evaluation_combined.png"
+            )
+            self.foundation_plot_manager.create_combined_downstream_evaluation_plot(
+                training_histories_dir,
                 results,
                 loss_plot_file,
                 plot_type="classification_loss",
                 metric_name="Test Loss (Binary Crossentropy)",
                 total_test_events=total_test_events,
                 signal_key=signal_key,
+                title_prefix="Signal Classification Evaluation: Training History & Loss",
             )
 
             # Plot 2: Accuracy comparison
             accuracy_plot_file = (
-                classification_dir / "signal_classification_accuracy_plot.png"
+                classification_dir
+                / "signal_classification_accuracy_evaluation_combined.png"
             )
-            self.foundation_plot_manager.create_data_efficiency_plot(
+            self.foundation_plot_manager.create_combined_downstream_evaluation_plot(
+                training_histories_dir,
                 results,
                 accuracy_plot_file,
                 plot_type="classification_accuracy",
                 metric_name="Test Accuracy",
                 total_test_events=total_test_events,
                 signal_key=signal_key,
+                title_prefix="Signal Classification Evaluation: Training History & Accuracy",
             )
 
             # 7. Display summary
