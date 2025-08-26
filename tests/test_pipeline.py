@@ -217,15 +217,10 @@ EXPECTED_EXPERIMENT_STRUCTURE = {
                         "required": True,
                         "description": "Data efficiency results",
                     },
-                    "label_distribution_comparison_log_scale.png": {
+                    "label_distribution_combined_analysis.png": {
                         "type": "file",
                         "required": True,
-                        "description": "Label distribution comparison plot (log scale)",
-                    },
-                    "label_distribution_differences_linear_scale.png": {
-                        "type": "file",
-                        "required": True,
-                        "description": "Label distribution differences plot (linear scale)",
+                        "description": "Combined label distribution comparison and differences plot",
                     },
                     "training_histories": {
                         "type": "directory",
@@ -690,9 +685,6 @@ def test_run_full_pipeline(pipeline, test_configs, experiment_dir):
     """Test the full pipeline (train → regression → anomaly)"""
 
     try:
-        # Load test config path for source tracking
-        test_config_path = Path(__file__).parent / "_test_pipeline_config.yaml"
-
         # Set the source config file for reproducibility
         if test_configs.get("source_config_file"):
             pipeline.set_source_config_file(test_configs["source_config_file"])
