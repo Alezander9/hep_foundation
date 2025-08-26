@@ -172,8 +172,8 @@ class PipelineconfigProcessor:
             pipeline = FoundationModelPipeline()
 
             # Set source config file for reproducibility
-            if config_config.get("source_config_file"):
-                pipeline.set_source_config_file(config_config["source_config_file"])
+            if config_config.get("_source_config_file"):
+                pipeline.set_source_config_file(config_config["_source_config_file"])
 
             # Get pipeline settings
             pipeline_settings = config_config.get("pipeline_settings", {})

@@ -56,12 +56,10 @@ task:
 
   label_array_aggregators:
     - - input_branches:
-          # - "MET_TruthAuxDyn.metx"
-          # - "MET_TruthAuxDyn.mety"
-          - "derived.MET_Core_AnalysisMETAuxDyn.met_norm"
-          - "derived.MET_Core_AnalysisMETAuxDyn.met_phi"
-        filter_branches: []
-        sort_by_branch: null
+          - "AnalysisJetsAuxDyn.pt"
+        filter_branches:
+          - {"branch": "AnalysisJetsAuxDyn.pt", "min": 20.0}
+        sort_by_branch: {"branch": "AnalysisJetsAuxDyn.pt"}
         min_length: 1
         max_length: 1
 
@@ -116,9 +114,9 @@ regression_evaluation:
   data_sizes: [100, 500, 1000]
   training:
     batch_size: 1024
-    learning_rate: 0.001  
+    learning_rate: 0.001
     encoder_learning_rate: 0.0005
-    epochs: 3 
+    epochs: 3
     early_stopping:
       patience: 2
       min_delta: 0.001
@@ -141,9 +139,9 @@ signal_classification_evaluation:
   data_sizes: [100, 500, 1000]
   training:
     batch_size: 1024
-    learning_rate: 0.001  
+    learning_rate: 0.001
     encoder_learning_rate: 0.0005
-    epochs: 3 
+    epochs: 3
     early_stopping:
       patience: 2
       min_delta: 0.001

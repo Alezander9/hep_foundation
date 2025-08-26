@@ -284,6 +284,7 @@ class FoundationModelPipeline:
                     early_stopping_patience=regression_evaluation_config.early_stopping_patience,
                     early_stopping_min_delta=regression_evaluation_config.early_stopping_min_delta,
                     plot_training=regression_evaluation_config.plot_training,
+                    encoder_learning_rate=regression_evaluation_config.encoder_learning_rate,
                 )
 
                 # Create regression evaluator
@@ -343,6 +344,7 @@ class FoundationModelPipeline:
                     early_stopping_patience=signal_classification_evaluation_config.early_stopping_patience,
                     early_stopping_min_delta=signal_classification_evaluation_config.early_stopping_min_delta,
                     plot_training=signal_classification_evaluation_config.plot_training,
+                    encoder_learning_rate=signal_classification_evaluation_config.encoder_learning_rate,
                 )
 
                 # Create signal classification evaluator

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 from hep_foundation.config.logging_config import get_logger
 
@@ -13,6 +13,7 @@ class TrainingConfig:
     learning_rate: float
     early_stopping: dict[str, Any]
     plot_training: bool
+    encoder_learning_rate: Optional[float]
 
     def __init__(
         self,
@@ -22,11 +23,13 @@ class TrainingConfig:
         early_stopping_patience: int,
         early_stopping_min_delta: float,
         plot_training: bool,
+        encoder_learning_rate: Optional[float] = None,
     ):
         self.logger = get_logger(__name__)
         self.batch_size = batch_size
         self.epochs = epochs
         self.learning_rate = learning_rate
+        self.encoder_learning_rate = encoder_learning_rate
         self.early_stopping = {
             "patience": early_stopping_patience,
             "min_delta": early_stopping_min_delta,
@@ -37,6 +40,8 @@ class TrainingConfig:
         """Validate training configuration parameters"""
         if self.learning_rate <= 0:
             raise ValueError("learning_rate must be positive")
+        if self.encoder_learning_rate is not None and self.encoder_learning_rate <= 0:
+            raise ValueError("encoder_learning_rate must be positive")
         if self.epochs < 1:
             raise ValueError("epochs must be positive")
         if self.early_stopping["patience"] < 0:
@@ -55,6 +60,7 @@ class TrainingConfig:
             "batch_size": self.batch_size,
             "epochs": self.epochs,
             "learning_rate": self.learning_rate,
+            "encoder_learning_rate": self.encoder_learning_rate,
             "early_stopping": self.early_stopping,
             "plot_training": self.plot_training,
         }

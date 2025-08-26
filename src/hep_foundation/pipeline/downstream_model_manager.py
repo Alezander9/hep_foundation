@@ -267,10 +267,25 @@ class DownstreamModelManager:
         wrapped_model = CustomKerasModelWrapper(model, name=model_name)
 
         # Prepare training config with fixed epochs
+        learning_rate = training_config.get("learning_rate", 0.001)
+        encoder_learning_rate = training_config.get("encoder_learning_rate")
+
+        # Check for differential learning rate (placeholder implementation)
+        if (
+            encoder_learning_rate is not None
+            and encoder_learning_rate != learning_rate
+            and "fine_tuned" in model_name.lower()
+        ):
+            self.logger.warning(
+                f"Differential learning rates requested (encoder: {encoder_learning_rate}, "
+                f"head: {learning_rate}) but not yet implemented. Using head learning rate "
+                f"for entire model."
+            )
+
         trainer_config = {
             "batch_size": training_config.get("batch_size", 32),
             "epochs": fixed_epochs,
-            "learning_rate": training_config.get("learning_rate", 0.001),
+            "learning_rate": learning_rate,
             "early_stopping": {
                 "patience": fixed_epochs + 1,  # Disable early stopping
                 "min_delta": 0,

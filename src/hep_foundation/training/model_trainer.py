@@ -126,15 +126,33 @@ class ModelTrainer:
         self.validation_split = training_config.get("validation_split", 0.2)
 
         # Set up optimizer and loss
+        self.encoder_learning_rate = training_config.get("encoder_learning_rate")
+        self.learning_rate = training_config.get("learning_rate", 0.001)
+        self.gradient_clip_norm = training_config.get("gradient_clip_norm", 1.0)
+
         self.optimizer = optimizer or tf.keras.optimizers.Adam(
-            learning_rate=training_config.get("learning_rate", 0.001),
-            clipnorm=training_config.get("gradient_clip_norm", 1.0),
+            learning_rate=self.learning_rate,
+            clipnorm=self.gradient_clip_norm,
         )
+
+        # Create separate encoder optimizer if differential learning rate is specified
+        self.encoder_optimizer = None
+        if self.encoder_learning_rate is not None:
+            self.encoder_optimizer = tf.keras.optimizers.Adam(
+                learning_rate=self.encoder_learning_rate,
+                clipnorm=self.gradient_clip_norm,
+            )
+            self.logger.info(
+                f"Differential learning rates enabled: encoder={self.encoder_learning_rate}, "
+                f"head={self.learning_rate}"
+            )
+
         self.loss = loss or tf.keras.losses.MeanSquaredError()
 
         # Log gradient clipping configuration
-        gradient_clip_norm = training_config.get("gradient_clip_norm", 1.0)
-        self.logger.info(f"Gradient clipping enabled with norm={gradient_clip_norm}")
+        self.logger.info(
+            f"Gradient clipping enabled with norm={self.gradient_clip_norm}"
+        )
 
         # Training history
         self.history = None
@@ -625,14 +643,22 @@ class ModelTrainer:
         )
 
         # Train the model
-        history = self.model.model.fit(
-            train_dataset,
-            epochs=self.epochs,
-            validation_data=validation_data,
-            callbacks=callbacks,
-            shuffle=True,
-            verbose=0,  # Turn off default progress bar
-        )
+        if self.encoder_optimizer is not None and self._should_use_differential_lr():
+            # Use custom training loop for differential learning rates
+            self.logger.info("Using differential learning rate training")
+            history = self._train_with_differential_lr(
+                train_dataset, validation_data, callbacks
+            )
+        else:
+            # Use standard Keras training
+            history = self.model.model.fit(
+                train_dataset,
+                epochs=self.epochs,
+                validation_data=validation_data,
+                callbacks=callbacks,
+                shuffle=True,
+                verbose=0,  # Turn off default progress bar
+            )
 
         # Record end time
         self.training_end_time = datetime.now()
@@ -875,3 +901,189 @@ class ModelTrainer:
                 self.logger.info(
                     "Input or output samples missing - skipping comparison plot creation"
                 )
+
+    def _should_use_differential_lr(self) -> bool:
+        """
+        Check if this model should use differential learning rates.
+
+        Returns True for fine-tuned models that have encoder and head components.
+        """
+        # Import here to avoid circular imports
+        from hep_foundation.models.base_model import CustomKerasModelWrapper
+
+        if not isinstance(self.model, CustomKerasModelWrapper):
+            return False
+
+        model_name = getattr(self.model, "name", "").lower()
+        has_encoder_lr = self.encoder_learning_rate is not None
+        is_fine_tuned = "fine_tuned" in model_name or "fine tuned" in model_name
+
+        return has_encoder_lr and is_fine_tuned
+
+    def _get_encoder_and_head_layers(self, model: tf.keras.Model) -> tuple[list, list]:
+        """
+        Identify encoder and head layers in a fine-tuned model.
+
+        Args:
+            model: The Keras model to analyze
+
+        Returns:
+            Tuple of (encoder_layers, head_layers)
+        """
+        encoder_layers = []
+        head_layers = []
+
+        # For fine-tuned models, encoder layers typically have "encoder" in their name
+        # and head layers are the remaining layers
+        for layer in model.layers:
+            layer_name = layer.name.lower()
+            if (
+                "encoder" in layer_name
+                or "pretrained" in layer_name
+                or layer_name.startswith("fine_tuned")
+            ):
+                # This is part of the encoder
+                if hasattr(layer, "layers"):
+                    # If it's a nested model, get its layers
+                    encoder_layers.extend(layer.layers)
+                else:
+                    encoder_layers.append(layer)
+            else:
+                # This is part of the head
+                head_layers.append(layer)
+
+        return encoder_layers, head_layers
+
+    def _train_with_differential_lr(
+        self,
+        train_dataset: tf.data.Dataset,
+        validation_data: Optional[tf.data.Dataset],
+        callbacks: list,
+    ) -> tf.keras.callbacks.History:
+        """
+        Custom training loop with differential learning rates for encoder vs head.
+
+        Args:
+            train_dataset: Training dataset
+            validation_data: Validation dataset (optional)
+            callbacks: List of Keras callbacks
+
+        Returns:
+            Training history
+        """
+        self.logger.info("Using differential learning rate training")
+
+        model = self.model.model
+        encoder_layers, head_layers = self._get_encoder_and_head_layers(model)
+
+        self.logger.info(
+            f"Identified {len(encoder_layers)} encoder layers and {len(head_layers)} head layers"
+        )
+
+        # Get trainable variables for each part
+        encoder_vars = []
+        head_vars = []
+
+        for layer in encoder_layers:
+            if layer.trainable:
+                encoder_vars.extend(layer.trainable_variables)
+
+        for layer in head_layers:
+            if layer.trainable:
+                head_vars.extend(layer.trainable_variables)
+
+        self.logger.info(
+            f"Encoder variables: {len(encoder_vars)}, Head variables: {len(head_vars)}"
+        )
+
+        # Create a custom training step
+        @tf.function
+        def train_step(x, y):
+            with tf.GradientTape() as tape:
+                predictions = model(x, training=True)
+                loss = self.loss(y, predictions)
+
+                # Add any model losses (e.g., regularization)
+                if model.losses:
+                    loss += tf.add_n(model.losses)
+
+            # Calculate gradients
+            gradients = tape.gradient(loss, encoder_vars + head_vars)
+            encoder_grads = gradients[: len(encoder_vars)]
+            head_grads = gradients[len(encoder_vars) :]
+
+            # Apply gradients with different optimizers
+            if encoder_grads:
+                self.encoder_optimizer.apply_gradients(zip(encoder_grads, encoder_vars))
+            if head_grads:
+                self.optimizer.apply_gradients(zip(head_grads, head_vars))
+
+            return loss, predictions
+
+        # Manual training loop
+        history = {"loss": [], "val_loss": []}
+
+        # Initialize callbacks
+        callback_list = tf.keras.callbacks.CallbackList(
+            callbacks,
+            add_history=True,
+            add_progbar=False,
+            model=model,
+            verbose=0,
+            epochs=self.epochs,
+            steps=None,
+        )
+
+        callback_list.on_train_begin()
+
+        for epoch in range(self.epochs):
+            self.logger.info(f"Epoch {epoch + 1}/{self.epochs}")
+            callback_list.on_epoch_begin(epoch)
+
+            # Training phase
+            epoch_loss = 0
+            num_batches = 0
+
+            for x_batch, y_batch in train_dataset:
+                loss, _ = train_step(x_batch, y_batch)
+                epoch_loss += loss
+                num_batches += 1
+
+            avg_loss = epoch_loss / num_batches if num_batches > 0 else 0
+            history["loss"].append(float(avg_loss))
+
+            # Validation phase
+            val_loss = None
+            if validation_data is not None:
+                val_loss_total = 0
+                val_batches = 0
+
+                for x_val, y_val in validation_data:
+                    val_pred = model(x_val, training=False)
+                    val_loss_batch = self.loss(y_val, val_pred)
+                    val_loss_total += val_loss_batch
+                    val_batches += 1
+
+                val_loss = val_loss_total / val_batches if val_batches > 0 else 0
+                history["val_loss"].append(float(val_loss))
+
+            # Update callbacks
+            logs = {"loss": avg_loss}
+            if val_loss is not None:
+                logs["val_loss"] = val_loss
+
+            callback_list.on_epoch_end(epoch, logs)
+
+            self.logger.info(
+                f"Loss: {avg_loss:.4f}"
+                + (f", Val Loss: {val_loss:.4f}" if val_loss is not None else "")
+            )
+
+        callback_list.on_train_end()
+
+        # Create a history-like object
+        class CustomHistory:
+            def __init__(self, history_dict):
+                self.history = history_dict
+
+        return CustomHistory(history)
