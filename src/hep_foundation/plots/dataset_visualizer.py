@@ -21,13 +21,13 @@ def format_event_count(event_count: int) -> str:
         return str(event_count)
 
 
-def get_event_count_from_dataset_info(hist_data_path: Path) -> Optional[int]:
-    """Extract event count from dataset metadata file."""
+def get_background_event_count(hist_data_path: Path) -> Optional[int]:
+    """Extract background event count from dataset metadata file."""
     try:
         dataset_info_path = hist_data_path.parent.parent / "_dataset_info.json"
         with open(dataset_info_path) as f:
             data = json.load(f)
-        return data["processing_stats"]["total_stats"]["processed_events"]
+        return data["processing_stats"]["background_stats"]["processed_events"]
     except (FileNotFoundError, KeyError):
         return None
 
@@ -41,6 +41,38 @@ def get_specific_signal_event_count(
         with open(dataset_info_path) as f:
             data = json.load(f)
         return data["processing_stats"]["signal_stats"][signal_name]["processed_events"]
+    except (FileNotFoundError, KeyError):
+        return None
+
+
+def get_event_count_from_dataset_info(hist_data_path: Path) -> Optional[int]:
+    """Extract event count from dataset metadata file based on filename pattern.
+
+    For background data, returns background_stats.
+    For signal data, extracts signal name and returns specific signal count.
+    """
+    try:
+        dataset_info_path = hist_data_path.parent.parent / "_dataset_info.json"
+        with open(dataset_info_path) as f:
+            data = json.load(f)
+
+        processing_stats = data["processing_stats"]
+        filename = hist_data_path.stem
+
+        # Background histogram file
+        if "atlas" in filename.lower() or "background" in filename.lower():
+            return processing_stats["background_stats"]["processed_events"]
+
+        # Signal histogram file - extract signal name
+        if "_dataset_features" in filename:
+            signal_name = filename.replace("_dataset_features", "").replace(
+                "_hist_data", ""
+            )
+            return processing_stats["signal_stats"][signal_name]["processed_events"]
+
+        # Default to background if pattern unclear
+        return processing_stats["background_stats"]["processed_events"]
+
     except (FileNotFoundError, KeyError):
         return None
 
