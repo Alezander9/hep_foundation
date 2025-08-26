@@ -107,6 +107,7 @@ class RegressionEvaluator:
         foundation_model_path: str = None,
         data_sizes: list = None,
         fixed_epochs: int = 10,
+        dataset: str = "atlas",
     ) -> bool:
         """
         Evaluate foundation model for regression tasks using data efficiency study.
@@ -123,6 +124,7 @@ class RegressionEvaluator:
             foundation_model_path: Path to the foundation model encoder
             data_sizes: List of training data sizes to test (e.g., [1000, 2000, 5000, 10000])
             fixed_epochs: Number of epochs to train each model for each data size
+            dataset: Dataset to use for regression, either "atlas" or a signal key (e.g., "wprime_taunu")
         """
 
         if not foundation_model_path:
@@ -140,16 +142,43 @@ class RegressionEvaluator:
             data_manager = DatasetManager(base_dir=self.processed_datasets_dir)
 
             # 1. Load full dataset with regression labels
-            self.logger.info("Loading full dataset with regression labels...")
-            train_dataset, val_dataset, test_dataset = data_manager.load_atlas_datasets(
-                dataset_config=dataset_config,
-                validation_fraction=dataset_config.validation_fraction,
-                test_fraction=dataset_config.test_fraction,
-                batch_size=dnn_training_config.batch_size,
-                shuffle_buffer=dataset_config.shuffle_buffer,
-                include_labels=True,
-                delete_catalogs=delete_catalogs,
-            )
+            if dataset == "atlas":
+                self.logger.info("Loading ATLAS dataset with regression labels...")
+                train_dataset, val_dataset, test_dataset = (
+                    data_manager.load_atlas_datasets(
+                        dataset_config=dataset_config,
+                        validation_fraction=dataset_config.validation_fraction,
+                        test_fraction=dataset_config.test_fraction,
+                        batch_size=dnn_training_config.batch_size,
+                        shuffle_buffer=dataset_config.shuffle_buffer,
+                        include_labels=True,
+                        delete_catalogs=delete_catalogs,
+                    )
+                )
+            else:
+                # Load signal dataset
+                self.logger.info(
+                    f"Loading signal dataset '{dataset}' with regression labels..."
+                )
+                signal_datasets_splits = data_manager.load_signal_datasets(
+                    dataset_config=dataset_config,
+                    validation_fraction=dataset_config.validation_fraction,
+                    test_fraction=dataset_config.test_fraction,
+                    batch_size=dnn_training_config.batch_size,
+                    shuffle_buffer=dataset_config.shuffle_buffer,
+                    include_labels=True,
+                    split=True,
+                )
+
+                if dataset not in signal_datasets_splits:
+                    self.logger.error(
+                        f"Signal dataset '{dataset}' not found in available datasets: {list(signal_datasets_splits.keys())}"
+                    )
+                    return False
+
+                train_dataset, val_dataset, test_dataset = signal_datasets_splits[
+                    dataset
+                ]
 
             # Access normalization parameters for denormalizing labels
 
@@ -331,6 +360,20 @@ class RegressionEvaluator:
                 # Convert to numpy and organize by variable names
                 actual_labels_array = np.array(actual_labels_list)
 
+                # Check if we actually collected any label data
+                if len(actual_labels_list) == 0:
+                    self.logger.error(
+                        "No label data was collected from the test dataset. This might indicate:"
+                    )
+                    self.logger.error(
+                        "1. The signal dataset doesn't contain the required label branches"
+                    )
+                    self.logger.error("2. No events passed the selection criteria")
+                    self.logger.error(
+                        f"Expected label branches: {label_variable_names}"
+                    )
+                    return False
+
                 # Denormalize actual test labels to get original scale/units
                 if norm_params is not None:
                     try:
@@ -353,8 +396,15 @@ class RegressionEvaluator:
                 actual_data = {}
 
                 for i, var_name in enumerate(label_variable_names):
-                    if i < actual_labels_array.shape[1]:
+                    if (
+                        len(actual_labels_array.shape) > 1
+                        and i < actual_labels_array.shape[1]
+                    ):
                         actual_data[var_name] = actual_labels_array[:, i].tolist()
+                    elif len(actual_labels_array.shape) == 1 and i == 0:
+                        # Handle case where we have a 1D array (single label variable)
+                        actual_data[var_name] = actual_labels_array.tolist()
+                    # Skip variables that don't have corresponding data
 
                 # Save actual labels histogram
                 actual_labels_path = (

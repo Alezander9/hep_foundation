@@ -31,7 +31,14 @@ try:
     ):
         data = json.load(f)
         PHYSLITE_BRANCHES = data["physlite_branches"]
+        PHYSLITE_BRANCHES_SIGNAL_ONLY = data.get("physlite_branches_signal_only", {})
         logger.info(f"Successfully loaded PhysLite branch index from {json_path_str}")
+        logger.info(
+            f"Loaded {sum(len(features) for features in PHYSLITE_BRANCHES.values())} ATLAS branches"
+        )
+        logger.info(
+            f"Loaded {sum(len(features) for features in PHYSLITE_BRANCHES_SIGNAL_ONLY.values())} signal-only branches"
+        )
         # Optionally log metadata:
         # generation_info = data.get("generation_info", {})
         # logger.info(f"Branch index generated from: {generation_info}")
@@ -40,9 +47,11 @@ except FileNotFoundError:
         "physlite_branch_index.json not found. Please generate it using the script in scripts/."
     )
     PHYSLITE_BRANCHES = {}
+    PHYSLITE_BRANCHES_SIGNAL_ONLY = {}
 except (json.JSONDecodeError, KeyError) as e:
     logger.error(f"Error parsing physlite_branch_index.json: {e}")
     PHYSLITE_BRANCHES = {}
+    PHYSLITE_BRANCHES_SIGNAL_ONLY = {}
 
 
 class BranchType(Enum):
@@ -91,7 +100,7 @@ def get_branch_info(
             return False, BranchType.UNKNOWN, None
 
     # If not derived, proceed to check the PhysLite index file
-    if not PHYSLITE_BRANCHES:
+    if not PHYSLITE_BRANCHES and not PHYSLITE_BRANCHES_SIGNAL_ONLY:
         # Raise error only if it's not derived and the index is missing
         raise RuntimeError(
             "PhysLite branch index not found and branch is not derived. Cannot validate branches. "
@@ -106,7 +115,7 @@ def get_branch_info(
     if "." in branch_name_str:
         category, feature = branch_name_str.split(".", 1)
 
-    # Check if the branch exists in the loaded dictionary
+    # Check if the branch exists in the ATLAS branches dictionary first
     branch_info: Optional[dict[str, Any]] = None
     if category:
         if category in PHYSLITE_BRANCHES and feature in PHYSLITE_BRANCHES[category]:
@@ -115,10 +124,25 @@ def get_branch_info(
         if "Other" in PHYSLITE_BRANCHES and feature in PHYSLITE_BRANCHES["Other"]:
             branch_info = PHYSLITE_BRANCHES["Other"][feature]
 
+    # If not found in ATLAS branches, check signal-only branches
     if not branch_info:
-        # It wasn't derived and wasn't found in the index
+        if category:
+            if (
+                category in PHYSLITE_BRANCHES_SIGNAL_ONLY
+                and feature in PHYSLITE_BRANCHES_SIGNAL_ONLY[category]
+            ):
+                branch_info = PHYSLITE_BRANCHES_SIGNAL_ONLY[category][feature]
+        else:  # Assume 'Other' category if no dot
+            if (
+                "Other" in PHYSLITE_BRANCHES_SIGNAL_ONLY
+                and feature in PHYSLITE_BRANCHES_SIGNAL_ONLY["Other"]
+            ):
+                branch_info = PHYSLITE_BRANCHES_SIGNAL_ONLY["Other"][feature]
+
+    if not branch_info:
+        # It wasn't derived and wasn't found in either index
         logger.warning(
-            f"Branch '{branch_name}' not found in PHYSLITE_BRANCHES index and is not a known derived feature."
+            f"Branch '{branch_name}' not found in PHYSLITE_BRANCHES or PHYSLITE_BRANCHES_SIGNAL_ONLY index and is not a known derived feature."
         )
         return False, BranchType.UNKNOWN, None
 

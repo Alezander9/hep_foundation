@@ -339,6 +339,7 @@ def save_branch_dictionary(
     catalog_index: int = 0,
     output_dir: Optional[Union[str, Path]] = None,
     download_if_missing: bool = True,
+    include_signal_data: bool = True,
 ) -> Optional[Path]:
     """
     Save the branch dictionary with shape information for a specific ATLAS run
@@ -350,6 +351,7 @@ def save_branch_dictionary(
         output_dir: Path where to save the output JSON file
                     (default: src/hep_foundation/)
         download_if_missing: Whether to download the catalog if it doesn't exist
+        include_signal_data: Whether to also analyze signal data for additional branches
 
     Returns:
         Path to the saved JSON file or None if failed
@@ -382,8 +384,53 @@ def save_branch_dictionary(
 
         print(f"Extracting branch information from {catalog_path}...")
 
-        # Get detailed information for ALL branches (or just InDetTrackParticlesAuxDyn in debug mode)
-        branch_info = get_branch_info(catalog_path)
+        # Get detailed information for ALL branches from ATLAS data
+        atlas_branch_info = get_branch_info(catalog_path)
+
+        # Initialize signal-only branch info
+        signal_only_branch_info = {}
+
+        # If requested, also analyze signal data for additional branches
+        if include_signal_data:
+            try:
+                # Try to get a signal file for comparison
+                signal_catalog_path = atlas_manager.get_signal_catalog_path(
+                    "zprime_tt", catalog_index
+                )
+
+                if signal_catalog_path and signal_catalog_path.exists():
+                    print(
+                        f"Extracting signal branch information from {signal_catalog_path}..."
+                    )
+                    signal_branch_info = get_branch_info(signal_catalog_path)
+
+                    # Find branches that exist in signal but not in ATLAS
+                    signal_only_branch_info = {}
+                    for category, features in signal_branch_info.items():
+                        if category not in atlas_branch_info:
+                            signal_only_branch_info[category] = features
+                        else:
+                            # Check for features within category that don't exist in ATLAS
+                            atlas_features = set(atlas_branch_info[category].keys())
+                            signal_features = set(features.keys())
+                            signal_only_features = signal_features - atlas_features
+
+                            if signal_only_features:
+                                if category not in signal_only_branch_info:
+                                    signal_only_branch_info[category] = {}
+                                for feature in signal_only_features:
+                                    signal_only_branch_info[category][feature] = (
+                                        features[feature]
+                                    )
+
+                    print(
+                        f"Found {sum(len(features) for features in signal_only_branch_info.values())} signal-only branches"
+                    )
+                else:
+                    print("No signal catalog found, skipping signal branch analysis")
+            except Exception as e:
+                print(f"Failed to analyze signal data: {e}")
+                print("Continuing with ATLAS-only branch information")
 
         # --- DEBUG: Print InDetTrackParticlesAuxDyn info and exit ---
         # print("\\n\\n--- Collected Branch Info for InDetTrackParticlesAuxDyn ---")
@@ -401,29 +448,64 @@ def save_branch_dictionary(
             # Default to src/hep_foundation relative to project root
             # Assumes script is run from project root or hep_foundation/scripts
             project_root = Path(__file__).parent.parent
-            output_dir = project_root / "src" / "hep_foundation"
+            output_dir = project_root / "src" / "hep_foundation" / "data"
         else:
             output_dir = Path(output_dir)
 
         output_dir.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
         output_path = output_dir / "physlite_branch_index.json"
 
-        # Count success rate (based on successful shape/dtype extraction)
-        total_branches = sum(len(features) for features in branch_info.values())
-        successful_branches = sum(
-            1
-            for cat in branch_info
-            for feat in branch_info[cat]
-            if branch_info[cat][feat]["status"] == "success"
+        # Count success rate for ATLAS branches
+        total_atlas_branches = sum(
+            len(features) for features in atlas_branch_info.values()
         )
-        success_rate = successful_branches / total_branches if total_branches > 0 else 0
+        successful_atlas_branches = sum(
+            1
+            for cat in atlas_branch_info
+            for feat in atlas_branch_info[cat]
+            if atlas_branch_info[cat][feat]["status"] == "success"
+        )
+        atlas_success_rate = (
+            successful_atlas_branches / total_atlas_branches
+            if total_atlas_branches > 0
+            else 0
+        )
+
+        # Count success rate for signal-only branches
+        total_signal_only_branches = sum(
+            len(features) for features in signal_only_branch_info.values()
+        )
+        successful_signal_only_branches = sum(
+            1
+            for cat in signal_only_branch_info
+            for feat in signal_only_branch_info[cat]
+            if signal_only_branch_info[cat][feat]["status"] == "success"
+        )
+        signal_only_success_rate = (
+            successful_signal_only_branches / total_signal_only_branches
+            if total_signal_only_branches > 0
+            else 0
+        )
 
         # Prepare data for JSON serialization (ensure basic types)
-        serializable_branch_info = {}
-        for category, features in branch_info.items():
-            serializable_branch_info[category] = {}
+        serializable_atlas_branch_info = {}
+        for category, features in atlas_branch_info.items():
+            serializable_atlas_branch_info[category] = {}
             for feature, info in features.items():
-                serializable_branch_info[category][feature] = {
+                serializable_atlas_branch_info[category][feature] = {
+                    # Convert shape tuple to list for JSON
+                    "shape": list(info.get("shape"))
+                    if info.get("shape") is not None
+                    else None,
+                    "dtype": info.get("dtype", "unknown"),
+                    "status": info.get("status", "unknown"),
+                }
+
+        serializable_signal_only_branch_info = {}
+        for category, features in signal_only_branch_info.items():
+            serializable_signal_only_branch_info[category] = {}
+            for feature, info in features.items():
+                serializable_signal_only_branch_info[category][feature] = {
                     # Convert shape tuple to list for JSON
                     "shape": list(info.get("shape"))
                     if info.get("shape") is not None
@@ -438,9 +520,14 @@ def save_branch_dictionary(
             "generation_info": {
                 "run_number": run_number,
                 "catalog_index": catalog_index,
-                "success_rate": f"{successful_branches}/{total_branches} ({success_rate:.1%})",
+                "atlas_success_rate": f"{successful_atlas_branches}/{total_atlas_branches} ({atlas_success_rate:.1%})",
+                "signal_only_success_rate": f"{successful_signal_only_branches}/{total_signal_only_branches} ({signal_only_success_rate:.1%})"
+                if total_signal_only_branches > 0
+                else "N/A",
+                "include_signal_data": include_signal_data,
             },
-            "physlite_branches": serializable_branch_info,
+            "physlite_branches": serializable_atlas_branch_info,
+            "physlite_branches_signal_only": serializable_signal_only_branch_info,
         }
 
         with open(output_path, "w") as f:
@@ -448,8 +535,12 @@ def save_branch_dictionary(
 
         print(f"Branch information dictionary saved to {output_path}")
         print(
-            f"Success rate: {successful_branches}/{total_branches} branches ({success_rate:.1%})"
+            f"ATLAS branches success rate: {successful_atlas_branches}/{total_atlas_branches} ({atlas_success_rate:.1%})"
         )
+        if total_signal_only_branches > 0:
+            print(
+                f"Signal-only branches success rate: {successful_signal_only_branches}/{total_signal_only_branches} ({signal_only_success_rate:.1%})"
+            )
         return output_path
 
     except Exception as e:
@@ -461,12 +552,12 @@ def save_branch_dictionary(
 
 
 if __name__ == "__main__":
-    # Example usage: Save to default location (src/hep_foundation/)
-    saved_path = save_branch_dictionary("00311481", 1)
+    # Example usage: Save to default location (src/hep_foundation/) with signal data included
+    saved_path = save_branch_dictionary("00311481", 0, include_signal_data=True)
 
     # Example: Save to a specific directory
     # script_dir = Path(__file__).parent
-    # saved_path = save_branch_dictionary("00311481", 1, output_dir=script_dir / "output_data")
+    # saved_path = save_branch_dictionary("00311481", 1, output_dir=script_dir / "output_data", include_signal_data=True)
 
     if saved_path:
         print(f"Successfully generated: {saved_path}")

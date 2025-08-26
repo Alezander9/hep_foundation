@@ -147,6 +147,30 @@ class FoundationModelPipeline:
                 signal_classification_evaluation_config.run_stage
             )
 
+            # Intelligently determine if we need labels in foundation training
+            # Labels are only needed if regression evaluation is enabled AND uses ATLAS data
+            foundation_needs_labels = (
+                run_regression and regression_evaluation_config.dataset == "atlas"
+            )
+
+            # Update dataset config for foundation training
+            if run_training:
+                # Override include_labels based on downstream task requirements
+                original_include_labels = dataset_config.include_labels
+                dataset_config.include_labels = foundation_needs_labels
+
+                self.logger.info(
+                    f"Foundation training labels: {foundation_needs_labels} (originally {original_include_labels})"
+                )
+                if foundation_needs_labels:
+                    self.logger.info(
+                        "Labels needed because regression evaluation uses ATLAS data"
+                    )
+                else:
+                    self.logger.info(
+                        "Labels not needed for unsupervised foundation training"
+                    )
+
             foundation_model_path = None
             dataset_path = None
 
@@ -304,6 +328,7 @@ class FoundationModelPipeline:
                     foundation_model_path=foundation_model_path,
                     data_sizes=regression_evaluation_config.data_sizes,
                     fixed_epochs=regression_evaluation_config.epochs,
+                    dataset=regression_evaluation_config.dataset,
                 )
 
                 # Print system usage after regression evaluation
