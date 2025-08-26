@@ -406,6 +406,7 @@ class PhysliteEventProcessor:
         task_config: TaskConfig,
         plotting_enabled: bool = False,
         need_more_zero_bias_samples: bool = False,
+        include_labels: bool = True,
     ) -> tuple[Optional[ProcessedEvent], bool]:
         """
         Process a single event using the new data format.
@@ -415,6 +416,7 @@ class PhysliteEventProcessor:
             task_config: TaskConfig object containing event filters, input features, and labels
             plotting_enabled: Whether plotting is enabled
             need_more_zero_bias_samples: Whether we still need more zero-bias samples for plotting
+            include_labels: Whether to process labels from the task config
 
         Returns:
             Tuple of (processed_event, passed_filters):
@@ -461,7 +463,9 @@ class PhysliteEventProcessor:
 
         # Process each label config if present (only for filtered events going to dataset)
         label_selection_data = []
-        if passed_filters:  # Only process labels for events going into the dataset
+        if (
+            passed_filters and include_labels
+        ):  # Only process labels when needed and for events going into the dataset
             for label_config in task_config.labels:
                 label_data = self._process_selection_config(
                     event_data,

@@ -347,7 +347,11 @@ class DatasetManager:
                 )
 
                 # Create labels group if we have labels
-                if all_labels and dataset_config.task_config.labels:
+                # Check if all_labels contains actual label data (not just empty lists)
+                has_actual_labels = all_labels and any(
+                    label_set for label_set in all_labels
+                )
+                if has_actual_labels and dataset_config.task_config.labels:
                     labels_group = f.create_group("labels")
                     self._save_labels_to_hdf5_group(
                         labels_group,
@@ -366,9 +370,7 @@ class DatasetManager:
                     {
                         "dataset_id": dataset_id,
                         "creation_date": str(datetime.now()),
-                        "has_labels": bool(
-                            all_labels and dataset_config.task_config.labels
-                        ),
+                        "has_labels": has_actual_labels,
                         "normalization_params": json.dumps(norm_params),
                         "processing_stats": json.dumps(
                             self._convert_numpy_types(total_stats)
@@ -571,7 +573,11 @@ class DatasetManager:
                     )
 
                     # Create labels group if we have labels
-                    if labels and dataset_config.task_config.labels:
+                    # Check if labels contains actual label data (not just empty lists)
+                    has_actual_labels = labels and any(
+                        label_set for label_set in labels
+                    )
+                    if has_actual_labels and dataset_config.task_config.labels:
                         labels_group = signal_group.create_group("labels")
                         self._save_labels_to_hdf5_group(
                             labels_group,
@@ -588,9 +594,7 @@ class DatasetManager:
                     # Store signal-specific attributes
                     signal_group.attrs.update(
                         {
-                            "has_labels": bool(
-                                labels and dataset_config.task_config.labels
-                            ),
+                            "has_labels": has_actual_labels,
                             "normalization_params": json.dumps(norm_params),
                             "processing_stats": json.dumps(
                                 self._convert_numpy_types(stats)

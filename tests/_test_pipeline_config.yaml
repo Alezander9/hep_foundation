@@ -17,7 +17,6 @@ dataset:
   shuffle_buffer: 100  # Small buffer
   plot_distributions: true  # Keep plots for verification
   save_raw_samples: true  # Save raw event samples for analysis
-  include_labels: false  # Foundation training is unsupervised, labels only needed for downstream tasks
   hdf5_compression: false  # Disable compression for faster test dataset creation
 
 # Task Configuration - matches existing test setup
@@ -51,15 +50,15 @@ task:
     #   min_length: 1
     #   max_length: 30
 
-  label_features:
+  label_features: 
     - []
 
   label_array_aggregators:
     - - input_branches:
-          - "MET_TruthAuxDyn.mpx"
-          - "MET_TruthAuxDyn.mpy"
-          # - "derived.MET_Core_AnalysisMETAuxDyn.met_norm"
-          # - "derived.MET_Core_AnalysisMETAuxDyn.met_phi"
+          # - "MET_TruthAuxDyn.mpx"
+          # - "MET_TruthAuxDyn.mpy"
+          - "derived.MET_Core_AnalysisMETAuxDyn.met_norm"
+          - "derived.MET_Core_AnalysisMETAuxDyn.met_phi"
         filter_branches: []
         sort_by_branch: null
         min_length: 1
@@ -101,7 +100,7 @@ anomaly_detection_evaluation:
 
 regression_evaluation:
   run_stage: true
-  dataset: "wprime_taunu" # data to use in regression, either atlas or signal key
+  dataset: "atlas" # data to use in regression, either atlas or signal key
   model:
     model_type: "dnn_predictor"
     architecture:

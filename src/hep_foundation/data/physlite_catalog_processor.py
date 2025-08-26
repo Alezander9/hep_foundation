@@ -532,6 +532,7 @@ class PhysliteCatalogProcessor:
                                         task_config,
                                         plotting_enabled,
                                         need_more_zero_bias_samples,
+                                        include_labels,
                                     )
                                 )
 
@@ -823,6 +824,11 @@ class PhysliteCatalogProcessor:
         Returns:
             Dictionary containing normalization parameters for all features and labels
         """
+        # Handle empty inputs case
+        if not inputs:
+            self.logger.warning("No input data provided for normalization computation")
+            return {"features": {}, "labels": []}
+
         norm_params = {"features": {}}
 
         # Compute for scalar features
