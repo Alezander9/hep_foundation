@@ -21,17 +21,6 @@ def format_event_count(event_count: int) -> str:
         return str(event_count)
 
 
-def get_background_event_count(hist_data_path: Path) -> Optional[int]:
-    """Extract background event count from dataset metadata file."""
-    try:
-        dataset_info_path = hist_data_path.parent.parent / "_dataset_info.json"
-        with open(dataset_info_path) as f:
-            data = json.load(f)
-        return data["processing_stats"]["background_stats"]["processed_events"]
-    except (FileNotFoundError, KeyError):
-        return None
-
-
 def get_specific_signal_event_count(
     hist_data_path: Path, signal_name: str
 ) -> Optional[int]:

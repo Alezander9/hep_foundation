@@ -207,30 +207,20 @@ EXPECTED_EXPERIMENT_STRUCTURE = {
                 "required": True,
                 "description": "Regression evaluation results",
                 "contents": {
-                    "regression_data_efficiency_plot.png": {
+                    "regression_evaluation_combined.png": {
                         "type": "file",
                         "required": True,
-                        "description": "Data efficiency plot",
+                        "description": "Combined training history and data efficiency plot",
                     },
                     "regression_data_efficiency_results.json": {
                         "type": "file",
                         "required": True,
                         "description": "Data efficiency results",
                     },
-                    "regression_training_comparison.png": {
+                    "label_distribution_combined_analysis.png": {
                         "type": "file",
                         "required": True,
-                        "description": "Training comparison plot",
-                    },
-                    "label_distribution_comparison_log_scale.png": {
-                        "type": "file",
-                        "required": True,
-                        "description": "Label distribution comparison plot (log scale)",
-                    },
-                    "label_distribution_differences_linear_scale.png": {
-                        "type": "file",
-                        "required": True,
-                        "description": "Label distribution differences plot (linear scale)",
+                        "description": "Combined label distribution comparison and differences plot",
                     },
                     "training_histories": {
                         "type": "directory",
@@ -262,25 +252,20 @@ EXPECTED_EXPERIMENT_STRUCTURE = {
                 "required": True,
                 "description": "Signal classification evaluation results",
                 "contents": {
-                    "signal_classification_accuracy_plot.png": {
+                    "signal_classification_accuracy_evaluation_combined.png": {
                         "type": "file",
                         "required": True,
-                        "description": "Classification accuracy plot",
+                        "description": "Combined training history and accuracy efficiency plot",
+                    },
+                    "signal_classification_loss_evaluation_combined.png": {
+                        "type": "file",
+                        "required": True,
+                        "description": "Combined training history and loss efficiency plot",
                     },
                     "signal_classification_data_efficiency_results.json": {
                         "type": "file",
                         "required": True,
                         "description": "Classification data efficiency results",
-                    },
-                    "signal_classification_loss_plot.png": {
-                        "type": "file",
-                        "required": True,
-                        "description": "Classification loss plot",
-                    },
-                    "signal_classification_training_comparison.png": {
-                        "type": "file",
-                        "required": True,
-                        "description": "Classification training comparison plot",
                     },
                     "training_histories": {
                         "type": "directory",
@@ -700,9 +685,6 @@ def test_run_full_pipeline(pipeline, test_configs, experiment_dir):
     """Test the full pipeline (train → regression → anomaly)"""
 
     try:
-        # Load test config path for source tracking
-        test_config_path = Path(__file__).parent / "_test_pipeline_config.yaml"
-
         # Set the source config file for reproducibility
         if test_configs.get("source_config_file"):
             pipeline.set_source_config_file(test_configs["source_config_file"])

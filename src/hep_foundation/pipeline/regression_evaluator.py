@@ -682,24 +682,17 @@ class RegressionEvaluator:
                 json.dump(results, f, indent=2)
             self.logger.info(f"Results saved to: {results_file}")
 
-            # Create combined training history plot if we saved training histories
+            # Create combined training history and data efficiency plot
             training_histories_dir = regression_dir / "training_histories"
-            combined_plot_path = regression_dir / "regression_training_comparison.png"
-            self.foundation_plot_manager.create_training_history_comparison_plot_from_directory(
+            combined_plot_path = regression_dir / "regression_evaluation_combined.png"
+            self.foundation_plot_manager.create_combined_downstream_evaluation_plot(
                 training_histories_dir,
-                combined_plot_path,
-                title_prefix="Regression Model Training Comparison",
-                validation_only=True,
-            )
-
-            # Create the data efficiency plot
-            plot_file = regression_dir / "regression_data_efficiency_plot.png"
-            self.foundation_plot_manager.create_data_efficiency_plot(
                 results,
-                plot_file,
+                combined_plot_path,
                 plot_type="regression",
                 metric_name="Test Loss (MSE)",
                 total_test_events=total_test_events,
+                title_prefix="Regression Evaluation: Training History & Data Efficiency",
             )
 
             # Create label distribution comparison plot
