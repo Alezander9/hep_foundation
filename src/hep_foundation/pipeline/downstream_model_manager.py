@@ -37,6 +37,55 @@ class DownstreamModelManager:
         """
         self.logger = logger or get_logger(__name__)
 
+    def _initialize_model_weights(self, model: tf.keras.Model, seed: int) -> None:
+        """
+        Initialize model weights using a specific seed for reproducible results.
+
+        Args:
+            model: Keras model to initialize
+            seed: Random seed for weight initialization
+        """
+        # Set TensorFlow random seed for reproducible weight initialization
+        tf.random.set_seed(seed)
+
+        # Re-initialize all trainable weights in the model
+        for layer in model.layers:
+            if hasattr(layer, "kernel_initializer") and layer.kernel is not None:
+                # Re-initialize kernel weights
+                layer.kernel.assign(
+                    layer.kernel_initializer(
+                        shape=layer.kernel.shape, dtype=layer.kernel.dtype
+                    )
+                )
+            if hasattr(layer, "bias_initializer") and layer.bias is not None:
+                # Re-initialize bias weights
+                layer.bias.assign(
+                    layer.bias_initializer(
+                        shape=layer.bias.shape, dtype=layer.bias.dtype
+                    )
+                )
+            # Handle nested models (e.g., Sequential models within layers)
+            if hasattr(layer, "layers"):
+                for sublayer in layer.layers:
+                    if (
+                        hasattr(sublayer, "kernel_initializer")
+                        and sublayer.kernel is not None
+                    ):
+                        sublayer.kernel.assign(
+                            sublayer.kernel_initializer(
+                                shape=sublayer.kernel.shape, dtype=sublayer.kernel.dtype
+                            )
+                        )
+                    if (
+                        hasattr(sublayer, "bias_initializer")
+                        and sublayer.bias is not None
+                    ):
+                        sublayer.bias.assign(
+                            sublayer.bias_initializer(
+                                shape=sublayer.bias.shape, dtype=sublayer.bias.dtype
+                            )
+                        )
+
     def create_subset_dataset(
         self,
         dataset: tf.data.Dataset,
@@ -240,6 +289,7 @@ class DownstreamModelManager:
         save_training_history: bool = False,
         verbose_training: str = "minimal",
         return_accuracy: bool = False,
+        seed: Optional[int] = None,
     ) -> tuple[float, ...]:
         """
         Train and evaluate a downstream model.
@@ -257,11 +307,17 @@ class DownstreamModelManager:
             save_training_history: Whether to save training history
             verbose_training: Verbosity level for training
             return_accuracy: Whether to return accuracy metric (for classification)
+            seed: Random seed for weight initialization (optional)
 
         Returns:
             Tuple of (test_loss,) for regression or (test_loss, test_accuracy) for classification
         """
         self.logger.info(f"Training {model_name} model with {data_size} events...")
+
+        # Initialize model weights with seed if provided
+        if seed is not None:
+            self._initialize_model_weights(model, seed)
+            self.logger.debug(f"Initialized {model_name} weights with seed {seed}")
 
         # Wrap the Keras model with CustomKerasModelWrapper for ModelTrainer
         wrapped_model = CustomKerasModelWrapper(model, name=model_name)

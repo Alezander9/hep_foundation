@@ -329,6 +329,7 @@ class FoundationModelPipeline:
                     data_sizes=regression_evaluation_config.data_sizes,
                     fixed_epochs=regression_evaluation_config.epochs,
                     dataset=regression_evaluation_config.dataset,
+                    seed=regression_evaluation_config.seed,
                 )
 
                 # Print system usage after regression evaluation
@@ -389,6 +390,7 @@ class FoundationModelPipeline:
                         foundation_model_path=foundation_model_path,
                         data_sizes=signal_classification_evaluation_config.data_sizes,
                         fixed_epochs=signal_classification_evaluation_config.epochs,
+                        seed=signal_classification_evaluation_config.seed,
                     )
                 )
 

@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Optional
 
 import h5py
 import numpy as np
@@ -108,6 +109,7 @@ class RegressionEvaluator:
         data_sizes: list = None,
         fixed_epochs: int = 10,
         dataset: str = "atlas",
+        seed: Optional[int] = None,
     ) -> bool:
         """
         Evaluate foundation model for regression tasks using data efficiency study.
@@ -125,6 +127,7 @@ class RegressionEvaluator:
             data_sizes: List of training data sizes to test (e.g., [1000, 2000, 5000, 10000])
             fixed_epochs: Number of epochs to train each model for each data size
             dataset: Dataset to use for regression, either "atlas" or a signal key (e.g., "wprime_taunu")
+            seed: Random seed for reproducible weight initialization (optional)
         """
 
         if not foundation_model_path:
@@ -498,6 +501,7 @@ class RegressionEvaluator:
                             output_dir=regression_dir,
                             save_training_history=True,
                             return_accuracy=False,
+                            seed=seed,
                         )
                     )
 

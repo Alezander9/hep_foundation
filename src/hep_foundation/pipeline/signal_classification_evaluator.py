@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Optional
 
 import tensorflow as tf
 
@@ -51,6 +52,7 @@ class SignalClassificationEvaluator:
         foundation_model_path: str = None,
         data_sizes: list = None,
         fixed_epochs: int = 10,
+        seed: Optional[int] = None,
     ) -> bool:
         """
         Evaluate foundation model for signal classification using data efficiency study.
@@ -68,6 +70,7 @@ class SignalClassificationEvaluator:
             foundation_model_path: Path to the foundation model encoder
             data_sizes: List of training data sizes to test (e.g., [1000, 2000, 5000, 10000])
             fixed_epochs: Number of epochs to train each model for each data size
+            seed: Random seed for reproducible weight initialization (optional)
         """
 
         if not foundation_model_path:
@@ -351,6 +354,7 @@ class SignalClassificationEvaluator:
                             output_dir=classification_dir,
                             save_training_history=True,
                             return_accuracy=True,
+                            seed=seed,
                         )
                     )
 

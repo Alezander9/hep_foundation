@@ -3,7 +3,7 @@ Configuration for signal classification evaluation stage.
 """
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 
 @dataclass
@@ -23,6 +23,7 @@ class SignalClassificationEvaluationConfig:
     early_stopping_patience: int
     early_stopping_min_delta: float
     plot_training: bool
+    seed: Optional[int] = None
 
     @classmethod
     def from_dict(
@@ -47,4 +48,5 @@ class SignalClassificationEvaluationConfig:
             early_stopping_patience=early_stopping.get("patience", 10),
             early_stopping_min_delta=early_stopping.get("min_delta", 1e-4),
             plot_training=training_config.get("plot_training", True),
+            seed=config_dict.get("seed"),
         )
