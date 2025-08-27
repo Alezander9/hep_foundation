@@ -45,25 +45,60 @@ class DownstreamModelManager:
             model: Keras model to initialize
             seed: Random seed for weight initialization
         """
-        # Set TensorFlow random seed for reproducible weight initialization
-        tf.random.set_seed(seed)
+
+        def _get_seeded_initializer(original_initializer, layer_seed: int):
+            """Create a new seeded version of the given initializer."""
+            if isinstance(original_initializer, tf.keras.initializers.GlorotUniform):
+                return tf.keras.initializers.GlorotUniform(seed=layer_seed)
+            elif isinstance(original_initializer, tf.keras.initializers.GlorotNormal):
+                return tf.keras.initializers.GlorotNormal(seed=layer_seed)
+            elif isinstance(original_initializer, tf.keras.initializers.HeUniform):
+                return tf.keras.initializers.HeUniform(seed=layer_seed)
+            elif isinstance(original_initializer, tf.keras.initializers.HeNormal):
+                return tf.keras.initializers.HeNormal(seed=layer_seed)
+            elif isinstance(original_initializer, tf.keras.initializers.RandomUniform):
+                return tf.keras.initializers.RandomUniform(seed=layer_seed)
+            elif isinstance(original_initializer, tf.keras.initializers.RandomNormal):
+                return tf.keras.initializers.RandomNormal(seed=layer_seed)
+            elif isinstance(original_initializer, tf.keras.initializers.Zeros):
+                return original_initializer  # Zeros don't need seeding
+            elif isinstance(original_initializer, tf.keras.initializers.Ones):
+                return original_initializer  # Ones don't need seeding
+            else:
+                # For unknown initializers, try to create a seeded version
+                try:
+                    return original_initializer.__class__(seed=layer_seed)
+                except TypeError:
+                    # If the initializer doesn't support seeding, return original
+                    return original_initializer
+
+        # Use a counter to ensure each layer gets a unique but reproducible seed
+        layer_counter = 0
 
         # Re-initialize all trainable weights in the model
         for layer in model.layers:
             if hasattr(layer, "kernel_initializer") and layer.kernel is not None:
-                # Re-initialize kernel weights
+                # Create new seeded initializer for kernel weights
+                seeded_kernel_init = _get_seeded_initializer(
+                    layer.kernel_initializer, seed + layer_counter
+                )
                 layer.kernel.assign(
-                    layer.kernel_initializer(
+                    seeded_kernel_init(
                         shape=layer.kernel.shape, dtype=layer.kernel.dtype
                     )
                 )
+                layer_counter += 1
+
             if hasattr(layer, "bias_initializer") and layer.bias is not None:
-                # Re-initialize bias weights
-                layer.bias.assign(
-                    layer.bias_initializer(
-                        shape=layer.bias.shape, dtype=layer.bias.dtype
-                    )
+                # Create new seeded initializer for bias weights
+                seeded_bias_init = _get_seeded_initializer(
+                    layer.bias_initializer, seed + layer_counter
                 )
+                layer.bias.assign(
+                    seeded_bias_init(shape=layer.bias.shape, dtype=layer.bias.dtype)
+                )
+                layer_counter += 1
+
             # Handle nested models (e.g., Sequential models within layers)
             if hasattr(layer, "layers"):
                 for sublayer in layer.layers:
@@ -71,20 +106,29 @@ class DownstreamModelManager:
                         hasattr(sublayer, "kernel_initializer")
                         and sublayer.kernel is not None
                     ):
+                        seeded_kernel_init = _get_seeded_initializer(
+                            sublayer.kernel_initializer, seed + layer_counter
+                        )
                         sublayer.kernel.assign(
-                            sublayer.kernel_initializer(
+                            seeded_kernel_init(
                                 shape=sublayer.kernel.shape, dtype=sublayer.kernel.dtype
                             )
                         )
+                        layer_counter += 1
+
                     if (
                         hasattr(sublayer, "bias_initializer")
                         and sublayer.bias is not None
                     ):
+                        seeded_bias_init = _get_seeded_initializer(
+                            sublayer.bias_initializer, seed + layer_counter
+                        )
                         sublayer.bias.assign(
-                            sublayer.bias_initializer(
+                            seeded_bias_init(
                                 shape=sublayer.bias.shape, dtype=sublayer.bias.dtype
                             )
                         )
+                        layer_counter += 1
 
     def create_subset_dataset(
         self,
