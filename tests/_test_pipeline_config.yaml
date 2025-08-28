@@ -57,7 +57,7 @@ task:
     - - input_branches:
           - "AnalysisJetsAuxDyn.pt"
         filter_branches:
-          - {"branch": "AnalysisJetsAuxDyn.pt", "min": 20.0}
+          - {"branch": "AnalysisJetsAuxDyn.pt", "min": 0.0} # Unsure of what min to set, leaving 0 for now
         sort_by_branch: {"branch": "AnalysisJetsAuxDyn.pt"}
         min_length: 1
         max_length: 1
